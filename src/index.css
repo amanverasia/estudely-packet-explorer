@@ -206,6 +206,11 @@ p { margin: 0; }
 .note.warn { background: var(--warn-bg); color: var(--warn-ink); }
 .note.crit { background: var(--crit-bg); color: var(--crit); }
 .note b { font-weight: 600; }
+.update-banner {
+  position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 30; width: max-content; max-width: calc(100vw - 32px);
+  align-items: center; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+.update-banner .btn { flex: none; }
 .notes { display: grid; gap: 8px; }
 
 .tag {
@@ -294,7 +299,7 @@ p { margin: 0; }
 }
 .drop.over { border-color: var(--accent); background: var(--accent-soft); }
 .drop h2 { font-size: 22px; }
-.landing-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px 24px; font-size: 13px; color: var(--ink-2); }
+.landing-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 12px 24px; font-size: 13px; color: var(--ink-2); }
 .landing-list h3 { font-size: 13px; color: var(--ink); margin-bottom: 4px; }
 .progress { width: 100%; height: 6px; background: var(--panel-2); border-radius: 3px; overflow: hidden; border: 1px solid var(--rule); }
 .progress > div { height: 100%; background: var(--accent); transition: width 0.2s; }

@@ -20,3 +20,8 @@
 
 /wiregasm/*
   Cache-Control: public, max-age=604800
+
+# The service worker caches the app for offline use (src/pwa/sw.js). Its
+# script must always be checked with the server so a new deploy is noticed.
+/sw.js
+  Cache-Control: no-cache

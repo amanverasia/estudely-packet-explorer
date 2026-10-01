@@ -1,0 +1,17 @@
+{
+  "name": "Estudely Packet Explorer",
+  "short_name": "Packet Explorer",
+  "description": "Open a pcap or pcapng file and explore DNS, HTTP, TLS, hosts and connections. Analysis runs locally in your browser.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0a6670",
+  "theme_color": "#0a6670",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
