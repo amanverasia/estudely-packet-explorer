@@ -76,7 +76,7 @@ function b64Length(b64: string): number {
 }
 
 /** Follow-stream caps: enough to read a conversation, small enough to render. */
-export const FOLLOW_MAX_BYTES = 1024 * 1024;
+export const FOLLOW_MAX_BYTES = 512 * 1024;
 export const FOLLOW_MAX_SEGMENTS = 5000;
 
 function b64ToBytes(b64: string): Uint8Array {

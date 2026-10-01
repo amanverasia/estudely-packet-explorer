@@ -7,7 +7,7 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { CaptureSession, installExtractor, type WiregasmModule } from '../src/engine/session';
+import { CaptureSession, FOLLOW_MAX_BYTES, installExtractor, type WiregasmModule } from '../src/engine/session';
 import type { AnalysisModel } from '../src/engine/types';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -200,6 +200,29 @@ describe('HTTP fixture', () => {
     expect(v6.segments.map((g) => [g.frame, g.fromServer])).toEqual([[31, false]]);
     const none = s.follow('TCP', 99);
     expect(none).toMatchObject({ client: null, server: null, segments: [], totalSegments: 0, truncated: false });
+  });
+});
+
+describe('Follow stream fixture', () => {
+  let s: CaptureSession;
+  beforeAll(async () => ({ session: s } = await open('follow.pcap')));
+
+  it('caps a large stream at the default view size and still counts the whole stream', () => {
+    const f = s.follow('TCP', 0);
+    expect(f).toMatchObject({ truncated: true, clientBytes: 51, serverBytes: 612069, totalSegments: 439 });
+    expect(f.data.length).toBe(FOLLOW_MAX_BYTES);
+    expect(f.segments.reduce((n, g) => n + g.length, 0)).toBe(FOLLOW_MAX_BYTES);
+    const full = s.follow('TCP', 0, { maxBytes: Infinity, maxSegments: Infinity });
+    expect(full).toMatchObject({ truncated: false });
+    expect(full.data.length).toBe(612069 + 51);
+    expect(Buffer.from(full.data.subarray(full.data.length - 51)).toString('latin1')).toBe('line 11999 of the large follow-stream fixture body\n');
+  });
+
+  it('follows a UDP exchange', () => {
+    const f = s.follow('UDP', 0);
+    expect(f.client).toEqual({ addr: '10.0.0.5', port: 41001 });
+    expect(Buffer.from(f.data).toString('latin1')).toBe('PING 1\nPONG 1\n');
+    expect(f.segments.map((g) => g.fromServer)).toEqual([false, true]);
   });
 });
 
