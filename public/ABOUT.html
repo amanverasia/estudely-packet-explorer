@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="referrer" content="no-referrer" />
+<title>Licences and limitations</title>
+<style>
+  :root { color-scheme: light dark; --bg: #eef1f4; --ink: #14191f; --ink2: #4c5663; --panel: #fff; --rule: #dbe1e7; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #101418; --ink: #edf1f5; --ink2: #b4bec9; --panel: #171c21; --rule: #29313a; } }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 system-ui, -apple-system, 'Segoe UI', sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; }
+  section { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 16px 20px; margin-top: 16px; }
+  h1 { font-size: 22px; margin: 0; } h2 { font-size: 16px; margin: 0 0 8px; }
+  p, li { color: var(--ink2); } a { color: inherit; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; } td, th { text-align: left; border-bottom: 1px solid var(--rule); padding: 6px 8px 6px 0; vertical-align: top; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Estudely Packet Explorer: licences and limitations</h1>
+  <p>Your capture is processed locally in your browser. Nothing is uploaded, and the page makes no requests other than loading its own files.</p>
+
+  <section>
+    <h2>Packet decoding engine</h2>
+    <p>Captures are decoded by <a href="https://www.wireshark.org/">Wireshark</a> 4.4.5 compiled to WebAssembly by <a href="https://github.com/good-tools/wiregasm">Wiregasm</a> 1.9.1. Both are free software under the GNU General Public License version 2: <a href="./wiregasm/LICENSE-GPL-2.0.txt">licence text</a>.</p>
+    <p>Corresponding source code: <a href="https://github.com/good-tools/wiregasm/tree/v1.9.1">Wiregasm v1.9.1 (with build scripts and patches)</a> and <a href="https://www.wireshark.org/download/src/all-versions/wireshark-4.4.5.tar.xz">Wireshark 4.4.5 source</a>.</p>
+  </section>
+
+  <section>
+    <h2>Other components</h2>
+    <table>
+      <tr><th>Component</th><th>Licence</th></tr>
+      <tr><td>React, React DOM</td><td>MIT</td></tr>
+      <tr><td>@tanstack/react-virtual</td><td>MIT</td></tr>
+      <tr><td>d3-force, d3-zoom, d3-selection</td><td>ISC</td></tr>
+      <tr><td>IBM Plex Sans and IBM Plex Mono</td><td>SIL Open Font License 1.1</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>Known limitations</h2>
+    <ul>
+      <li>HTTP/2 and HTTP/3 are not shown as request rows. Encrypted traffic (TLS, QUIC, DoH, DoT) is not decrypted.</li>
+      <li>TLS certificates are shown only when sent in cleartext (TLS 1.2 and earlier). Trust is not checked.</li>
+      <li>Names come only from the capture itself (DNS, mDNS, NBNS, DHCP, TLS SNI, HTTP Host). Ports are traffic observations, not open-port checks. No device or OS identification.</li>
+      <li>Files over 1 GiB are refused; large captures take about a minute per 400,000 packets.</li>
+    </ul>
+  </section>
+</main>
+</body>
+</html>
