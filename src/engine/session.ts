@@ -5,7 +5,7 @@
 // Used by the Web Worker in the browser and directly by Node tests.
 import { analyze, type PacketIndex } from './analyze';
 import { parseRecords } from './records';
-import type { AnalysisModel, FrameDetails, PacketListPage, PacketRow, ProtoTreeNode } from './types';
+import type { AnalysisModel, FollowStream, FrameDetails, PacketListPage, PacketRow, ProtoTreeNode } from './types';
 import { protoName, topProtocol } from './analyze';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -68,6 +68,16 @@ function vec<T>(v: WgVector<T>): T[] {
 function free(v: unknown): void {
   try { (v as { delete?: () => void })?.delete?.(); } catch { /* already freed */ }
 }
+
+/** Decoded length of a base64 string, without decoding it. */
+function b64Length(b64: string): number {
+  const pad = b64.endsWith('==') ? 2 : b64.endsWith('=') ? 1 : 0;
+  return (b64.length / 4) * 3 - pad;
+}
+
+/** Follow-stream caps: enough to read a conversation, small enough to render. */
+export const FOLLOW_MAX_BYTES = 1024 * 1024;
+export const FOLLOW_MAX_SEGMENTS = 5000;
 
 function b64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64);
@@ -187,6 +197,50 @@ export class CaptureSession {
     });
     free(res.frames);
     return { columns, rows, matched: res.matched };
+  }
+
+  /**
+   * Reassembled payload of one TCP or UDP stream through Wiregasm's follower.
+   * The follower names are sharkd's ('TCP', 'UDP'); it reports a stream it
+   * found nothing for with the host 'NONE'.
+   */
+  follow(transport: 'TCP' | 'UDP', stream: number, caps: { maxBytes?: number; maxSegments?: number } = {}): FollowStream {
+    if (!Number.isInteger(stream) || stream < 0) throw new Error(`Invalid stream index ${stream}`);
+    const maxBytes = caps.maxBytes ?? FOLLOW_MAX_BYTES;
+    const maxSegments = caps.maxSegments ?? FOLLOW_MAX_SEGMENTS;
+    const res = this.sess.follow(transport, `${transport.toLowerCase()}.stream eq ${stream}`);
+    const payloads = vec<{ number: number; server: number; data: string }>(res.payloads);
+    free(res.payloads);
+    const known = res.chost && res.chost !== 'NONE';
+    const port = (p: string) => (p && Number.isFinite(Number(p)) ? Number(p) : null);
+    // Byte totals are summed here: sharkd's sbytes/cbytes do not reliably
+    // match the direction flags on the payloads.
+    let clientBytes = 0;
+    let serverBytes = 0;
+    for (const p of payloads) {
+      if (p.server) serverBytes += b64Length(p.data);
+      else clientBytes += b64Length(p.data);
+    }
+    const segments: FollowStream['segments'] = [];
+    const parts: Uint8Array[] = [];
+    let size = 0;
+    let truncated = false;
+    for (const p of payloads) {
+      if (segments.length >= maxSegments || size >= maxBytes) { truncated = true; break; }
+      let bytes = b64ToBytes(p.data);
+      if (size + bytes.length > maxBytes) { bytes = bytes.subarray(0, maxBytes - size); truncated = true; }
+      segments.push({ frame: p.number, fromServer: !!p.server, offset: size, length: bytes.length });
+      parts.push(bytes);
+      size += bytes.length;
+    }
+    const data = new Uint8Array(size);
+    for (let i = 0; i < parts.length; i++) data.set(parts[i], segments[i].offset);
+    return {
+      transport, stream,
+      client: known ? { addr: res.chost, port: port(res.cport) } : null,
+      server: known ? { addr: res.shost, port: port(res.sport) } : null,
+      clientBytes, serverBytes, totalSegments: payloads.length, data, segments, truncated,
+    };
   }
 
   /** Lightweight rows from the extraction pass, for drill-downs. */

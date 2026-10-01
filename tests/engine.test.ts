@@ -116,11 +116,20 @@ describe('DNS fixture', () => {
     expect(page.rows[0].number).toBe(4);
     expect(page.columns).toContain('Info');
   });
+
+  it('follows a UDP stream', () => {
+    const f = s.follow('UDP', 1);
+    expect(f.client).toEqual({ addr: '10.0.0.5', port: 50001 });
+    expect(f.server).toEqual({ addr: '10.0.0.53', port: 53 });
+    expect(f.segments.map((g) => [g.frame, g.fromServer])).toEqual([[3, false], [4, true]]);
+    expect(Buffer.from(f.data).toString('latin1')).toContain('nonexistent');
+  });
 });
 
 describe('HTTP fixture', () => {
   let m: AnalysisModel;
-  beforeAll(async () => ({ model: m } = await open('http.pcap')));
+  let s: CaptureSession;
+  beforeAll(async () => ({ model: m, session: s } = await open('http.pcap')));
 
   it('pairs requests and responses per TCP session', () => {
     expect(m.http.map((h) => [h.method, h.uri, h.status, h.state])).toEqual([
@@ -154,6 +163,43 @@ describe('HTTP fixture', () => {
       ['static.example.test', 'HTTP Host header', 'inferred'],
     ]);
     expect(server.macs[0].mac).toBe('02:00:00:00:00:80');
+  });
+
+  it('follows a TCP stream: reassembled payload in capture order, client and server separated', () => {
+    const f = s.follow('TCP', 0);
+    expect(f.client).toEqual({ addr: '10.0.0.5', port: 40000 });
+    expect(f.server).toEqual({ addr: '10.0.0.80', port: 80 });
+    expect(f.segments.map((g) => [g.frame, g.fromServer])).toEqual([[4, false], [5, false], [6, true], [7, false], [8, true]]);
+    const text = (fromServer: boolean) => f.segments.filter((g) => g.fromServer === fromServer)
+      .map((g) => Buffer.from(f.data.subarray(g.offset, g.offset + g.length)).toString('latin1')).join('');
+    expect(text(false)).toMatch(/^GET \/index\.html HTTP\/1\.1\r\nHost: www\.example\.test\r\n[^]*POST \/api\/login[^]*\{"user":"alice"\}\n$/);
+    expect(text(true)).toContain("<script>alert('captured content must not run')</script>");
+    expect(text(true)).toMatch(/HTTP\/1\.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n$/);
+    expect(f.clientBytes).toBe(text(false).length);
+    expect(f.serverBytes).toBe(text(true).length);
+    expect(f.data.length).toBe(f.clientBytes + f.serverBytes);
+    expect(f).toMatchObject({ transport: 'TCP', stream: 0, totalSegments: 5, truncated: false });
+  });
+
+  it('caps a followed stream by bytes and by segments, and says so', () => {
+    const bytesCap = s.follow('TCP', 0, { maxBytes: 30 });
+    expect(bytesCap.truncated).toBe(true);
+    expect(bytesCap.data.length).toBe(30);
+    expect(bytesCap.segments.map((g) => [g.frame, g.offset, g.length])).toEqual([[4, 0, 20], [5, 20, 10]]);
+    expect(bytesCap.totalSegments).toBe(5);
+    expect(bytesCap.clientBytes + bytesCap.serverBytes).toBeGreaterThan(30);
+    const segCap = s.follow('TCP', 0, { maxSegments: 2 });
+    expect(segCap.truncated).toBe(true);
+    expect(segCap.segments.map((g) => g.frame)).toEqual([4, 5]);
+  });
+
+  it('follows an IPv6 stream with no server data, and reports an unknown stream as empty', () => {
+    const v6 = s.follow('TCP', 3);
+    expect(v6.client).toEqual({ addr: 'fd00::5', port: 40002 });
+    expect(v6.serverBytes).toBe(0);
+    expect(v6.segments.map((g) => [g.frame, g.fromServer])).toEqual([[31, false]]);
+    const none = s.follow('TCP', 99);
+    expect(none).toMatchObject({ client: null, server: null, segments: [], totalSegments: 0, truncated: false });
   });
 });
 

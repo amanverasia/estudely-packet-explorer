@@ -353,3 +353,21 @@ export interface PacketListPage {
   rows: { number: number; columns: string[] }[];
   matched: number;
 }
+
+/** A conversation's payload reassembled by Wireshark's follower (Follow TCP/UDP Stream). */
+export interface FollowStream {
+  transport: 'TCP' | 'UDP';
+  stream: number;
+  /** Wireshark's client is the first packet's sender; null when the stream has no payload. */
+  client: { addr: string; port: number | null } | null;
+  server: { addr: string; port: number | null } | null;
+  /** Payload bytes per direction over the whole stream, before any cap. */
+  clientBytes: number;
+  serverBytes: number;
+  totalSegments: number;
+  /** Payload of the returned segments, concatenated in capture order. */
+  data: Uint8Array;
+  segments: { frame: number; fromServer: boolean; offset: number; length: number }[];
+  /** True when the byte or segment cap cut the stream short. */
+  truncated: boolean;
+}
