@@ -42,10 +42,12 @@ Live at https://trace.esdy.cc (Cloudflare, static assets only; `npm run deploy`)
 
 First deploy found a bug the local suite had missed. Production CSP headers blocked the worker, because the engine glue needs `eval`. Fixed with a worker-specific policy in `public/_headers`. The test server now applies `_headers` too, and the suite was confirmed to fail with the old headers.
 
-## Not done / incomplete
+## Open work
 
-- **Accessibility**: keyboard navigation, ARIA roles on tables, trees and the drawer, focus handling, `prefers-reduced-motion` and forced colours are in place. No screen-reader audit or contrast tooling has been run.
-- **Browsers**: the suite runs in Chromium only. Firefox and Safari have not been tested (WebKit's `DecompressionStream` and passing a compiled WebAssembly module to a worker are worth checking first).
-- **Cloudflare zone settings**: Web Analytics auto-injection and Bot Fight Mode / JavaScript detections are on for the zone and inject scripts. The CSP blocks them, but they must be switched off in the dashboard (see DEPLOYMENT.md).
-- **Not supported**: HTTP/2 and HTTP/3 requests, decryption (key logs), DHCPv6 and LLDP names.
-- **Decision for the owner**: the licence of the app's own code (see LICENSES.md), and hosting a mirror of the GPL corresponding source.
+Everything outstanding is tracked as [GitHub issues](https://github.com/amanverasia/estudely-packet-explorer/issues), so this report is no longer updated:
+
+- **Roadmap:** key-log decryption (#1), HTTP/2 rows (#2), time-range filtering (#3), Firefox and Safari (#10), and later items #5 to #9 and #11 to #13
+- **Engineering:** CI (#21), accessibility audit (#22), UI polish (#26)
+- **Known limitations:** HTTP pairing with missing requests (#23), multi-message field assignment (#24), 60 s DNS match window (#25)
+
+Bugs found and fixed during development are recorded as closed issues #14 to #19. Two decisions are recorded too: the GPL-2.0-or-later licence (see LICENSES.md), and leaving Cloudflare's injected scripts on (#20).
