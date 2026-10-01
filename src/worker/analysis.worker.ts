@@ -8,6 +8,7 @@
 import extractorSource from '../engine/extractor.lua?raw';
 import { CaptureSession, installExtractor, type WiregasmModule } from '../engine/session';
 import type { FromWorker, ToWorker, WorkerRequest } from './protocol';
+import { postWithModule } from './compat';
 
 declare const self: DedicatedWorkerGlobalScope;
 
@@ -38,6 +39,8 @@ async function fetchBytes(url: string, label: string): Promise<ArrayBuffer> {
   // Shipped gzip-compressed. Some servers already decode .gz transparently,
   // so only decompress when the gzip magic bytes are still present.
   if (buf[0] === 0x1f && buf[1] === 0x8b) {
+    // The page checks for this before starting a worker; this guards the worker on its own.
+    if (typeof DecompressionStream === 'undefined') throw new Error('This browser does not support DecompressionStream, which is needed to unpack the Wireshark engine.');
     const stream = new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'));
     return await new Response(stream).arrayBuffer();
   }
@@ -71,7 +74,9 @@ async function initEngine(base: string, cachedModule: WebAssembly.Module | null,
   });
   installExtractor(lib!, extractorSource);
   if (!lib!.init()) throw new Error('The Wireshark engine failed to initialise.');
-  post({ type: 'engine-ready', wasmModule: module, data, versions: { wireshark: lib!.wiresharkVersion(), wiregasm: wiregasmVersion } });
+  const ready: Extract<FromWorker, { type: 'engine-ready' }> = { type: 'engine-ready', wasmModule: module, data, versions: { wireshark: lib!.wiresharkVersion(), wiregasm: wiregasmVersion } };
+  // Without the module the page still works; the next worker compiles its own.
+  postWithModule((m) => post(m), ready);
 }
 
 function handle(req: WorkerRequest): unknown {

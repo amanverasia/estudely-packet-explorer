@@ -41,6 +41,8 @@ The capture is read by a Web Worker running [Wiregasm](https://github.com/good-t
 
 It handles pcap and pcapng (including several interfaces with different link types), IPv4 and IPv6, truncated and cut-short files, and timestamps down to nanoseconds. Captures of a few hundred megabytes work: about a minute per 400,000 packets. Files over 1 GB are refused. Known gaps (HTTP/2 request rows, decryption, and others) are listed in [docs/FEATURES.md](docs/FEATURES.md) and tracked in the [issues](https://github.com/amanverasia/estudely-packet-explorer/issues).
 
+**Supported browsers:** Chrome and Edge 94 or later, Firefox 114 or later, and Safari 16.4 or later, on desktop. Every change is tested in Chromium, Firefox and WebKit. Details, minimum versions and memory notes are in [docs/BROWSERS.md](docs/BROWSERS.md).
+
 ## Run it yourself
 
 ```bash
@@ -51,7 +53,7 @@ npm run dev        # http://localhost:5173
 | Command | What it does |
 |---|---|
 | `npm test` | Engine tests: real Wireshark/WASM against synthetic captures in `fixtures/` |
-| `npm run e2e` | Builds the site, serves it from a subdirectory and runs the browser tests (run `npx playwright install chromium` once first) |
+| `npm run e2e` | Builds the site, serves it from a subdirectory and runs the browser tests in Chromium, Firefox and WebKit (run `npx playwright install chromium firefox webkit` once first; `npm run e2e -- --project=firefox` runs one) |
 | `npm run build` | Production build in `dist/`, a plain static site you can host anywhere, in any subdirectory |
 | `npm run deploy` | Builds and deploys to Cloudflare (needs `npx wrangler login`) |
 | `npm run fixtures` | Regenerates the test captures (needs Python with `scapy` and `cryptography`) |

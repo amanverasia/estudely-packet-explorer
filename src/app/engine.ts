@@ -7,6 +7,8 @@
 import type { AnalysisModel } from '../engine/types';
 import type { Progress } from '../engine/session';
 import type { FromWorker, ToWorker, WorkerRequest, WorkerResponses } from '../worker/protocol';
+import { postWithModule } from '../worker/compat';
+import { missingFeatures, SUPPORTED_BROWSERS } from './support';
 
 export const SOFT_LIMIT_BYTES = 250 * 1024 * 1024;
 export const HARD_LIMIT_BYTES = 1024 * 1024 * 1024;
@@ -43,8 +45,14 @@ export class EngineClient {
       if (w !== this.worker) return;
       this.listener({ kind: 'error', message: `The analysis worker stopped unexpectedly${ev.message ? `: ${ev.message}` : ''}. Very large captures can exceed the browser's memory.` });
     };
-    const init: ToWorker = { type: 'init', base: this.base(), wasmModule: this.wasmModule, data: this.data ? this.data.slice(0) : null };
-    w.postMessage(init);
+    const init: Extract<ToWorker, { type: 'init' }> = { type: 'init', base: this.base(), wasmModule: this.wasmModule, data: this.data ? this.data.slice(0) : null };
+    // If this browser cannot post the module, stop offering it: each worker compiles its own.
+    try {
+      if (!postWithModule((m) => w.postMessage(m), init)) this.wasmModule = null;
+    } catch (e) {
+      w.terminate();
+      throw e;
+    }
     return w;
   }
 
@@ -88,9 +96,20 @@ export class EngineClient {
   /** Opens a capture locally. Any previous capture and its worker are discarded. */
   open(file: File): void {
     this.close();
+    const missing = missingFeatures();
+    if (missing.length) {
+      this.listener({ kind: 'error', fileName: file.name, message: `This browser does not support ${missing.join(', ')}, which the analysis engine needs. Use ${SUPPORTED_BROWSERS}.` });
+      return;
+    }
+    try {
+      this.worker = this.spawn();
+    } catch (e) {
+      // Older browsers throw here for module workers.
+      this.listener({ kind: 'error', fileName: file.name, message: `This browser could not start the analysis worker (${e instanceof Error ? e.message : String(e)}). Use ${SUPPORTED_BROWSERS}.` });
+      return;
+    }
     this.currentFile = file;
     this.startedAt = performance.now();
-    this.worker = this.spawn();
     this.listenerProgress({ phase: this.wasmModule ? 'read' : 'engine', fraction: null, message: this.wasmModule ? 'Starting…' : 'Loading the Wireshark engine…' });
     const msg: ToWorker = { type: 'open', file };
     this.worker.postMessage(msg);

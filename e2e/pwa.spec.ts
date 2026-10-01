@@ -1,6 +1,6 @@
 // Copyright (C) 2026 Estudely and contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 
 // Installable offline app: the service worker caches the app shell and the
@@ -39,12 +39,24 @@ test('has a web app manifest with icons and a service worker scoped to the app d
   expect(scope).toBe(baseURL);
 });
 
-test('works offline after the first visit', async ({ page, context }) => {
+/**
+ * Cuts the page off from the server. In WebKit, Playwright's setOffline (and
+ * routing) block requests before the service worker sees them, so even cached
+ * files fail there; the test server is made unreachable instead.
+ */
+async function goOffline(context: BrowserContext, browserName: string, baseURL: string) {
+  if (browserName === 'webkit') await context.addCookies([{ name: 'epx-test-offline', value: '1', url: baseURL }]);
+  else await context.setOffline(true);
+}
+
+test('works offline after the first visit', async ({ page, context, browserName, baseURL }) => {
   await page.goto('./');
   await waitForOffline(page);
   await expect(page.getByTestId('offline-status')).toContainText(/MiB/);
 
-  await context.setOffline(true);
+  await goOffline(context, browserName, baseURL!);
+  // The server really is unreachable now (and not just slow).
+  expect(await page.evaluate(() => fetch('./sw.js', { cache: 'no-store' }).then(() => 'reached', () => 'unreachable'))).toBe('unreachable');
   await page.reload();
   await page.locator('input[type=file]').first().setInputFiles(fixture('dns.pcap'));
   await expect(page.locator('.cap-title h1')).toHaveText('dns.pcap');

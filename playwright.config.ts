@@ -14,10 +14,13 @@ export default defineConfig({
   expect: { timeout: 30_000 },
   fullyParallel: true,
   reporter: [['list']],
-  use: {
-    baseURL: url,
-    ...devices['Desktop Chrome'],
-  },
+  use: { baseURL: url },
+  // The same suite runs in all three engines. Pick one with --project.
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
+    { name: 'webkit', use: { ...devices['Desktop Safari'] } },
+  ],
   webServer: {
     command: 'node scripts/serve-subdir.mjs',
     url,

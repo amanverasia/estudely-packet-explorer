@@ -51,6 +51,13 @@ function headersFor(path) {
 createServer((req, res) => {
   const url = new URL(req.url ?? '/', 'http://x');
   if (!url.pathname.startsWith(base)) { res.writeHead(404).end('not found'); return; }
+  // Test hook for offline tests in WebKit, where Playwright's setOffline and
+  // routing also block requests the service worker would answer: a browser
+  // context with this cookie finds the server unreachable (connection reset).
+  if (/(?:^|;\s*)epx-test-offline=1(?:;|$)/.test(req.headers.cookie ?? '')) {
+    req.socket.destroy();
+    return;
+  }
   let rel = decodeURIComponent(url.pathname.slice(base.length));
   // Cloudflare's static assets redirect an explicit index.html to its
   // directory (307), so the service worker must never depend on that URL.
