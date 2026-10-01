@@ -17,13 +17,14 @@ Drop in a `.pcap` or `.pcapng` file and get organised views of its DNS lookups, 
 | **Overview** | Packets, duration, bytes, time range at the file's own precision, traffic over time by protocol, top talkers, largest conversations, protocol hierarchy, and data-quality notes (truncated, malformed or missing packets) |
 | **DNS** | Every query and response for DNS, mDNS, LLMNR and NBNS: names, record types, response codes, answers and response times. Queries are matched to responses, repeated queries are kept as separate rows, unanswered queries are counted, and a diagram shows which clients used which resolvers |
 | **HTTP** | HTTP/1.x and HTTP/2 requests paired with their responses: method, host, path, status and headers, grouped by host. Successfully decrypted rows are marked |
+| **Files** | Reassembled DICOM, HTTP, IMF, SMB and TFTP objects with protocol, host, name, type, size and packet; select Download to save a file |
 | **TLS** | Server names (SNI), offered and negotiated versions, cipher suites and ALPN, cleartext certificates, and per-session decryption status |
 | **Hosts** | Every IPv4 and IPv6 address with its MAC addresses and their registered vendor, traffic sent and received, peers, the ports others connected to (with the evidence seen), and names learned from the capture, each labelled with its source |
 | **Connections** | TCP and UDP sessions with traffic in each direction, timing and TCP flags, with drill-down into each session's protocol records and packets |
 | **Network** | An interactive graph of which hosts talked to which, sized by traffic and coloured by protocol |
 | **Packet list** | Wireshark's own packet list and display filters, with the full decode and hex bytes of any packet |
 
-Every table can be searched, sorted and exported as CSV, and the whole analysis can be saved as a JSON summary. Both are ordinary downloads.
+Every table can be searched, sorted and exported as CSV, and the whole analysis can be saved as a JSON summary. Both are ordinary downloads. Captured files are untrusted: the Files view never previews or opens contents, and saves an object only after you select Download.
 
 ## Decrypting TLS locally
 
@@ -68,8 +69,7 @@ Requires Node 20 or later. Hosting notes, including the security headers to set,
 
 ## Roadmap
 
-Planned work is tracked as [GitHub issues](https://github.com/amanverasia/estudely-packet-explorer/issues). Next up:
-- selecting a time range that filters every view
+Planned work is tracked as [GitHub issues](https://github.com/amanverasia/estudely-packet-explorer/issues). The next planned feature is a downloadable single-file HTML report.
 
 ## Licence and credits
 

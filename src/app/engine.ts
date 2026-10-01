@@ -5,6 +5,7 @@
 // whole WASM heap. The compiled engine module is kept and handed to the next
 // worker so the 19 MB download and compile happen once per page load.
 import type { AnalysisModel } from '../engine/types';
+import type { ExportObjectFile, ExportObjectRow } from '../engine/session';
 import type { Progress } from '../engine/session';
 import type { FromWorker, ToWorker, WorkerRequest, WorkerResponses } from '../worker/protocol';
 import { postWithModule } from '../worker/compat';
@@ -27,6 +28,8 @@ export class EngineClient {
   private data: ArrayBuffer | null = null;
   private nextId = 1;
   private pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
+  private exportObjectRows: ExportObjectRow[] | null = null;
+  private exportObjectsRequest: Promise<ExportObjectRow[]> | null = null;
   private listener: Listener;
   versions: { wireshark: string; wiregasm: string } | null = null;
 
@@ -120,6 +123,8 @@ export class EngineClient {
     if (this.worker) this.worker.terminate();
     this.worker = null;
     this.currentFile = null;
+    this.exportObjectRows = null;
+    this.exportObjectsRequest = null;
     for (const p of this.pending.values()) p.reject(new Error('Capture closed'));
     this.pending.clear();
   }
@@ -138,5 +143,21 @@ export class EngineClient {
       const msg: ToWorker = { type: 'request', id, req };
       w.postMessage(msg);
     });
+  }
+
+  exportObjects(): Promise<ExportObjectRow[]> {
+    if (this.exportObjectRows) return Promise.resolve(this.exportObjectRows);
+    if (!this.exportObjectsRequest) {
+      const request = this.request({ kind: 'exportObjects' });
+      this.exportObjectsRequest = request;
+      void request.then((rows) => { this.exportObjectRows = rows; }, () => {}).finally(() => {
+        if (this.exportObjectsRequest === request) this.exportObjectsRequest = null;
+      });
+    }
+    return this.exportObjectsRequest;
+  }
+
+  downloadExportObject(token: string): Promise<ExportObjectFile> {
+    return this.request({ kind: 'downloadObject', token });
   }
 }

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Messages exchanged between the UI thread and the analysis worker.
 import type { AnalysisModel, FollowStream, FrameDetails, PacketListPage, PacketRow } from '../engine/types';
-import type { Progress } from '../engine/session';
+import type { ExportObjectFile, ExportObjectRow, Progress } from '../engine/session';
 
 export type ToWorker =
   | { type: 'init'; base: string; wasmModule: WebAssembly.Module | null; data: ArrayBuffer | null }
@@ -14,7 +14,9 @@ export type WorkerRequest =
   | { kind: 'packetList'; filter: string; skip: number; limit: number }
   | { kind: 'checkFilter'; filter: string }
   | { kind: 'rows'; convId?: number; frames?: number[]; limit?: number }
-  | { kind: 'follow'; transport: 'TCP' | 'UDP'; stream: number; maxBytes?: number; maxSegments?: number };
+  | { kind: 'follow'; transport: 'TCP' | 'UDP'; stream: number; maxBytes?: number; maxSegments?: number }
+  | { kind: 'exportObjects' }
+  | { kind: 'downloadObject'; token: string };
 
 export interface WorkerResponses {
   frame: FrameDetails;
@@ -22,6 +24,8 @@ export interface WorkerResponses {
   checkFilter: { ok: boolean; error: string };
   rows: { rows: PacketRow[]; total: number };
   follow: FollowStream;
+  exportObjects: ExportObjectRow[];
+  downloadObject: ExportObjectFile;
 }
 
 export type FromWorker =

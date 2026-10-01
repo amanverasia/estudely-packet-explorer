@@ -25,10 +25,11 @@ const Arp = lazy(() => import('./views/Arp').then((m) => ({ default: m.Arp })));
 const Icmp = lazy(() => import('./views/Icmp').then((m) => ({ default: m.Icmp })));
 const Ssh = lazy(() => import('./views/Ssh').then((m) => ({ default: m.Ssh })));
 const Quic = lazy(() => import('./views/Quic').then((m) => ({ default: m.Quic })));
+const Files = lazy(() => import('./views/Files').then((m) => ({ default: m.Files })));
 
 export const LOCAL_NOTICE = 'Your capture is processed locally in your browser.';
 
-const VIEWS = ['overview', 'dns', 'http', 'tls', 'hosts', 'connections', 'network', 'packets', 'dhcp', 'arp', 'icmp', 'ssh', 'quic'] as const;
+const VIEWS = ['overview', 'dns', 'http', 'files', 'tls', 'hosts', 'connections', 'network', 'packets', 'dhcp', 'arp', 'icmp', 'ssh', 'quic'] as const;
 type View = (typeof VIEWS)[number];
 
 function parseHash(): { view: View; params: URLSearchParams } {
@@ -279,6 +280,7 @@ function Workspace(props: {
     { id: 'overview', label: 'Overview' },
     { id: 'dns', label: 'DNS', count: model.dns.length, total: sourceModel.dns.length },
     { id: 'http', label: 'HTTP', count: model.http.length, total: sourceModel.http.length },
+    { id: 'files', label: 'Files' },
     { id: 'tls', label: 'TLS', count: model.tls.length, total: sourceModel.tls.length },
     { id: 'quic', label: 'QUIC', count: model.quic.length, total: sourceModel.quic.length },
     { id: 'ssh', label: 'SSH', count: model.ssh.length, total: sourceModel.ssh.length },
@@ -293,6 +295,7 @@ function Workspace(props: {
   switch (view) {
     case 'dns': body = <Dns key={props.params.toString()} />; break;
     case 'http': body = <Http />; break;
+    case 'files': body = <Files />; break;
     case 'tls': body = <Tls />; break;
     case 'hosts': body = <Hosts key={props.params.toString()} />; break;
     case 'connections': body = <Connections key={props.params.toString()} />; break;

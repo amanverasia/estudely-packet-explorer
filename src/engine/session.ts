@@ -10,9 +10,11 @@ import { protoName, topProtocol } from './analyze';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export interface WgVector<T> { size(): number; get(i: number): T; delete?(): void }
+export interface WgMapInput { set(key: string, value: string): void; delete?(): void }
 export interface WiregasmModule {
   FS: any;
   DissectSession: new (path: string) => any;
+  MapInput: new () => WgMapInput;
   init(): boolean;
   getPluginsDirectory(): string;
   getUploadDirectory(): string;
@@ -21,6 +23,23 @@ export interface WiregasmModule {
   checkFilter(filter: string): { ok: boolean; error: string };
   setPref(module: string, key: string, value: string): { code: number; error: string };
   applyPreferences(): void;
+}
+
+export interface ExportObjectRow {
+  token: string;
+  protocol: string;
+  host: string | null;
+  hostAddresses: string[];
+  name: string | null;
+  contentType: string | null;
+  size: number;
+  packet: number;
+  relativeTime: number | null;
+}
+
+export interface ExportObjectFile {
+  fileName: string;
+  bytes: Uint8Array<ArrayBuffer>;
 }
 
 export type ProgressPhase = 'engine' | 'read' | 'load' | 'extract' | 'parse' | 'analyze';
@@ -36,6 +55,13 @@ const OUT_PATH = '/estx/out.tsv';
 const ARM_PATH = '/estx/arm';
 const DONE_PATH = '/estx/done';
 const TLS_KEYLOG_PATH = '/estx/tls-keys.log';
+const EXPORT_OBJECT_TAPS = [
+  { tap: 'eo:dicom', label: 'DICOM' },
+  { tap: 'eo:http', label: 'HTTP' },
+  { tap: 'eo:imf', label: 'IMF' },
+  { tap: 'eo:smb', label: 'SMB' },
+  { tap: 'eo:tftp', label: 'TFTP' },
+] as const;
 
 /** Install the Lua extractor. Must run before lib.init(). */
 export function installExtractor(lib: WiregasmModule, luaSource: string): void {
@@ -82,7 +108,7 @@ function b64Length(b64: string): number {
 export const FOLLOW_MAX_BYTES = 512 * 1024;
 export const FOLLOW_MAX_SEGMENTS = 5000;
 
-function b64ToBytes(b64: string): Uint8Array {
+function b64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
@@ -257,6 +283,80 @@ export class CaptureSession {
       client: known ? { addr: res.chost, port: port(res.cport) } : null,
       server: known ? { addr: res.shost, port: port(res.sport) } : null,
       clientBytes, serverBytes, totalSegments: payloads.length, data, segments, truncated,
+    };
+  }
+
+  /** Metadata for Wireshark's export-object taps. Payloads stay inside WASM until a file is selected. */
+  exportObjects(): ExportObjectRow[] {
+    if (!this.sess || !this.index) throw new Error('No capture is open.');
+    const input = new this.lib.MapInput();
+    for (let i = 0; i < EXPORT_OBJECT_TAPS.length; i++) input.set(`tap${i}`, EXPORT_OBJECT_TAPS[i].tap);
+
+    const raw: { token: string; protocol: string; host: string | null; name: string | null; contentType: string | null; size: number; packet: number }[] = [];
+    let response: any;
+    try {
+      response = this.sess.tap(input);
+    } finally {
+      free(input);
+    }
+    if (response.error) {
+      free(response.taps);
+      throw new Error(`Wireshark could not scan exported files: ${response.error}`);
+    }
+    const taps = vec<any>(response.taps);
+    free(response.taps);
+    for (const tap of taps) {
+      try {
+        const objects = vec<any>(tap.objects);
+        free(tap.objects);
+        for (const object of objects) {
+          const token = String(object._download ?? '');
+          const packet = Number(object.pkt);
+          if (!/^eo:[a-z0-9_-]+_\d+$/i.test(token) || !Number.isInteger(packet) || packet < 1) continue;
+          raw.push({
+            token,
+            protocol: String(tap.proto || EXPORT_OBJECT_TAPS.find((item) => item.tap === tap.tap)?.label || 'Unknown').toUpperCase(),
+            host: typeof object.hostname === 'string' && object.hostname ? object.hostname : null,
+            name: typeof object.filename === 'string' && object.filename ? object.filename : null,
+            contentType: typeof object.type === 'string' && object.type ? object.type : null,
+            size: Math.max(0, Number(object.len) || 0),
+            packet,
+          });
+        }
+      } finally {
+        free(tap);
+      }
+    }
+
+    const needed = new Set(raw.map((object) => object.packet));
+    const packetInfo = new Map<number, { time: number; hosts: string[] }>();
+    for (const packet of this.index.packets) {
+      if (!needed.has(packet.frame)) continue;
+      const hosts = [...new Set([packet.src || packet.ethSrc, packet.dst || packet.ethDst].filter(Boolean))];
+      packetInfo.set(packet.frame, { time: packet.t, hosts });
+    }
+    return raw.map((object) => {
+      const info = packetInfo.get(object.packet);
+      const endpointLabel = info?.hosts.join(' → ') || null;
+      return {
+        ...object,
+        host: object.host || endpointLabel,
+        hostAddresses: info?.hosts ?? [],
+        relativeTime: info?.time ?? null,
+      };
+    });
+  }
+
+  /** Decode only the selected object's bytes for a download initiated by the user. */
+  downloadExportObject(token: string): ExportObjectFile {
+    if (!this.sess) throw new Error('No capture is open.');
+    if (!/^eo:[a-z0-9_-]+_\d+$/i.test(token)) throw new Error('Invalid exported-file token.');
+    const response = this.sess.download(token);
+    if (response.error) throw new Error(`Wireshark could not retrieve this file: ${response.error}`);
+    if (!response.download || typeof response.download.data !== 'string') throw new Error('Wireshark did not return this file.');
+    return {
+      fileName: typeof response.download.file === 'string' ? response.download.file : '',
+      bytes: b64ToBytes(response.download.data),
     };
   }
 

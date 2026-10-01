@@ -34,6 +34,10 @@ Wiregasm compiles Wireshark's `epan` dissectors and `libwiretap` file readers to
 
 Alternatives considered: a hand-written TypeScript parser (small, fast, but would need its own TCP reassembly, IP defragmentation, DNS-over-TCP framing, HTTP reassembly, TLS record/handshake reassembly, QUIC Initial decryption and dozens of link types — exactly the things the brief says not to approximate); and per-packet `getFrame()` tree walking (correct but ~100× slower and memory-heavy). Wiregasm with a Lua extractor keeps Wireshark's correctness while producing compact output.
 
+## Exported files
+
+The Files view uses Wiregasm's export-object taps for DICOM, HTTP, IMF, SMB and TFTP. A tap returns object metadata and an opaque download token; file payloads stay in Wiregasm's worker memory. When the user chooses Download, the worker asks `DissectSession.download(token)` for only that object's bytes and transfers those bytes to the page as a one-time download. The page uses an `application/octet-stream` Blob and a download link; it does not put captured content into the DOM, preview it, or execute it. The capture remains local to the browser.
+
 ## The extraction pass (the key integration detail)
 
 `load()` dissects every packet once **without** building protocol trees (`lib.cpp`, `load_cap_file`: a tree is built only if a postdissector registered wanted hfids, which Lua postdissectors do not do). Lua `Field` extractors therefore return nothing during `load()`.
