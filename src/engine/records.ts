@@ -66,6 +66,11 @@ export interface RawHttp {
   headers: string[];
   server: string | null;
   location: string | null;
+  /** Wireshark's frame links; request_in is on responses, response_in on requests. */
+  requestIn: number | null;
+  responseIn: number | null;
+  /** HTTP/2 stream id within the TCP conversation; null for HTTP/1.x. */
+  http2StreamId: number | null;
 }
 
 export interface RawTls {
@@ -303,7 +308,15 @@ export function parseRecords(buf: Uint8Array, onProgress?: (fraction: number) =>
           frame: Number(c[1]), kind: c[2] === 'req' ? 'req' : 'resp', method: str(c[3]), uri: str(c[4]), version: str(c[5]),
           host: str(c[6]), userAgent: str(c[7]), code: int(c[8]), phrase: str(c[9]), contentType: str(c[10]),
           contentLength: str(c[11]), headers: list(c[12]).map((h) => h.replace(/\r?\n$/, '')), server: str(c[13]),
-          location: str(c[14]),
+          location: str(c[14]), requestIn: int(c[15]), responseIn: int(c[16]), http2StreamId: null,
+        });
+        break;
+      case 'J':
+        out.http.push({
+          frame: Number(c[1]), kind: c[2] === 'req' ? 'req' : 'resp', method: str(c[4]), uri: str(c[5]), version: 'HTTP/2',
+          host: str(c[6]), code: int(c[7]), userAgent: str(c[8]), contentType: str(c[9]), contentLength: str(c[10]),
+          headers: list(c[11]), server: str(c[12]), location: str(c[13]), requestIn: int(c[14]), responseIn: int(c[15]),
+          http2StreamId: int(c[3]), phrase: null,
         });
         break;
       case 'T':

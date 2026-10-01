@@ -6,7 +6,7 @@
 |---|---|---|
 | Overview | Packets, duration, bytes on wire vs captured, file size, hosts, conversations, time range (UTC, file precision), interfaces, traffic over time (bytes or packets, stacked by top protocol), protocol distribution, top talkers, largest conversations, protocol hierarchy, data-quality notes | Every packet |
 | DNS | DNS / mDNS / LLMNR / NBNS tabs; transactions with client, server, name, type, response code, answers, status, response time; counts by name, type, response code; unanswered and repeated queries; client→resolver diagram | `dns.*`, `nbns.*` fields |
-| HTTP | HTTP/1.x requests: method, host, path, status, content type/length, request and response headers, pairing state; counts by host, method, status; explanations for encrypted or undecoded traffic | `http.*` fields after Wireshark reassembly |
+| HTTP | HTTP/1.x and HTTP/2 requests: method, host, path, status, content type/length, request and response headers, pairing state; HTTP/2 stream IDs; counts by host, method, status; explanations for encrypted or undecoded traffic | `http.*` and decoded `http2.*` header fields |
 | TLS | ClientHello SNI, offered versions, ALPN and cipher suites; ServerHello negotiated version (and where it came from), cipher, ALPN; cleartext certificates (subject, issuer, validity, SAN, serial, algorithms, SHA-256) | `tls.handshake.*` fields, also in QUIC Initial packets |
 | QUIC | Per UDP conversation: versions in long headers, versions listed by Version Negotiation, SNI and offered ALPN from the Initial ClientHello, QUIC packet count | `quic.version`, `quic.supported_version`, `tls.handshake.*` |
 | SSH | Client and server identification strings per TCP session | `ssh.protocol`, `ssh.direction` |
@@ -39,11 +39,11 @@ Not supported: live capture, files over 1 GiB (refused), files Wireshark cannot 
 
 ## Known limitations
 
-- **HTTP/2 and HTTP/3 are not turned into request rows.** Cleartext HTTP/2 packets are counted and can be inspected in the packet list; HTTP/3 is inside QUIC encryption.
+- **HTTP/3 is not turned into request rows.** HTTP/2 rows are available when Wireshark reconstructs a request or response header block. HTTP/2 inside TLS remains encrypted until decryption is configured.
 - **No decryption.** TLS application data, TLS 1.3 certificates, QUIC beyond the Initial packets, DoH/DoT stay encrypted. No key-log support yet.
-- HTTP pairing is FIFO per TCP stream; if a request is missing from the capture, later pairs in that stream can shift. Streams with gaps are called out.
+- HTTP uses Wireshark's request/response frame links when available and falls back to stream order otherwise. Disagreements with stream order are flagged; a bad link reported by Wireshark can still mispair a response.
 - DNS responses are matched only within 60 s of the query.
-- In the rare case of several DNS/HTTP messages in one packet spread across different reassembled buffers, the field-to-message split uses byte offsets and could mis-assign fields.
+- In the rare case of several DNS/HTTP messages in one packet where a field has no source Tvb, its offset cannot be checked against a specific reassembly buffer and may be assigned ambiguously.
 - Names are only those seen in the capture (no reverse DNS, no GeoIP). MAC vendors come from Wireshark's offline OUI table and describe the network interface's maker, not the device.
 - Ports listed for a host are traffic observations, not open-port confirmations. No OS or device identification is done.
 - Performance is roughly 8–10k packets/second on a laptop core; captures above ~1–2 million packets may exhaust the 2 GiB WASM heap.

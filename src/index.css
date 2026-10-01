@@ -7,13 +7,14 @@
 @import '@fontsource/ibm-plex-mono/500.css';
 
 :root {
+  /* Text and chart colors are tuned for contrast against the light surfaces. */
   color-scheme: light;
   --bg: #eef1f4;
   --panel: #ffffff;
   --panel-2: #f6f8fa;
   --ink: #14191f;
   --ink-2: #4c5663;
-  --ink-3: #6f7a86;
+  --ink-3: #626d79;
   --rule: #dbe1e7;
   --scroll-shadow: rgba(16, 24, 32, .18);
   --rule-strong: #c3ccd5;
@@ -30,9 +31,9 @@
   --crit-bg: #fbe5e5;
   --info-bg: #e5eef9;
   --info-ink: #1d4a85;
-  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
-  --s5: #e87ba4; --s6: #008300; --s7: #4a3aa7; --s8: #e34948;
-  --s-other: #9aa3ad;
+  --s1: #2a78d6; --s2: #cf572a; --s3: #147a56; --s4: #9a6500;
+  --s5: #b54c73; --s6: #008300; --s7: #4a3aa7; --s8: #e34948;
+  --s-other: #707983;
   --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   --sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --sidebar: 232px;
@@ -140,7 +141,7 @@ p { margin: 0; }
 .nav a[aria-current='page'] { background: var(--accent-soft); color: var(--ink); }
 .nav a[aria-current='page'] .nav-mark { background: var(--accent); }
 .nav-mark { width: 3px; height: 16px; border-radius: 2px; background: transparent; margin-left: -6px; }
-.nav-count { margin-left: auto; font: 400 12px var(--mono); color: var(--ink-3); }
+.nav-count { margin-left: auto; font: 400 12px var(--mono); color: var(--ink-2); }
 .nav-sep { height: 1px; background: var(--rule); margin: 10px 6px; }
 .sidebar-foot { margin-top: auto; padding: 14px 8px 0; font-size: 12px; color: var(--ink-3); display: grid; gap: 8px; }
 .local-note { display: flex; gap: 8px; align-items: flex-start; color: var(--ink-2); }
@@ -279,9 +280,9 @@ p { margin: 0; }
 .tree ul { list-style: none; margin: 0; padding-left: 16px; }
 .tree > ul { padding-left: 0; }
 .tree li { margin: 0; }
-.tree .node { display: flex; gap: 4px; align-items: flex-start; padding: 2px 4px; border-radius: 4px; cursor: pointer; overflow-wrap: anywhere; }
+.tree .node { display: flex; gap: 4px; align-items: flex-start; padding: 2px 4px; border: 0; border-radius: 4px; width: 100%; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
 .tree .node:hover { background: var(--hover); }
-.tree .node[aria-selected='true'] { background: var(--select); }
+.tree .node[aria-pressed='true'] { background: var(--select); }
 .tree .twisty { width: 14px; flex: none; color: var(--ink-3); text-align: center; }
 .hex { font: 12px/1.6 var(--mono); white-space: pre; overflow-x: auto; background: var(--panel-2); border: 1px solid var(--rule); border-radius: 6px; padding: 10px 12px; }
 .hex mark { background: var(--accent-soft); color: var(--ink); outline: 1px solid var(--accent); }
@@ -316,6 +317,16 @@ p { margin: 0; }
 .graph-wrap svg { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
 .graph-side { position: absolute; top: 12px; right: 12px; width: min(320px, calc(100% - 24px)); max-height: calc(100% - 24px); overflow: auto; background: var(--panel); border: 1px solid var(--rule-strong); border-radius: 8px; padding: 12px 14px; display: grid; gap: 10px; box-shadow: 0 6px 20px rgba(0,0,0,.12); }
 .graph-node text { font-size: 11px; fill: var(--ink-2); pointer-events: none; paint-order: stroke; stroke: var(--panel); stroke-width: 3px; }
+.network-list summary { cursor: pointer; padding: 12px 16px; font-weight: 500; }
+.network-list[open] summary { border-bottom: 1px solid var(--rule); }
+.network-list > p { padding: 10px 16px; font-size: 13px; }
+.network-table-wrap { overflow-x: auto; }
+.network-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.network-table th, .network-table td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+.network-table th { font-weight: 500; color: var(--ink-2); }
+.network-table tbody th { font-family: var(--mono); font-size: 12px; color: var(--ink); }
+.network-table tbody tr:last-child th, .network-table tbody tr:last-child td { border-bottom: 0; }
+.network-table .btn { vertical-align: middle; }
 
 @media (max-width: 1100px) {
   .grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }

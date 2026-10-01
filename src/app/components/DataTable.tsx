@@ -109,7 +109,7 @@ export function DataTable<T>(props: Props<T>) {
         <div className="empty">{empty}</div>
       ) : (
         <div className="dt-scroll" ref={scrollRef} style={{ maxHeight: height }} role="grid" aria-label={label} aria-rowcount={view.length + 1}>
-          <div className="dt-grid">
+          <div className="dt-grid" role="presentation">
             <div className="dt-row dt-head" role="row" style={{ gridTemplateColumns: template }}>
               {columns.map((c) => (
                 <div
@@ -126,7 +126,7 @@ export function DataTable<T>(props: Props<T>) {
                 </div>
               ))}
             </div>
-            <div className="dt-body" style={{ height: virt.getTotalSize(), position: 'relative' }}>
+            <div className="dt-body" role="rowgroup" style={{ height: virt.getTotalSize(), position: 'relative' }}>
               {view.length === 0 && (
                 <div className="empty">No rows match “{deferred}”.</div>
               )}

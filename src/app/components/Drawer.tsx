@@ -14,14 +14,46 @@ export function Drawer({ spec, onClose }: { spec: DrawerSpec; onClose: () => voi
   const [error, setError] = useState<string | null>(null);
   const [sel, setSel] = useState<ProtoTreeNode | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLElement>(null);
+  const onCloseRef = useRef(onClose);
+  const returnFocusRef = useRef<HTMLElement | null>(document.activeElement instanceof HTMLElement ? document.activeElement : null);
 
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
   useEffect(() => { setCurrent(spec.focus ?? frames[0]); }, [spec, frames]);
   useEffect(() => {
     closeRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCloseRef.current(); };
+    const onTab = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+      const dialog = dialogRef.current;
+      if (!dialog) return;
+      const items = [...dialog.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])')]
+        .filter((el) => el.offsetParent !== null);
+      if (!items.length) {
+        e.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = items[0], last = items[items.length - 1];
+      if (!dialog.contains(document.activeElement)) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+      } else if (e.shiftKey && (document.activeElement === first || document.activeElement === dialog)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+    window.addEventListener('keydown', onTab);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keydown', onTab);
+      returnFocusRef.current?.focus();
+    };
+  }, []);
   useEffect(() => {
     engine.request({ kind: 'rows', frames: frames.slice(0, 500) }).then((r) => setRows(new Map(r.rows.map((x) => [x.frame, x])))).catch(() => {});
   }, [engine, frames]);
@@ -42,11 +74,11 @@ export function Drawer({ spec, onClose }: { spec: DrawerSpec; onClose: () => voi
   return (
     <>
       <div className="drawer-backdrop" onClick={onClose} />
-      <aside className="drawer" role="dialog" aria-modal="true" aria-label={`Packet details: ${spec.title}`}>
+      <aside ref={dialogRef} className="drawer" role="dialog" aria-modal="true" aria-label={`Packet details: ${spec.title}`} aria-describedby="drawer-description" tabIndex={-1}>
         <div className="drawer-head">
           <div style={{ minWidth: 0, flex: 1 }}>
             <h2 style={{ fontSize: 16, overflowWrap: 'anywhere' }}>{spec.title}</h2>
-            <p className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+            <p id="drawer-description" className="muted" style={{ fontSize: 12, marginTop: 2 }}>
               Source packets this record was derived from. Fields below are Wireshark's decode of the selected packet.
             </p>
           </div>
@@ -76,13 +108,13 @@ export function Drawer({ spec, onClose }: { spec: DrawerSpec; onClose: () => voi
               </dl>
             </section>
           )}
-          {error && <div className="note crit">{error}</div>}
-          {!details && !error && <div className="muted">Decoding packet #{current}…</div>}
+          {error && <div className="note crit" role="alert">{error}</div>}
+          {!details && !error && <div className="muted" role="status">Decoding packet #{current}…</div>}
           {details && (
             <>
               <section className="tree" aria-label="Decoded fields">
                 <h3 style={{ marginBottom: 6 }}>Decoded fields</h3>
-                <ul role="tree">
+                <ul>
                   {details.tree.map((n, i) => <TreeNode key={i} node={n} depth={0} sel={sel} onSel={setSel} />)}
                 </ul>
                 {details.truncatedTree && <p className="muted">The field tree was cut off at 20,000 entries.</p>}
@@ -113,13 +145,13 @@ function TreeNode({ node, depth, sel, onSel }: { node: ProtoTreeNode; depth: num
   const [open, setOpen] = useState(depth === 0 && node.children.length < 40 && !/^(Frame|Ethernet)/.test(node.label));
   const has = node.children.length > 0;
   return (
-    <li role="treeitem" aria-expanded={has ? open : undefined} aria-selected={sel === node}>
-      <div className="node" aria-selected={sel === node} onClick={() => { onSel(node); if (has) setOpen(!open); }}
-        tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSel(node); if (has) setOpen(!open); } }}>
+    <li>
+      <button type="button" className="node" aria-expanded={has ? open : undefined} aria-pressed={sel === node}
+        onClick={() => { onSel(node); if (has) setOpen(!open); }}>
         <span className="twisty" aria-hidden="true">{has ? (open ? '▾' : '▸') : ''}</span>
         <span>{node.label}</span>
-      </div>
-      {has && open && <ul role="group">{node.children.map((c, i) => <TreeNode key={i} node={c} depth={depth + 1} sel={sel} onSel={onSel} />)}</ul>}
+      </button>
+      {has && open && <ul>{node.children.map((c, i) => <TreeNode key={i} node={c} depth={depth + 1} sel={sel} onSel={onSel} />)}</ul>}
     </li>
   );
 }

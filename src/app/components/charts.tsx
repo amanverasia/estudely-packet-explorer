@@ -103,7 +103,7 @@ export function TimeChart({ timeline, metric, height = 220, colors }: { timeline
             {Array.from({ length: n }, (_, i) => {
               let acc = 0;
               return (
-                <g key={i} opacity={hover === null || hover === i ? 1 : 0.55}>
+                <g key={i}>
                   {series.map((s) => {
                     const v = (metric === 'packets' ? s.packets : s.bytes)[i];
                     if (!v) return null;
@@ -235,7 +235,7 @@ export function FlowChart({ links, leftLabel, rightLabel, onPick }: {
             const active = hover === null || hover === e.left || hover === e.right;
             return (
               <path key={e.left + e.right} d={`M${x1},${yL(e.left)} C${(x1 + x2) / 2},${yL(e.left)} ${(x1 + x2) / 2},${yR(e.right)} ${x2},${yR(e.right)}`}
-                stroke="var(--s1)" strokeOpacity={active ? 0.55 : 0.12} fill="none" strokeWidth={1.5 + (e.value / maxV) * 10}
+                stroke="var(--s1)" fill="none" strokeWidth={active ? 1.5 + (e.value / maxV) * 10 : 1.5}
                 style={{ cursor: onPick ? 'pointer' : undefined }} onClick={() => onPick?.(e.left, e.right)}>
                 <title>{`${e.left} → ${e.right}: ${num(e.value)} queries`}</title>
               </path>

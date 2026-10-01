@@ -2,9 +2,22 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 import { expect, test, type Page, type Request } from '@playwright/test';
 import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const fixture = (name: string) => fileURLToPath(new URL(`../fixtures/${name}`, import.meta.url));
+const axeScript = join(dirname(fileURLToPath(import.meta.url)), '../node_modules/axe-core/axe.min.js');
+
+async function auditA11y(page: Page, label: string) {
+  const violations = await page.evaluate(async (auditLabel) => {
+    const axe = (window as unknown as { axe: { run: (target: Document, options: unknown) => Promise<{ violations: { id: string; impact: string; description: string; nodes: { target: string[] }[] }[] }> } }).axe;
+    const { violations } = await axe.run(document, {
+      runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] },
+    });
+    return violations.map((v) => ({ id: v.id, impact: v.impact, description: `${auditLabel}: ${v.description}`, targets: v.nodes.map((n) => n.target) }));
+  }, label);
+  expect(violations, JSON.stringify(violations, null, 2)).toEqual([]);
+}
 
 /** Records every request so tests can assert nothing leaves the origin. */
 function watchRequests(page: Page) {
@@ -40,6 +53,35 @@ test('shows the local-processing notice before any file is chosen', async ({ pag
   await page.goto('./');
   await expect(page.getByText('Your capture is processed locally in your browser.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Choose capture file' })).toBeVisible();
+});
+
+test('axe WCAG 2.1 AA audit: start screen, every view and drawer in light and dark themes', async ({ page }) => {
+  await page.route('**/axe-for-test.js', (route) => route.fulfill({
+    contentType: 'application/javascript',
+    body: readFileSync(axeScript, 'utf8'),
+  }));
+  await page.goto('./');
+  await page.addScriptTag({ url: './axe-for-test.js' });
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate((value) => { document.documentElement.dataset.theme = value; }, theme);
+    await auditA11y(page, `start screen (${theme})`);
+  }
+  await openCapture(page, 'http.pcap');
+
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate((value) => { document.documentElement.dataset.theme = value; }, theme);
+    for (const id of ['overview', 'dns', 'http', 'tls', 'quic', 'ssh', 'dhcp', 'arp', 'icmp', 'hosts', 'connections', 'network', 'packets']) {
+      await view(page, id);
+      await expect(page.locator('.view-head h2').first()).toBeVisible();
+      await auditA11y(page, `${id} (${theme})`);
+    }
+
+    await view(page, 'http');
+    await page.getByRole('grid', { name: 'HTTP messages' }).getByText('/index.html').click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await auditA11y(page, `HTTP drawer (${theme})`);
+    await page.keyboard.press('Escape');
+  }
 });
 
 test('DNS capture: overview, DNS dashboard and packet drawer, with no uploads', async ({ page }) => {
@@ -86,7 +128,7 @@ test('HTTP capture: requests, hosts, sessions, graph and packet list', async ({ 
   await openCapture(page, 'http.pcap');
 
   await view(page, 'http');
-  const http = page.getByRole('grid', { name: 'HTTP requests' });
+  const http = page.getByRole('grid', { name: 'HTTP messages' });
   await expect(http.getByRole('row')).toHaveCount(6);
   for (const s of ['200', '401', '404', '304']) await expect(http).toContainText(s);
   await expect(http).toContainText('no response seen');
@@ -124,6 +166,32 @@ test('HTTP capture: requests, hosts, sessions, graph and packet list', async ({ 
   expect(errs).toEqual([]);
 });
 
+test('HTTP/2 h2c capture: table rows and request/status aggregates', async ({ page }) => {
+  await page.goto('./');
+  await openCapture(page, 'http2.pcap');
+  await view(page, 'http');
+
+  const facts = page.locator('.facts');
+  await expect(facts.getByText('Requests', { exact: true }).locator('..')).toContainText('2');
+  await expect(facts.getByText('Hosts requested', { exact: true }).locator('..')).toContainText('1');
+  const methods = page.locator('.panel').filter({ has: page.getByRole('heading', { name: 'Methods' }) });
+  await expect(methods).toContainText('GET');
+  await expect(methods).toContainText('POST');
+  const statuses = page.locator('.panel').filter({ has: page.getByRole('heading', { name: 'Status codes' }) });
+  await expect(statuses).toContainText('200');
+  await expect(statuses).toContainText('404');
+
+  const table = page.getByRole('grid', { name: 'HTTP messages' });
+  await expect(table.getByRole('row')).toHaveCount(3);
+  await expect(table).toContainText('HTTP/2');
+  await expect(table).toContainText('h2.example.test');
+  await expect(table).toContainText('/first');
+  await expect(table).toContainText('/second');
+  await table.getByText('/second').click();
+  await expect(page.getByRole('dialog')).toContainText('HTTP/2 stream');
+  await expect(page.getByRole('dialog')).toContainText('3');
+});
+
 test('TLS capture: offered vs negotiated, certificates, and empty DNS/HTTP states', async ({ page }) => {
   await page.goto('./');
   await openCapture(page, 'tls.pcap');
@@ -145,7 +213,7 @@ test('TLS capture: offered vs negotiated, certificates, and empty DNS/HTTP state
   await view(page, 'dns');
   await expect(page.getByText('No DNS, mDNS, LLMNR or NBNS messages were decoded.')).toBeVisible();
   await view(page, 'http');
-  await expect(page.getByText('No cleartext HTTP/1.x messages were decoded.')).toBeVisible();
+  await expect(page.getByText('No cleartext HTTP/1.x or HTTP/2 messages were decoded.')).toBeVisible();
   await expect(page.getByText(/3 conversations use TLS or QUIC/)).toBeVisible();
 });
 

@@ -16,6 +16,7 @@
 --   D num proto id isresp opcode rcode qname qtype qclass ancount nscount arcount rrs(list of sec|name|type|ttl|value) flags
 --   N num id isresp opcode rcode names(list) addrs(list) qtype
 --   H num kind method uri version host ua code phrase ctype clen headers(list) server location
+--   J num kind streamid method path authority status ua ctype clen headers(list) server location request_in response_in
 --   T num carrier hstype version sni alpn(list) supver(list) ciphers(list) certs(list hex) recver
 --   A num opcode srcmac srcip dstmac dstip
 --   C num msgtype chaddr hostname yiaddr reqip xid serverid leasetime mask routers(list) dns(list)
@@ -72,6 +73,16 @@ local f = {
   http_phrase = F("http.response.phrase"), http_respver = F("http.response.version"), http_ctype = F("http.content_type"),
   http_clen = F("http.content_length_header"), http_reqline = F("http.request.line"), http_respline = F("http.response.line"),
   http_server = F("http.server"), http_location = F("http.location"),
+  http_request_in = F("http.request_in"), http_response_in = F("http.response_in"),
+  -- HTTP/2
+  h2_streamid = F("http2.streamid"), h2_type = F("http2.type"), h2_flags = F("http2.flags"),
+  h2_method = F("http2.headers.method"), h2_path = F("http2.headers.path"),
+  h2_authority = F("http2.headers.authority"), h2_status = F("http2.headers.status"),
+  h2_name = F("http2.header.name"), h2_value = F("http2.header.value"),
+  h2_header_count = F("http2.header.count"),
+  h2_ua = F("http2.headers.user_agent"), h2_ctype = F("http2.headers.content_type"),
+  h2_clen = F("http2.headers.content_length"), h2_server = F("http2.headers.server"),
+  h2_location = F("http2.headers.location"), h2_request_in = F("http2.request_in"), h2_response_in = F("http2.response_in"),
   -- TLS handshakes (also used by QUIC Initial packets, which Wireshark can decode)
   tls_hstype = F("tls.handshake.type"), tls_hsver = F("tls.handshake.version"), tls_sni = F("tls.handshake.extensions_server_name"),
   tls_alpn = F("tls.handshake.extensions_alpn_str"), tls_supver = F("tls.handshake.extensions.supported_version"),
@@ -143,13 +154,19 @@ local function vals(fis, display)
 end
 
 -- Assign field instances to the message (anchor) whose byte range contains them.
--- Anchors are proto items (DNS/HTTP messages) or handshake-type fields (TLS).
+-- Offsets are local to a Tvb, so only compare them when both fields came from
+-- the same data source. A nil source has no identity to compare, so retain the
+-- offset fallback in that case.
 local function anchors_from(list)
   table.sort(list, function(a, b) return a.offset < b.offset end)
   return list
 end
 
-local function bucket(anchors, fis, by_start)
+local function same_source(anchor, fi)
+  return anchor.source == nil or fi.source == nil or anchor.source == fi.source
+end
+
+local function bucket(anchors, fis, by_start, include_generated)
   local n = #anchors
   local out = {}
   for i = 1, n do out[i] = {} end
@@ -157,18 +174,25 @@ local function bucket(anchors, fis, by_start)
   for _, fi in ipairs(fis) do
     -- Synthetic (generated, zero-length) items have no meaningful offset.
     -- Some real fields are flagged generated too (e.g. dns.id on unanswered queries).
-    if not (fi.generated and fi.len == 0) then
-      local idx = 1
-      if n > 1 then
-        idx = nil
-        local off = fi.offset
-        if by_start then
-          for i = n, 1, -1 do if off >= anchors[i].offset then idx = i break end end
-          idx = idx or 1
-        else
-          for i = 1, n do
-            local a = anchors[i]
-            if off >= a.offset and off < a.offset + math.max(a.len, 1) then idx = i break end
+    if include_generated or not (fi.generated and fi.len == 0) then
+      local idx = nil
+      local off = fi.offset
+      if by_start then
+        local first
+        for i = n, 1, -1 do
+          local a = anchors[i]
+          if same_source(a, fi) then
+            first = i
+            if off >= a.offset then idx = i break end
+          end
+        end
+        idx = idx or first
+      else
+        for i = 1, n do
+          local a = anchors[i]
+          if same_source(a, fi) and (n == 1 or (off >= a.offset and off < a.offset + math.max(a.len, 1))) then
+            idx = i
+            break
           end
         end
       end
@@ -217,7 +241,7 @@ end
 local function emit_dns(w, num)
   local anchors = {}
   for _, pair in ipairs({ { f.p_dns, "dns" }, { f.p_mdns, "mdns" }, { f.p_llmnr, "llmnr" } }) do
-    for _, fi in ipairs(all(pair[1])) do anchors[#anchors + 1] = { offset = fi.offset, len = fi.len, proto = pair[2] } end
+    for _, fi in ipairs(all(pair[1])) do anchors[#anchors + 1] = { offset = fi.offset, len = fi.len, source = fi.source, proto = pair[2] } end
   end
   if #anchors == 0 then return end
   anchors_from(anchors)
@@ -272,13 +296,14 @@ end
 
 local function emit_http(w, num)
   local anchors = {}
-  for _, fi in ipairs(all(f.p_http)) do anchors[#anchors + 1] = { offset = fi.offset, len = fi.len } end
+  for _, fi in ipairs(all(f.p_http)) do anchors[#anchors + 1] = { offset = fi.offset, len = fi.len, source = fi.source } end
   if #anchors == 0 then return end
   anchors_from(anchors)
   local B = function(field) return bucket(anchors, all(field), false) end
-  local m, u, rv, h, ua, c, ph, sv, ct, cl, rql, rsl, srv, loc =
+  local m, u, rv, h, ua, c, ph, sv, ct, cl, rql, rsl, srv, loc, request_in, response_in =
     B(f.http_method), B(f.http_uri), B(f.http_reqver), B(f.http_host), B(f.http_ua), B(f.http_code), B(f.http_phrase),
-    B(f.http_respver), B(f.http_ctype), B(f.http_clen), B(f.http_reqline), B(f.http_respline), B(f.http_server), B(f.http_location)
+    B(f.http_respver), B(f.http_ctype), B(f.http_clen), B(f.http_reqline), B(f.http_respline), B(f.http_server), B(f.http_location),
+    bucket(anchors, all(f.http_request_in), true, true), bucket(anchors, all(f.http_response_in), true, true)
   for i = 1, #anchors do
     local function v1(list) local fi = list[i][1]; return fi and esc(fi.value) or "" end
     local kind
@@ -286,8 +311,82 @@ local function emit_http(w, num)
     if kind then
       local headers = kind == "req" and rql[i] or rsl[i]
       w:write(table.concat({ "H", num, kind, v1(m), v1(u), (kind == "req") and v1(rv) or v1(sv), v1(h), v1(ua), v1(c), v1(ph),
-        v1(ct), v1(cl), vals(headers), v1(srv), v1(loc) }, "\t"), "\n")
+        v1(ct), v1(cl), vals(headers), v1(srv), v1(loc), v1(request_in), v1(response_in) }, "\t"), "\n")
     end
+  end
+end
+
+local function emit_http2(w, num)
+  local anchors = {}
+  for _, fi in ipairs(all(f.h2_streamid)) do
+    anchors[#anchors + 1] = { offset = fi.offset, len = fi.len, source = fi.source, id = fi.value }
+  end
+  if #anchors == 0 then return end
+  anchors_from(anchors)
+  local types = all(f.h2_type)
+  local flags = all(f.h2_flags)
+  -- The frame fields (stream ID/type) are sourced from the packet Tvb, while
+  -- HPACK-decoded fields are sourced from a generated header-block Tvb. Their
+  -- offsets cannot be compared. header.count gives one source per decoded
+  -- HEADERS/CONTINUATION fragment; collect those sources through END_HEADERS.
+  local groups = {}
+  for _, fi in ipairs(all(f.h2_header_count)) do groups[#groups + 1] = { source = fi.source } end
+  local function for_sources(field, sources)
+    local out = {}
+    for _, fi in ipairs(all(field)) do
+      for _, source in ipairs(sources) do
+        if source == nil or fi.source == nil or fi.source == source then
+          out[#out + 1] = fi
+          break
+        end
+      end
+    end
+    return out
+  end
+  local function firstValue(values, display)
+    local fi = values[1]
+    return fi and esc(display and fi.display or fi.value) or ""
+  end
+  local groupIndex = 1
+  local headerSources = {}
+  for i, a in ipairs(anchors) do
+    local frameType = tonumber(types[i] and types[i].value)
+    local frameFlags = tonumber(flags[i] and flags[i].value) or 0
+    local endHeaders = math.floor(frameFlags / 4) % 2 == 1
+    if (frameType == 1 or frameType == 9) and groups[groupIndex] then
+      headerSources[#headerSources + 1] = groups[groupIndex].source
+      groupIndex = groupIndex + 1
+    end
+    if endHeaders then
+      if #headerSources == 0 then goto continue end
+      local method = firstValue(for_sources(f.h2_method, headerSources))
+      local status = firstValue(for_sources(f.h2_status, headerSources))
+      local paths = for_sources(f.h2_path, headerSources)
+      local authorities = for_sources(f.h2_authority, headerSources)
+      local userAgents = for_sources(f.h2_ua, headerSources)
+      local contentTypes = for_sources(f.h2_ctype, headerSources)
+      local contentLengths = for_sources(f.h2_clen, headerSources)
+      local servers = for_sources(f.h2_server, headerSources)
+      local locations = for_sources(f.h2_location, headerSources)
+      local requestIn = for_sources(f.h2_request_in, headerSources)
+      local responseIn = for_sources(f.h2_response_in, headerSources)
+      local names = for_sources(f.h2_name, headerSources)
+      local values = for_sources(f.h2_value, headerSources)
+      headerSources = {}
+      if method ~= "" or status ~= "" then
+        local headers = {}
+        for k, name in ipairs(names) do
+          local value = values[k]
+          local headerName = tostring(name.value)
+          if value and headerName:sub(1, 1) ~= ":" then headers[#headers + 1] = esc(headerName .. ": " .. tostring(value.value)) end
+        end
+        w:write(table.concat({ "J", num, method ~= "" and "req" or "resp", a.id, method, firstValue(paths),
+          firstValue(authorities), status, firstValue(userAgents), firstValue(contentTypes), firstValue(contentLengths),
+          table.concat(headers, "\31"), firstValue(servers), firstValue(locations),
+          firstValue(requestIn), firstValue(responseIn) }, "\t"), "\n")
+      end
+    end
+    ::continue::
   end
 end
 
@@ -296,7 +395,7 @@ local function emit_tls(w, num, carrier)
   if #types == 0 then return end
   local anchors = {}
   for _, fi in ipairs(types) do
-    if not fi.generated then anchors[#anchors + 1] = { offset = fi.offset, len = 0, t = fi.value } end
+    if not fi.generated then anchors[#anchors + 1] = { offset = fi.offset, len = 0, source = fi.source, t = fi.value } end
   end
   if #anchors == 0 then return end
   anchors_from(anchors)
@@ -446,6 +545,7 @@ function p.dissector(tvb, pinfo, tree)
     if has(wrapped, "dns") or has(wrapped, "mdns") or has(wrapped, "llmnr") then emit_dns(w, num) end
     if has(wrapped, "nbns") then emit_nbns(w, num) end
     if has(wrapped, "http") then emit_http(w, num) end
+    if has(wrapped, "http2") then emit_http2(w, num) end
     if has(wrapped, "tls") then emit_tls(w, num, has(wrapped, "quic") and "quic" or "tcp") end
     if has(wrapped, "dhcp") then emit_dhcp(w, num) end
     if has(wrapped, "ssh") then emit_ssh(w, num) end

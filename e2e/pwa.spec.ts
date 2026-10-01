@@ -63,7 +63,7 @@ test('works offline after the first visit', async ({ page, context, browserName,
   await expect(page.locator('.facts').getByText('Packets', { exact: true }).locator('..')).toContainText('29');
   // Lazily loaded views come from the cache too.
   await page.evaluate(() => { location.hash = '#/http'; });
-  await expect(page.getByText('No cleartext HTTP/1.x messages were decoded.')).toBeVisible();
+  await expect(page.getByText('No cleartext HTTP/1.x or HTTP/2 messages were decoded.')).toBeVisible();
   await context.setOffline(false);
 });
 

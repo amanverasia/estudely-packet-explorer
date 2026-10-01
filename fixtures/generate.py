@@ -194,6 +194,122 @@ def http_fixture():
     wrpcap(os.path.join(HERE, "http.pcap"), stamp(P))
 
 
+def source_fixture():
+    """Keep decoded DNS and HTTP messages in distinct TCP reassembly sources."""
+    c = Clock()
+    P = []
+    qname = "source-dns.example"
+    dns_query = bytes(DNS(id=0x5151, rd=1, qd=DNSQR(qname=qname, qtype="A")))
+    dns_response = bytes(DNS(id=0x5151, qr=1, rd=1, ra=1, qd=DNSQR(qname=qname, qtype="A"),
+                             an=DNSRR(rrname=qname, type="A", rdata="192.0.2.51")))
+    framed_query = struct.pack("!H", len(dns_query)) + dns_query
+    framed_response = struct.pack("!H", len(dns_response)) + dns_response
+    P += tcp_flow(c, MAC_CLIENT, MAC_RESOLVER, "10.0.0.5", "10.0.0.53", 40300, 53,
+                  [("c", framed_query, [9]), ("s", framed_response, None)])
+
+    request = b"GET /source-http HTTP/1.1\r\nHost: source-http.example\r\n\r\n"
+    response = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"
+    P += tcp_flow(c, MAC_CLIENT, MAC_SERVER, "10.0.0.5", "10.0.0.80", 40301, 80,
+                  [("c", request, [17]), ("s", response, None)])
+    wrpcap(os.path.join(HERE, "sources.pcap"), stamp(P))
+
+
+# --------------------------------------------------------- HTTP/1 pairing edge cases
+def http_pairing_fixture():
+    c = Clock()
+    P = []
+
+    # The stream begins with a response whose request was outside the capture.
+    # A later request/response exchange must still use Wireshark's frame links.
+    early = b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n"
+    request = b"GET /after-gap HTTP/1.1\r\nHost: pairing.example.test\r\n\r\n"
+    response = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"
+    P += tcp_flow(c, MAC_CLIENT, MAC_SERVER, "10.0.0.5", "10.0.0.80", 40100, 80,
+                  [("s", early, None), ("c", request, None), ("s", response, None)])
+
+    # Multiple requests on one connection keep their individual frame links.
+    req_a = b"GET /pipeline-a HTTP/1.1\r\nHost: pairing.example.test\r\n\r\n"
+    req_b = b"GET /pipeline-b HTTP/1.1\r\nHost: pairing.example.test\r\n\r\n"
+    rsp_a = b"HTTP/1.1 201 Created\r\nContent-Length: 0\r\n\r\n"
+    rsp_b = b"HTTP/1.1 202 Accepted\r\nContent-Length: 0\r\n\r\n"
+    P += tcp_flow(c, MAC_CLIENT, MAC_SERVER, "10.0.0.5", "10.0.0.80", 40101, 80,
+                  [("c", req_a, None), ("s", rsp_a, None),
+                   ("c", req_b, None), ("s", rsp_b, None)])
+
+    wrpcap(os.path.join(HERE, "http-pairing.pcap"), stamp(P))
+
+
+# -------------------------------------------------------------------- cleartext HTTP/2
+def http2_frame(frame_type, flags, stream_id, payload=b""):
+    return (len(payload).to_bytes(3, "big") + bytes([frame_type, flags])
+            + (stream_id & 0x7fffffff).to_bytes(4, "big") + payload)
+
+
+def hpack_string(value):
+    raw = value.encode("utf-8")
+    if len(raw) >= 127:
+        raise ValueError("fixture HPACK strings must fit in one length byte")
+    return bytes([len(raw)]) + raw
+
+
+def hpack_literal(index, value):
+    # Literal without indexing, using a static-table name index (4-bit prefix).
+    if index < 15:
+        prefix = bytes([index])
+    else:
+        rest = index - 15
+        prefix = bytes([15])
+        while rest >= 128:
+            prefix += bytes([(rest & 0x7f) | 0x80])
+            rest >>= 7
+        prefix += bytes([rest])
+    return prefix + hpack_string(value)
+
+
+def hpack_literal_name(name, value):
+    # Literal without indexing, with a literal name.
+    return b"\x00" + hpack_string(name) + hpack_string(value)
+
+
+def http2_request(method, path, authority, user_agent):
+    method_index = {"GET": 2, "POST": 3}[method]
+    return (bytes([0x80 | method_index, 0x86])  # :method and :scheme=http
+            + hpack_literal(4, path)              # :path
+            + hpack_literal(1, authority)         # :authority
+            + hpack_literal(58, user_agent))      # user-agent
+
+
+def http2_response(status, content_type, server):
+    status_index = {200: 8, 404: 13}[status]
+    return (bytes([0x80 | status_index])
+            + hpack_literal_name("content-type", content_type)
+            + hpack_literal(54, server))          # server
+
+
+def http2_fixture():
+    c = Clock()
+    P = []
+    preface = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
+    settings = http2_frame(4, 0, 0)
+    first_header_block = http2_request("GET", "/first", "h2.example.test", "fixture-h2/1.0")
+    requests = [
+        # Split stream 1's HPACK block across HEADERS + CONTINUATION.
+        http2_frame(1, 0x1, 1, first_header_block[:8]),
+        http2_frame(9, 0x4, 1, first_header_block[8:]),
+        http2_frame(1, 0x5, 3, http2_request("POST", "/second", "h2.example.test", "fixture-h2/1.0")
+                    + hpack_literal_name("content-type", "application/json")),
+    ]
+    responses = [
+        # Reverse completion order to prove pairing uses HTTP/2 stream IDs.
+        http2_frame(1, 0x5, 3, http2_response(404, "application/json", "h2-fixture")),
+        http2_frame(1, 0x5, 1, http2_response(200, "text/plain", "h2-fixture")),
+    ]
+    P += tcp_flow(c, MAC_CLIENT, MAC_SERVER, "10.0.0.5", "10.0.0.80", 40200, 8080,
+                  [("c", preface + settings, None), ("c", b"".join(requests), None),
+                   ("s", b"".join(responses), None)])
+    wrpcap(os.path.join(HERE, "http2.pcap"), stamp(P))
+
+
 # --------------------------------------------------------------------------- TLS
 def make_cert():
     from cryptography import x509
@@ -493,7 +609,8 @@ def protocols_edge_fixture():
 
 
 FIXTURES = {
-    "dns": dns_fixture, "http": http_fixture, "tls": tls_fixture, "edge": edge_fixture,
+    "dns": dns_fixture, "http": http_fixture, "sources": source_fixture, "http-pairing": http_pairing_fixture,
+    "http2": http2_fixture, "tls": tls_fixture, "edge": edge_fixture,
     "pcapng": pcapng_fixture, "vendors": vendors_fixture, "protocols": protocols_fixture,
     "protocols-edge": protocols_edge_fixture, "follow": follow_fixture,
 }

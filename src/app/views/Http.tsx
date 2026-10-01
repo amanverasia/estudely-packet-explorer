@@ -37,10 +37,12 @@ export function Http() {
   }, [model.http]);
   const digits = Math.min(6, model.capture.timestampDigits);
 
-  const open = (h: HttpExchange) => openDrawer({ title: `HTTP ${h.method ?? ''} ${h.uri ?? '(response only)'}`, frames: h.frames, focus: h.requestFrame ?? h.responseFrame ?? undefined, summary: <HttpSummary h={h} /> });
+  const open = (h: HttpExchange) => openDrawer({ title: `${h.version ?? 'HTTP'} ${h.method ?? ''} ${h.uri ?? '(response only)'}`.trim(), frames: h.frames, focus: h.requestFrame ?? h.responseFrame ?? undefined, summary: <HttpSummary h={h} /> });
   const columns: Column<HttpExchange>[] = [
     { key: 't', header: 'Time (UTC)', width: '210px', noSearch: true, value: (h) => h.requestTime ?? h.responseTime, render: (h) => <span className="mono">{absTime(model.capture.startEpoch, h.requestTime ?? h.responseTime, digits)}</span> },
     { key: 'client', header: 'Client', width: 'minmax(140px, 1fr)', value: (h) => h.client, render: (h) => <Addr addr={h.client} /> },
+    { key: 'version', header: 'Version', width: '80px', value: (h) => h.version },
+    { key: 'h2stream', header: 'H2 stream', width: '84px', value: (h) => h.http2StreamId },
     { key: 'method', header: 'Method', width: '80px', value: (h) => h.method },
     { key: 'host', header: 'Host', width: 'minmax(150px, 1.2fr)', value: (h) => h.host },
     { key: 'uri', header: 'Path', width: 'minmax(220px, 2.5fr)', value: (h) => h.uri },
@@ -50,14 +52,15 @@ export function Http() {
     { key: 'server', header: 'Server', width: 'minmax(150px, 1fr)', value: (h) => endpoint(h.server, h.serverPort), render: (h) => <Addr addr={h.server} port={h.serverPort} /> },
     { key: 'rt', header: 'Response time', width: '110px', align: 'right', noSearch: true, value: (h) => (h.requestTime !== null && h.responseTime !== null ? h.responseTime - h.requestTime : null),
       render: (h) => (h.requestTime !== null && h.responseTime !== null ? duration(h.responseTime - h.requestTime) : '') },
-    { key: 'state', header: 'Pairing', width: '170px', value: (h) => h.state },
+    { key: 'state', header: 'Pairing', width: '170px', value: (h) => `${h.state}${h.pairingWarning ? ` · ${h.pairingWarning}` : ''}`,
+      render: (h) => h.pairingWarning ? <span className="tag warn" title={h.pairingWarning}>Check pairing</span> : h.state },
     { key: 'frames', header: 'Packets', width: '90px', value: (h) => h.frames.join(' '), render: (h) => <FramesLink frames={h.frames} onOpen={() => open(h)} /> },
   ];
 
   const limits = (
     <div className="notes">
       {u.encryptedConversations > 0 && <Note>{plural(u.encryptedConversations, 'conversation')} use TLS or QUIC. HTTP inside them is encrypted and is not shown here; see the TLS view for what the handshakes reveal.</Note>}
-      {u.http2Packets > 0 && <Note kind="warn">{plural(u.http2Packets, 'packet')} carry cleartext HTTP/2. This version does not turn HTTP/2 or HTTP/3 frames into request rows; use the packet list (filter <span className="mono">http2</span>) to inspect them.</Note>}
+      {u.http2Packets > 0 && <Note kind="info">{plural(u.http2Packets, 'packet')} carry cleartext HTTP/2. Where Wireshark reconstructs request or response headers, they appear as HTTP/2 rows. HTTP/2 inside TLS is not visible until key-log decryption is supported; HTTP/3 request rows are not shown.</Note>}
       {u.httpPortsUndecoded.length > 0 && (
         <Note kind="warn">{plural(u.httpPortsUndecoded.length, 'TCP conversation')} on common HTTP ports carried data that Wireshark did not decode as HTTP (for example a non-HTTP protocol, missing segments, or a stream that started before the capture).{' '}
           <button className="btn small" onClick={() => go('connections', { conv: String(u.httpPortsUndecoded[0]) })}>Open the first</button></Note>
@@ -73,11 +76,11 @@ export function Http() {
           <option value="all">All hosts</option>
           {stats.hosts.map((h) => <option key={h.key} value={h.key}>{h.key} ({num(h.value)})</option>)}
         </select>}>
-        Cleartext HTTP/1.x requests and responses, reassembled across TCP segments by Wireshark. Responses are paired with requests in order within each TCP session.
+        Cleartext HTTP/1.x and HTTP/2 requests and responses, reassembled by Wireshark. Wireshark’s request and response frame links are used when available; stream order is the fallback for HTTP/1.x, while HTTP/2 uses its TCP stream and HTTP/2 stream ID.
       </ViewHead>
       {limits}
       {!model.http.length ? (
-        <div className="panel empty"><strong>No cleartext HTTP/1.x messages were decoded.</strong>Most web traffic is HTTPS; its contents stay encrypted.</div>
+        <div className="panel empty"><strong>No cleartext HTTP/1.x or HTTP/2 messages were decoded.</strong>Most web traffic is HTTPS; its contents stay encrypted.</div>
       ) : (
         <>
           <dl className="facts" style={{ margin: 0 }}>
@@ -93,7 +96,7 @@ export function Http() {
             <Panel title="Status codes" sub="Responses"><BarList items={stats.statuses} limit={8} color="var(--s3)" emptyText="No responses decoded." /></Panel>
           </div>
           <section className="panel">
-            <DataTable label="HTTP requests" exportName="http" rows={rows} columns={columns} rowKey={(h) => h.id} onRowClick={open}
+            <DataTable label="HTTP messages" exportName="http" rows={rows} columns={columns} rowKey={(h) => h.id} onRowClick={open}
               searchPlaceholder="Search hosts, paths, user agents, status" />
           </section>
         </>
@@ -108,7 +111,10 @@ function HttpSummary({ h }: { h: HttpExchange }) {
       <dl className="kv">
         <dt>Client</dt><dd className="mono">{endpoint(h.client, h.clientPort)}</dd>
         <dt>Server</dt><dd className="mono">{endpoint(h.server, h.serverPort)}</dd>
+        <dt>Version</dt><dd>{h.version ?? 'unavailable'}</dd>
+        {h.http2StreamId !== null && <><dt>HTTP/2 stream</dt><dd>{h.http2StreamId}</dd></>}
         <dt>Pairing</dt><dd>{h.state}{h.stream !== null ? ` (TCP stream ${h.stream})` : ''}</dd>
+        {h.pairingWarning && <><dt>Pairing check</dt><dd>{h.pairingWarning}</dd></>}
         <dt>Request</dt><dd>{h.requestFrame === null ? 'not captured' : `packet #${h.requestFrame}`}</dd>
         <dt>Response</dt><dd>{h.responseFrame === null ? 'not captured' : `packet #${h.responseFrame}`}</dd>
         {h.location && <><dt>Location</dt><dd>{h.location}</dd></>}

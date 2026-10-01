@@ -218,6 +218,8 @@ export interface DnsTransaction extends Provenance {
 export interface HttpExchange extends Provenance {
   id: number;
   stream: number | null;
+  /** HTTP/2 stream id within the TCP conversation; null for HTTP/1.x. */
+  http2StreamId: number | null;
   convId: number | null;
   client: string;
   clientPort: number | null;
@@ -243,6 +245,8 @@ export interface HttpExchange extends Provenance {
   responseFrame: number | null;
   responseTime: number | null;
   state: 'complete' | 'no response seen' | 'response without request';
+  /** Disagreement between stream-order pairing and Wireshark's frame references, when present. */
+  pairingWarning: string | null;
 }
 
 export interface Certificate {

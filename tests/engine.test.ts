@@ -203,6 +203,68 @@ describe('HTTP fixture', () => {
   });
 });
 
+describe('HTTP pairing fixture', () => {
+  let m: AnalysisModel;
+  beforeAll(async () => ({ model: m } = await open('http-pairing.pcap')));
+
+  it('keeps an orphan response from consuming the later linked exchange', () => {
+    expect(m.http.map((h) => [h.method, h.uri, h.status, h.state])).toEqual([
+      [null, null, 503, 'response without request'],
+      ['GET', '/after-gap', 200, 'complete'],
+      ['GET', '/pipeline-a', 201, 'complete'],
+      ['GET', '/pipeline-b', 202, 'complete'],
+    ]);
+    expect(m.http.slice(1).every((h) => h.pairingWarning === null)).toBe(true);
+  });
+
+  it('continues pairing later messages on the same connection', () => {
+    const [a, b] = m.http.slice(2);
+    expect(a.requestFrame).not.toBe(b.requestFrame);
+    expect(a.responseFrame).not.toBe(b.responseFrame);
+    expect(a).toMatchObject({ uri: '/pipeline-a', status: 201, state: 'complete' });
+    expect(b).toMatchObject({ uri: '/pipeline-b', status: 202, state: 'complete' });
+  });
+});
+
+describe('HTTP/2 fixture', () => {
+  let m: AnalysisModel;
+  beforeAll(async () => ({ model: m } = await open('http2.pcap')));
+
+  it('extracts cleartext h2c headers and pairs concurrent streams', () => {
+    expect(m.capture.packetCount).toBe(9);
+    expect(m.http).toHaveLength(2);
+    expect(m.http.map((h) => [h.http2StreamId, h.method, h.host, h.uri, h.status, h.version, h.state])).toEqual([
+      [1, 'GET', 'h2.example.test', '/first', 200, 'HTTP/2', 'complete'],
+      [3, 'POST', 'h2.example.test', '/second', 404, 'HTTP/2', 'complete'],
+    ]);
+    expect(m.http[0].userAgent).toBe('fixture-h2/1.0');
+    expect(m.http[0].contentType).toBe('text/plain');
+    expect(m.http[1].requestContentType).toBe('application/json');
+    expect(m.http[1].serverHeader).toBe('h2-fixture');
+    expect(m.unsupported.http2Packets).toBeGreaterThan(0);
+    expect(m.hosts.find((h) => h.addr === '10.0.0.80')?.names).toContainEqual(
+      expect.objectContaining({ name: 'h2.example.test', source: 'HTTP Host header', kind: 'inferred' }),
+    );
+  });
+});
+
+describe('separate DNS and HTTP reassembly sources fixture', () => {
+  let m: AnalysisModel;
+  beforeAll(async () => ({ model: m } = await open('sources.pcap')));
+
+  it('keeps decoded fields attached to their own reassembled messages', () => {
+    expect(m.dns).toContainEqual(expect.objectContaining({
+      qname: 'source-dns.example', qtype: 'A', status: 'answered', responseFrame: 6,
+    }));
+    expect(m.http).toHaveLength(1);
+    expect(m.http[0]).toMatchObject({
+      method: 'GET', uri: '/source-http', host: 'source-http.example', status: 200,
+      state: 'complete', requestFrame: 14, responseFrame: 15,
+    });
+    expect(m.http[0].frames).toEqual([13, 14, 15]);
+  });
+});
+
 describe('Follow stream fixture', () => {
   let s: CaptureSession;
   beforeAll(async () => ({ session: s } = await open('follow.pcap')));

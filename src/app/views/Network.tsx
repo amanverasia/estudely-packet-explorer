@@ -125,12 +125,16 @@ export function Network() {
   const hosts = useMemo(() => [...model.hosts].sort((a, b) => a.addr.localeCompare(b.addr, undefined, { numeric: true })), [model.hosts]);
   const selNode = sel?.kind === 'node' ? graph.nodes.find((n) => n.id === sel.id) : null;
   const selEdge = sel?.kind === 'edge' ? graph.edges.find((e) => e.key === sel.key) : null;
-  const neighbours = useMemo(() => {
-    if (!selNode) return null;
-    const s = new Set<string>([selNode.id]);
-    for (const e of graph.edges) if (e.a === selNode.id || e.b === selNode.id) { s.add(e.a); s.add(e.b); }
-    return s;
-  }, [selNode, graph.edges]);
+  const orderedEdges = useMemo(() => [...graph.edges].sort((a, b) => b.bytes - a.bytes), [graph.edges]);
+  const edgeLabel = (id: string) => id === OTHER_NODE
+    ? `${OTHER_NODE} (${num(graph.nodes.find((n) => n.id === OTHER_NODE)?.other ?? 0)} hosts)`
+    : nameOf(id) ? `${nameOf(id)} (${id})` : id;
+  const openEdge = (e: GEdge) => {
+    if (e.convs.length === 1) go('connections', { conv: String(e.convs[0]) });
+    else if (e.a !== OTHER_NODE) go('connections', { host: e.a });
+    else if (e.b !== OTHER_NODE) go('connections', { host: e.b });
+    else go('connections');
+  };
 
   return (
     <>
@@ -157,15 +161,14 @@ export function Network() {
         </div>
         <div className="graph-wrap" ref={wrapRef}>
           {!graph.nodes.length ? <div className="empty"><strong>No IP traffic matches these filters.</strong></div> : (
-            <svg ref={svgRef} role="img" aria-label="Host-to-host traffic graph. Use the tables in Hosts and Connections for an accessible equivalent." onClick={(e) => { if (e.target === svgRef.current) setSel(null); }}>
+            <svg ref={svgRef} role="img" aria-label="Host-to-host traffic graph. A host link list follows the graph." onClick={(e) => { if (e.target === svgRef.current) setSel(null); }}>
               <g ref={gRef}>
                 {layout?.edges.map((e) => {
                   const s = e.source as GNode, t = e.target as GNode;
-                  const dim = neighbours ? !(neighbours.has(e.a) && neighbours.has(e.b) && (e.a === selNode!.id || e.b === selNode!.id)) : selEdge ? selEdge.key !== e.key : false;
                   return (
                     <g key={e.key} onClick={() => setSel({ kind: 'edge', key: e.key })} style={{ cursor: 'pointer' }}>
                       <line x1={s.x} y1={s.y} x2={t.x} y2={t.y} stroke="transparent" strokeWidth={12} />
-                      <line x1={s.x} y1={s.y} x2={t.x} y2={t.y} stroke={colorOf(e.top)} strokeOpacity={dim ? 0.12 : 0.75}
+                      <line x1={s.x} y1={s.y} x2={t.x} y2={t.y} stroke={colorOf(e.top)}
                         strokeWidth={1 + 7 * (Math.log1p(e.bytes) / Math.log1p(maxE))} strokeLinecap="round">
                         <title>{`${e.a} ↔ ${e.b}: ${bytes(e.bytes)}, ${e.top}`}</title>
                       </line>
@@ -174,15 +177,12 @@ export function Network() {
                 })}
                 {layout?.nodes.map((n) => {
                   const r = radius(n.bytes, maxB);
-                  const dim = neighbours ? !neighbours.has(n.id) : false;
                   const isSel = selNode?.id === n.id;
                   const label = labelOf(n);
                   const at = labels.get(n.id) ?? { x: r + 4, y: 0, anchor: 'start' };
                   return (
-                    <g key={n.id} className="graph-node" transform={`translate(${n.x},${n.y})`} opacity={dim ? 0.25 : 1}
-                      onClick={(ev) => { ev.stopPropagation(); setSel({ kind: 'node', id: n.id }); }} style={{ cursor: 'pointer' }}
-                      tabIndex={0} role="button" aria-label={`${label}, ${bytes(n.bytes)}`}
-                      onKeyDown={(ev) => { if (ev.key === 'Enter') setSel({ kind: 'node', id: n.id }); }}>
+                    <g key={n.id} className="graph-node" transform={`translate(${n.x},${n.y})`}
+                      onClick={(ev) => { ev.stopPropagation(); setSel({ kind: 'node', id: n.id }); }} style={{ cursor: 'pointer' }}>
                       <circle r={r} fill={n.id === OTHER_NODE ? 'var(--s-other)' : n.scope === 'multicast' || n.scope === 'broadcast' ? 'var(--panel)' : 'var(--accent)'}
                         stroke={isSel ? 'var(--ink)' : n.scope === 'multicast' || n.scope === 'broadcast' ? 'var(--ink-3)' : 'var(--panel)'} strokeWidth={isSel ? 2.5 : 2}
                         strokeDasharray={n.scope === 'multicast' || n.scope === 'broadcast' ? '3 2' : undefined} />
@@ -216,6 +216,25 @@ export function Network() {
           )}
         </div>
       </Panel>
+      <details className="panel network-list">
+        <summary>Host links as a list ({num(orderedEdges.length)})</summary>
+        <p className="muted">This list follows the graph’s protocol and host filters. Smaller hosts may be grouped under “{OTHER_NODE}”.</p>
+        {orderedEdges.length ? (
+          <div className="network-table-wrap">
+            <table className="network-table">
+              <caption className="sr-only">Network graph links with endpoints, traffic totals, main protocol, and conversations</caption>
+              <thead><tr><th scope="col">Hosts</th><th scope="col">Traffic</th><th scope="col">Packets</th><th scope="col">Main protocol</th><th scope="col">Conversations</th><th scope="col">Action</th></tr></thead>
+              <tbody>{orderedEdges.map((e) => (
+                <tr key={e.key}>
+                  <th scope="row">{edgeLabel(e.a)} ↔ {edgeLabel(e.b)}</th>
+                  <td>{bytes(e.bytes)}</td><td>{num(e.packets)}</td><td>{e.top}</td><td>{num(e.convs.length)}</td>
+                  <td><button className="btn small" aria-label={`View conversations between ${edgeLabel(e.a)} and ${edgeLabel(e.b)}`} onClick={() => openEdge(e)}>{e.convs.length === 1 ? 'View conversation' : 'View conversations'}</button></td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        ) : <p className="muted">No host links match these filters.</p>}
+      </details>
       <p className="muted" style={{ fontSize: 12 }}>Drag to pan, scroll or pinch to zoom. Dashed nodes are multicast or broadcast addresses. Non-IP traffic (such as ARP) is not shown.</p>
     </>
   );

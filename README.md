@@ -16,7 +16,7 @@ Drop in a `.pcap` or `.pcapng` file and get organised views of its DNS lookups, 
 |---|---|
 | **Overview** | Packets, duration, bytes, time range at the file's own precision, traffic over time by protocol, top talkers, largest conversations, protocol hierarchy, and data-quality notes (truncated, malformed or missing packets) |
 | **DNS** | Every query and response for DNS, mDNS, LLMNR and NBNS: names, record types, response codes, answers and response times. Queries are matched to responses, repeated queries are kept as separate rows, unanswered queries are counted, and a diagram shows which clients used which resolvers |
-| **HTTP** | Cleartext HTTP/1.x requests paired with their responses: method, host, path, status and headers, grouped by host. Explains when traffic is encrypted or could not be decoded |
+| **HTTP** | Cleartext HTTP/1.x and HTTP/2 requests paired with their responses: method, host, path, status and headers, grouped by host. Explains when traffic is encrypted or could not be decoded |
 | **TLS** | Server names (SNI), the versions, cipher suites and ALPN a client *offered* next to what the server *chose*, and certificates when they were sent in the clear |
 | **Hosts** | Every IPv4 and IPv6 address with its MAC addresses and their registered vendor, traffic sent and received, peers, the ports others connected to (with the evidence seen), and names learned from the capture, each labelled with its source |
 | **Connections** | TCP and UDP sessions with traffic in each direction, timing and TCP flags, with drill-down into each session's protocol records and packets |
@@ -39,7 +39,7 @@ Every table can be searched, sorted and exported as CSV, and the whole analysis 
 
 The capture is read by a Web Worker running [Wiregasm](https://github.com/good-tools/wiregasm), a WebAssembly build of Wireshark 4.4. A small Wireshark Lua script collects the fields each dashboard needs in a single decoding pass, after Wireshark has reassembled TCP streams and IP fragments. TypeScript then builds one shared model that every view reads. The full write-up is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-It handles pcap and pcapng (including several interfaces with different link types), IPv4 and IPv6, truncated and cut-short files, and timestamps down to nanoseconds. Captures of a few hundred megabytes work: about a minute per 400,000 packets. Files over 1 GB are refused. Known gaps (HTTP/2 request rows, decryption, and others) are listed in [docs/FEATURES.md](docs/FEATURES.md) and tracked in the [issues](https://github.com/amanverasia/estudely-packet-explorer/issues).
+It handles pcap and pcapng (including several interfaces with different link types), IPv4 and IPv6, truncated and cut-short files, and timestamps down to nanoseconds. Captures of a few hundred megabytes work: about a minute per 400,000 packets. Files over 1 GB are refused. Known gaps (decryption, HTTP/3 request rows, and others) are listed in [docs/FEATURES.md](docs/FEATURES.md) and tracked in the [issues](https://github.com/amanverasia/estudely-packet-explorer/issues).
 
 **Supported browsers:** Chrome and Edge 94 or later, Firefox 114 or later, and Safari 16.4 or later, on desktop. Every change is tested in Chromium, Firefox and WebKit. Details, minimum versions and memory notes are in [docs/BROWSERS.md](docs/BROWSERS.md).
 
@@ -64,7 +64,6 @@ Requires Node 20 or later. Hosting notes, including the security headers to set,
 
 Planned work is tracked as [GitHub issues](https://github.com/amanverasia/estudely-packet-explorer/issues). Next up:
 - decrypting TLS with a key log file you provide
-- HTTP/2 request rows
 - selecting a time range that filters every view
 
 ## Licence and credits
