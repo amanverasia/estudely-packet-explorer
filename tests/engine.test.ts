@@ -30,6 +30,7 @@ beforeAll(async () => {
 });
 
 async function open(name: string, keyLogName?: string): Promise<{ model: AnalysisModel; session: CaptureSession }> {
+  current?.close();
   const session = new CaptureSession(lib, 'test');
   current = session;
   const bytes = new Uint8Array(readFileSync(join(root, 'fixtures', name)));
@@ -345,6 +346,27 @@ describe('TLS 1.3 key-log fixture', () => {
     });
     const records = session.rows({ convId: decrypted.tls[0].convId! }).rows;
     expect(records.some((row) => row.decrypted)).toBe(true);
+  });
+});
+
+describe('decrypted HTTP/2 fixture', () => {
+  it('extracts decrypted HTTP/2 headers and marks the exchange', async () => {
+    const { model: encrypted } = await open('tls13-h2.pcap');
+    expect(encrypted.tls[0].decryptionStatus).toBe('encrypted');
+    expect(encrypted.http).toHaveLength(0);
+
+    const { model, session } = await open('tls13-h2.pcap', 'tls13-h2.keys');
+    expect(model.tls).toHaveLength(1);
+    expect(model.tls[0].decryptionStatus).toBe('decrypted');
+    expect(model.http).toHaveLength(1);
+    expect(model.http[0]).toMatchObject({
+      version: 'HTTP/2', http2StreamId: 1, method: 'GET', host: 'h2-keylog.example.test',
+      uri: '/decrypted-h2', userAgent: 'fixture-h2-keylog/1.0', status: 200,
+      contentType: 'text/plain', serverHeader: 'h2-keylog-fixture', state: 'complete', decrypted: true,
+    });
+    const records = session.rows({ convId: model.http[0].convId! }).rows;
+    expect(records.some((row) => row.decrypted)).toBe(true);
+    expect(model.unsupported.http2Packets).toBeGreaterThan(0);
   });
 });
 

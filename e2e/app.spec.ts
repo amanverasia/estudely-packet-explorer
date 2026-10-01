@@ -241,6 +241,34 @@ test('TLS 1.3 key log decrypts and marks records locally; a later capture has no
   expect(reqs.offenders()).toEqual([]);
 });
 
+test('TLS key logs expose decrypted HTTP/2 rows with version and stream ID', async ({ page }) => {
+  const reqs = watchRequests(page);
+  await page.goto('./');
+  await page.locator('input[type=file]').nth(1).setInputFiles(fixture('tls13-h2.keys'));
+  await openCapture(page, 'tls13-h2.pcap');
+  await expect(page.getByRole('status').filter({ hasText: 'TLS decryption:' })).toContainText('1 of 1 sessions decrypted');
+
+  await view(page, 'http');
+  const table = page.getByRole('grid', { name: 'HTTP messages' });
+  await expect(table.getByRole('columnheader', { name: 'Version' })).toBeVisible();
+  await expect(table).toContainText('HTTP/2');
+  await expect(table).toContainText('1');
+  await expect(table).toContainText('h2-keylog.example.test');
+  await expect(table).toContainText('/decrypted-h2');
+  await expect(table).toContainText('Decrypted');
+  await table.getByRole('row').filter({ hasText: '/decrypted-h2' }).click();
+  const drawer = page.getByRole('dialog');
+  await expect(drawer).toContainText('fixture-h2-keylog/1.0');
+  await page.keyboard.press('Escape');
+
+  await page.getByRole('button', { name: 'Open another' }).click();
+  await page.locator('input[type=file]').first().setInputFiles(fixture('tls13-h2.pcap'));
+  await expect(page.getByRole('status').filter({ hasText: 'TLS decryption:' })).toContainText('0 of 1 sessions decrypted');
+  await view(page, 'http');
+  await expect(page.getByText('No cleartext HTTP/1.x or HTTP/2 messages were decoded.')).toBeVisible();
+  expect(reqs.offenders()).toEqual([]);
+});
+
 test('edge cases: truncated/malformed notes, incomplete file, non-capture file', async ({ page }) => {
   await page.goto('./');
   await openCapture(page, 'edge.pcap');

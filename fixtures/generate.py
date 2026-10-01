@@ -273,9 +273,10 @@ def hpack_literal_name(name, value):
     return b"\x00" + hpack_string(name) + hpack_string(value)
 
 
-def http2_request(method, path, authority, user_agent):
+def http2_request(method, path, authority, user_agent, scheme="http"):
     method_index = {"GET": 2, "POST": 3}[method]
-    return (bytes([0x80 | method_index, 0x86])  # :method and :scheme=http
+    scheme_index = {"http": 6, "https": 7}[scheme]
+    return (bytes([0x80 | method_index, 0x80 | scheme_index])  # :method and :scheme
             + hpack_literal(4, path)              # :path
             + hpack_literal(1, authority)         # :authority
             + hpack_literal(58, user_agent))      # user-agent
@@ -360,7 +361,7 @@ def tls_fixture():
     wrpcap(os.path.join(HERE, "tls.pcap"), stamp(P))
 
 
-def tls13_fixture():
+def tls13_application_fixture(capture_name, keylog_name, alpn, server_name, client_payload, server_payload):
     """Create TLS 1.3 application traffic plus its matching NSS key log."""
     from cryptography import x509
     from cryptography.hazmat.primitives import hashes, serialization
@@ -369,14 +370,14 @@ def tls13_fixture():
 
     c = Clock()
     exchanges = []
-    keylog_path = os.path.join(HERE, "tls13.keys")
+    keylog_path = os.path.join(HERE, keylog_name)
     cert_key = ec.generate_private_key(ec.SECP256R1())
-    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "keylog.example.test")])
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, server_name)])
     cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(cert_key.public_key())
             .serial_number(0x1337)
             .not_valid_before(datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc))
             .not_valid_after(datetime.datetime(2034, 1, 1, tzinfo=datetime.timezone.utc))
-            .add_extension(x509.SubjectAlternativeName([x509.DNSName("keylog.example.test")]), critical=False)
+            .add_extension(x509.SubjectAlternativeName([x509.DNSName(server_name)]), critical=False)
             .sign(cert_key, hashes.SHA256()))
     with tempfile.TemporaryDirectory() as tmp:
         cert_path, private_path = os.path.join(tmp, "server.pem"), os.path.join(tmp, "server.key")
@@ -389,17 +390,17 @@ def tls13_fixture():
         client_ctx.check_hostname = False
         client_ctx.verify_mode = ssl.CERT_NONE
         client_ctx.minimum_version = client_ctx.maximum_version = ssl.TLSVersion.TLSv1_3
-        client_ctx.set_alpn_protocols(["http/1.1"])
+        client_ctx.set_alpn_protocols([alpn])
         open(keylog_path, "w", encoding="ascii").close()
         client_ctx.keylog_filename = keylog_path
 
         server_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         server_ctx.minimum_version = server_ctx.maximum_version = ssl.TLSVersion.TLSv1_3
-        server_ctx.set_alpn_protocols(["http/1.1"])
+        server_ctx.set_alpn_protocols([alpn])
         server_ctx.load_cert_chain(cert_path, private_path)
         client_in, client_out = ssl.MemoryBIO(), ssl.MemoryBIO()
         server_in, server_out = ssl.MemoryBIO(), ssl.MemoryBIO()
-        client = client_ctx.wrap_bio(client_in, client_out, server_side=False, server_hostname="keylog.example.test")
+        client = client_ctx.wrap_bio(client_in, client_out, server_side=False, server_hostname=server_name)
         server = server_ctx.wrap_bio(server_in, server_out, server_side=True)
 
         def transfer(out, incoming, direction):
@@ -433,21 +434,38 @@ def tls13_fixture():
                 raise RuntimeError("TLS fixture handshake stalled")
         if not client_done or not server_done:
             raise RuntimeError("TLS fixture handshake did not complete")
+        if client.selected_alpn_protocol() != alpn or server.selected_alpn_protocol() != alpn:
+            raise RuntimeError(f"TLS fixture did not negotiate ALPN {alpn}")
 
-        request = b"GET /decrypted HTTP/1.1\r\nHost: keylog.example.test\r\nUser-Agent: fixture-keylog/1.0\r\n\r\n"
-        response = b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 19\r\n\r\nknown plaintext 13\n"
-        client.write(request)
+        client.write(client_payload)
         transfer(client_out, server_in, "c")
-        if server.read(len(request)) != request:
-            raise RuntimeError("TLS fixture server did not receive the HTTP request")
-        server.write(response)
+        if server.read(len(client_payload)) != client_payload:
+            raise RuntimeError("TLS fixture server did not receive the application request")
+        server.write(server_payload)
         transfer(server_out, client_in, "s")
-        if client.read(len(response)) != response:
-            raise RuntimeError("TLS fixture client did not receive the HTTP response")
+        if client.read(len(server_payload)) != server_payload:
+            raise RuntimeError("TLS fixture client did not receive the application response")
 
     P = tcp_flow(Clock(), MAC_CLIENT, MAC_SERVER, "10.0.0.5", "198.51.100.13", 43100, 443,
                  exchanges, isn=(1300, 8700))
-    wrpcap(os.path.join(HERE, "tls13.pcap"), stamp(P))
+    wrpcap(os.path.join(HERE, capture_name), stamp(P))
+
+
+def tls13_fixture():
+    request = b"GET /decrypted HTTP/1.1\r\nHost: keylog.example.test\r\nUser-Agent: fixture-keylog/1.0\r\n\r\n"
+    response = b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 19\r\n\r\nknown plaintext 13\n"
+    tls13_application_fixture("tls13.pcap", "tls13.keys", "http/1.1", "keylog.example.test", request, response)
+
+
+def tls13_http2_fixture():
+    """Create a TLS 1.3 h2 exchange that decrypts to a known HTTP/2 stream."""
+    preface = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
+    client_payload = preface + http2_frame(4, 0, 0)
+    request = http2_request("GET", "/decrypted-h2", "h2-keylog.example.test", "fixture-h2-keylog/1.0", "https")
+    client_payload += http2_frame(1, 0x5, 1, request)
+    server_payload = http2_frame(4, 0, 0)
+    server_payload += http2_frame(1, 0x5, 1, http2_response(200, "text/plain", "h2-keylog-fixture"))
+    tls13_application_fixture("tls13-h2.pcap", "tls13-h2.keys", "h2", "h2-keylog.example.test", client_payload, server_payload)
 
 
 # ---------------------------------------------------------- malformed / truncated
@@ -702,13 +720,13 @@ def protocols_edge_fixture():
 
 FIXTURES = {
     "dns": dns_fixture, "http": http_fixture, "sources": source_fixture, "http-pairing": http_pairing_fixture,
-    "http2": http2_fixture, "tls": tls_fixture, "tls13": tls13_fixture, "edge": edge_fixture,
+    "http2": http2_fixture, "tls": tls_fixture, "tls13": tls13_fixture, "tls13-h2": tls13_http2_fixture, "edge": edge_fixture,
     "pcapng": pcapng_fixture, "vendors": vendors_fixture, "protocols": protocols_fixture,
     "protocols-edge": protocols_edge_fixture, "follow": follow_fixture,
 }
 
 if __name__ == "__main__":
-    # TLS fixtures use fresh ephemeral keys on each generation; tls13.keys matches tls13.pcap.
+    # TLS fixtures use fresh ephemeral keys on each generation; each key log matches its named capture.
     import sys
     for name in sys.argv[1:] or FIXTURES:
         FIXTURES[name]()
