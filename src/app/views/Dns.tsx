@@ -1,6 +1,7 @@
 // Copyright (C) 2026 Estudely and contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
 import { useMemo, useState } from 'react';
+import { DNS_MATCH_WINDOW } from '../../engine/analyze';
 import type { DnsProto, DnsTransaction } from '../../engine/types';
 import { BarList, FlowChart } from '../components/charts';
 import { DataTable, type Column } from '../components/DataTable';
@@ -84,7 +85,7 @@ export function Dns() {
       <ViewHead title="Name resolution"
         right={<Seg label="Protocol" value={proto} onChange={(p) => { setProto(p); setStatus('all'); }}
           options={(['DNS', 'mDNS', 'LLMNR', 'NBNS'] as DnsProto[]).map((p) => ({ value: p, label: `${p} ${num(counts[p])}` }))} />}>
-        Each query packet is its own row; repeated queries are kept and linked to the original. Queries and responses are matched by transaction ID, client address and port, transport, and server.
+        Each query packet is its own row; repeated queries are kept and linked to the original. Queries and responses are matched by transaction ID, client address and port, transport, and server; a response must arrive within {DNS_MATCH_WINDOW} s of its query, otherwise it is listed as a response without query.
       </ViewHead>
       {!model.dns.length ? (
         <div className="panel empty"><strong>No DNS, mDNS, LLMNR or NBNS messages were decoded.</strong>DNS over HTTPS (DoH) and DNS over TLS/QUIC are encrypted and appear under TLS instead.</div>
@@ -99,9 +100,9 @@ export function Dns() {
                 <Fact label="Queries sent" value={num(stats.queries)} />
                 <Fact label="Unique names" value={num(stats.names.length)} />
                 {!multicast && <Fact label="Answered" value={num(stats.statuses.get('answered') ?? 0)} />}
-                {!multicast && <Fact label="Unanswered" value={num(unanswered)} title="Query with no matching response in the capture (within 60 s)" />}
+                {!multicast && <Fact label="Unanswered" value={num(unanswered)} title={`Query with no matching response in the capture (within ${DNS_MATCH_WINDOW} s)`} />}
                 {!multicast && <Fact label="Repeated queries" value={num(stats.statuses.get('retransmitted') ?? 0)} />}
-                {!multicast && <Fact label="Responses without query" value={num(stats.statuses.get('response without query') ?? 0)} />}
+                {!multicast && <Fact label="Responses without query" value={num(stats.statuses.get('response without query') ?? 0)} title={`Response with no matching query in the preceding ${DNS_MATCH_WINDOW} s`} />}
                 {!multicast && <Fact label="Median response time" value={duration(stats.medianRtt)} />}
               </dl>
               <div className="grid-3">
