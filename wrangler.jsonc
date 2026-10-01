@@ -1,0 +1,16 @@
+// Cloudflare deployment: static files only (Workers static assets). No Worker
+// script runs; Cloudflare serves dist/ as-is. Deploy with `npm run deploy`.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "estudely-packet-explorer",
+  "compatibility_date": "2026-09-30",
+  "assets": {
+    "directory": "./dist",
+    // The app uses #/ routes, so no SPA fallback: a missing engine file must
+    // return 404, not index.html.
+    "not_found_handling": "none"
+  },
+  "routes": [{ "pattern": "trace.esdy.cc", "custom_domain": true }],
+  // No request logging: the site has no server code and collects nothing.
+  "observability": { "enabled": false }
+}

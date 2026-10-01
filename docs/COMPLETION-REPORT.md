@@ -36,9 +36,16 @@
 
 Two bugs found and fixed by the suite: the Network view's filter controls overflowed on phones, and the test server's directory index (test infrastructure only).
 
+## Deployment
+
+Live at https://trace.esdy.cc (Cloudflare, static assets only; `npm run deploy`). A real analysis on the live site works: `tls.pcap` took 3.4 s including the first engine download.
+
+First deploy found a bug the local suite had missed. Production CSP headers blocked the worker, because the engine glue needs `eval`. Fixed with a worker-specific policy in `public/_headers`. The test server now applies `_headers` too, and the suite was confirmed to fail with the old headers.
+
 ## Not done / incomplete
 
 - **Accessibility**: keyboard navigation, ARIA roles on tables, trees and the drawer, focus handling, `prefers-reduced-motion` and forced colours are in place. No screen-reader audit or contrast tooling has been run.
 - **Browsers**: the suite runs in Chromium only. Firefox and Safari have not been tested (WebKit's `DecompressionStream` and passing a compiled WebAssembly module to a worker are worth checking first).
+- **Cloudflare zone settings**: Web Analytics auto-injection and Bot Fight Mode / JavaScript detections are on for the zone and inject scripts. The CSP blocks them, but they must be switched off in the dashboard (see DEPLOYMENT.md).
 - **Not supported**: HTTP/2 and HTTP/3 requests, decryption (key logs), DHCPv6 and LLDP names.
 - **Decision for the owner**: the licence of the app's own code (see LICENSES.md), and hosting a mirror of the GPL corresponding source.

@@ -1,8 +1,10 @@
 // Copyright (C) 2026 Estudely and contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Minimal static server for tests: serves dist/ under a subdirectory, the way
-// a plain static host would (no rewrites, no special headers).
-import { createReadStream, statSync } from 'node:fs';
+// a plain static host would (no rewrites). It applies dist/_headers like
+// Cloudflare does, so header problems (such as CSP blocking the worker) fail
+// the browser tests instead of only showing up in production.
+import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,6 +18,36 @@ const types = {
   '.gz': 'application/octet-stream', '.txt': 'text/plain; charset=utf-8', '.map': 'application/json',
 };
 
+// dist/_headers: "path pattern" lines followed by indented "Name: value" or
+// "! Name" (detach) lines. `*` matches any characters. Later rules add to or
+// detach headers set by earlier ones, as on Cloudflare.
+const rules = [];
+const headersFile = join(root, '_headers');
+if (existsSync(headersFile)) {
+  let cur = null;
+  for (const line of readFileSync(headersFile, 'utf8').split('\n')) {
+    if (!line.trim() || line.trim().startsWith('#')) continue;
+    if (!/^\s/.test(line)) {
+      const re = new RegExp('^' + line.trim().replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
+      cur = { re, set: [], detach: [] };
+      rules.push(cur);
+    } else if (cur) {
+      const t = line.trim();
+      if (t.startsWith('!')) cur.detach.push(t.slice(1).trim().toLowerCase());
+      else { const i = t.indexOf(':'); cur.set.push([t.slice(0, i).trim().toLowerCase(), t.slice(i + 1).trim()]); }
+    }
+  }
+}
+function headersFor(path) {
+  const h = new Map();
+  for (const r of rules) {
+    if (!r.re.test(path)) continue;
+    for (const d of r.detach) h.delete(d);
+    for (const [k, v] of r.set) h.set(k, h.has(k) ? `${h.get(k)}, ${v}` : v);
+  }
+  return Object.fromEntries(h);
+}
+
 createServer((req, res) => {
   const url = new URL(req.url ?? '/', 'http://x');
   if (!url.pathname.startsWith(base)) { res.writeHead(404).end('not found'); return; }
@@ -26,7 +58,7 @@ createServer((req, res) => {
   try {
     const st = statSync(file);
     if (!st.isFile()) throw new Error('not a file');
-    res.writeHead(200, { 'Content-Type': types[extname(file)] ?? 'application/octet-stream', 'Content-Length': st.size });
+    res.writeHead(200, { ...headersFor('/' + rel.replace(/\\/g, '/')), 'Content-Type': types[extname(file)] ?? 'application/octet-stream', 'Content-Length': st.size });
     createReadStream(file).pipe(res);
   } catch {
     res.writeHead(404).end('not found');

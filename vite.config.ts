@@ -5,6 +5,8 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import type { Plugin } from 'vite';
 
+import { cloudflare } from "@cloudflare/vite-plugin";
+
 // Content-Security-Policy for the built page (dev mode needs inline scripts).
 // connect-src 'self' means the page can only fetch the self-hosted engine
 // files; capture data has no network destination. Workers take their policy
@@ -34,7 +36,7 @@ function cspPlugin(): Plugin {
 // domain root or any subdirectory without rebuilding.
 export default defineConfig({
   base: './',
-  plugins: [react(), cspPlugin()],
+  plugins: [react(), cspPlugin(), cloudflare()],
   worker: { format: 'es' },
   build: { target: 'es2022', sourcemap: true, chunkSizeWarningLimit: 900 },
   test: {
