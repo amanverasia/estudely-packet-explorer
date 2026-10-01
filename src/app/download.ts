@@ -52,6 +52,11 @@ export function summaryJson(model: AnalysisModel): string {
     http: m.http,
     tls: m.tls,
     arp: m.arp,
+    arpBindings: m.arpBindings,
+    dhcp: m.dhcp,
+    icmp: m.icmp,
+    ssh: m.ssh,
+    quic: m.quic,
     limitations: m.unsupported,
   }, null, 2);
 }
