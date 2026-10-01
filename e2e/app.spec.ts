@@ -289,6 +289,17 @@ for (const vp of [{ name: 'tablet', width: 820, height: 1180 }, { name: 'phone',
       if (v === 'overview' || v === 'dns') await page.screenshot({ path: `test-results/${vp.name}-${v}.png`, fullPage: true });
     }
     if (vp.name === 'phone') await expect(page.locator('.mobile-local')).toBeVisible();
+
+    // The conversation detail and the follow panel (long text lines, a max-content hex dump) stay within the page.
+    await openCapture(page, 'follow.pcap');
+    await view(page, 'connections');
+    await page.getByRole('grid', { name: 'Conversations' }).getByRole('row').filter({ hasText: '10.0.0.5:41000' }).click();
+    await page.getByRole('button', { name: 'Follow stream' }).click();
+    await expect(page.getByRole('region', { name: 'Stream content' })).toContainText('line 00000 of the large');
+    expect(await fits(), `follow text overflows at ${vp.width}px`).toBe(true);
+    await page.getByRole('group', { name: 'Format' }).getByRole('button', { name: 'Hex' }).click();
+    await expect(page.getByRole('region', { name: 'Stream content' })).toContainText('00000000  ');
+    expect(await fits(), `follow hex overflows at ${vp.width}px`).toBe(true);
   });
 }
 

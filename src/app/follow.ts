@@ -47,6 +47,11 @@ export function followRuns(f: FollowStream, dir: FollowDirection): FollowRun[] {
   });
 }
 
+/** Payload bytes in the selected directions over the whole stream, before any cap. */
+export function directionBytes(f: FollowStream, dir: FollowDirection): number {
+  return (dir === 'server' ? 0 : f.clientBytes) + (dir === 'client' ? 0 : f.serverBytes);
+}
+
 /** The selected directions' payload as one buffer, in capture order (for saving). */
 export function joinRuns(runs: FollowRun[]): Uint8Array<ArrayBuffer> {
   const out = new Uint8Array(runs.reduce((n, r) => n + r.bytes.length, 0));
@@ -57,7 +62,7 @@ export function joinRuns(runs: FollowRun[]): Uint8Array<ArrayBuffer> {
 
 // C0/C1 controls (except tab and newline) and bidirectional overrides, which
 // could make captured text display as something it is not.
-const UNSAFE = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f‎‏‪-‮⁦-⁩]/g;
+const UNSAFE = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
 
 /** UTF-8 text with invalid sequences as U+FFFD and unsafe characters as '.'. */
 export function payloadText(bytes: Uint8Array): string {

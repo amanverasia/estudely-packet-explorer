@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Conversation, FollowStream as FollowData } from '../../engine/types';
 import { downloadBlob, safeBase } from '../download';
-import { FOLLOW_SAVE_BYTES, FOLLOW_VIEW_BYTES, FOLLOW_VIEW_SEGMENTS, followRuns, hexDump, joinRuns, payloadText, type FollowDirection } from '../follow';
+import { directionBytes, FOLLOW_SAVE_BYTES, FOLLOW_VIEW_BYTES, FOLLOW_VIEW_SEGMENTS, followRuns, hexDump, joinRuns, payloadText, type FollowDirection } from '../follow';
 import { useApp } from '../context';
 import { bytes, endpoint, num, plural } from '../format';
 import { Note, Seg } from './bits';
@@ -53,8 +53,11 @@ export function FollowStream({ c }: { c: Conversation }) {
     try {
       // Saving reassembles again with the larger cap, so the file is not limited to what is shown.
       const full = await engine.request({ kind: 'follow', transport, stream, maxBytes: FOLLOW_SAVE_BYTES, maxSegments: Infinity });
-      downloadBlob(fileName, new Blob([joinRuns(followRuns(full, dir))], { type: 'application/octet-stream' }));
-      setSaving(full.truncated ? `Saved the first ${bytes(FOLLOW_SAVE_BYTES)} of ${bytes(full.clientBytes + full.serverBytes)}.` : null);
+      const out = joinRuns(followRuns(full, dir));
+      downloadBlob(fileName, new Blob([out], { type: 'application/octet-stream' }));
+      // The cap counts both directions, so compare what was written with the selected directions' total.
+      const wanted = directionBytes(full, dir);
+      setSaving(out.length < wanted ? `Saved the first ${bytes(out.length)} of ${bytes(wanted)}.` : null);
     } catch (e) {
       setSaving(`Could not save: ${e instanceof Error ? e.message : String(e)}`);
     }

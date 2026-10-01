@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Estudely and contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
 import { describe, expect, it } from 'vitest';
-import { followRuns, hexDump, joinRuns, payloadText } from '../src/app/follow';
+import { directionBytes, followRuns, hexDump, joinRuns, payloadText } from '../src/app/follow';
 import type { FollowStream } from '../src/engine/types';
 
 const enc = (s: string) => new TextEncoder().encode(s);
@@ -38,8 +38,15 @@ describe('follow stream helpers', () => {
     expect(new TextDecoder().decode(joinRuns(followRuns(f, 'client')))).toBe('GET / HTTP/1.1\r\n\r\nbye');
   });
 
+  it('totals only the selected directions (what a save should hold)', () => {
+    const g = { ...f, clientBytes: 100, serverBytes: 40 };
+    expect(directionBytes(g, 'client')).toBe(100);
+    expect(directionBytes(g, 'server')).toBe(40);
+    expect(directionBytes(g, 'both')).toBe(140);
+  });
+
   it('renders text with control and bidi characters neutralised', () => {
-    expect(payloadText(enc('a\r\nb\tc\x00d\x1be‮f\r'))).toBe('a\nb\tc.d.e.f.');
+    expect(payloadText(enc('a\r\nb\tc\x00d\x1be\u202ef\u2066g\u061ch\r'))).toBe('a\nb\tc.d.e.f.g.h.');
     expect(payloadText(enc('naïve'))).toBe('naïve');
   });
 
