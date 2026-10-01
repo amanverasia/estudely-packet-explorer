@@ -14,3 +14,6 @@ playwright-report
 !.env.example
 .wrangler
 __pycache__
+
+# agent worktrees
+.claude/worktrees/
