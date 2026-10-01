@@ -15,7 +15,7 @@ const port = Number(process.env.PORT ?? 4173);
 const types = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css',
   '.json': 'application/json', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.woff': 'font/woff',
-  '.gz': 'application/octet-stream', '.txt': 'text/plain; charset=utf-8', '.map': 'application/json',
+  '.gz': 'application/octet-stream', '.png': 'image/png', '.webmanifest': 'application/manifest+json', '.txt': 'text/plain; charset=utf-8', '.map': 'application/json',
 };
 
 // dist/_headers: "path pattern" lines followed by indented "Name: value" or
@@ -55,6 +55,15 @@ createServer((req, res) => {
   if (rel === '' || rel.endsWith('/')) rel += 'index.html';
   rel = normalize(rel).replace(/^(\.\.[/\\])+/, '');
   const file = join(root, rel);
+  // Test hook for the service worker update flow: a browser context with this
+  // cookie sees sw.js as if a new version had been deployed.
+  const deploy = /(?:^|;\s*)epx-test-deploy=(\w+)/.exec(req.headers.cookie ?? '')?.[1];
+  if (rel === 'sw.js' && deploy && existsSync(file)) {
+    const body = `${readFileSync(file, 'utf8')}\n// test deploy ${deploy}\n`;
+    res.writeHead(200, { ...headersFor('/sw.js'), 'Content-Type': types['.js'], 'Content-Length': Buffer.byteLength(body) });
+    res.end(body);
+    return;
+  }
   try {
     const st = statSync(file);
     if (!st.isFile()) throw new Error('not a file');

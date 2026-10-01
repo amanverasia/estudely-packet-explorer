@@ -78,6 +78,14 @@ Times are stored relative to the first packet so that nanosecond precision survi
 - Captured strings are rendered only as React text nodes. Nothing is rendered as HTML; bodies are never rendered; CSV exports neutralise spreadsheet formulas.
 - The production page ships a Content-Security-Policy with `connect-src 'self'`; the only network requests are same-origin GETs for the app and engine files (verified in Chromium with request logging — no request has a body).
 - Theme preference is the only thing written to `localStorage`. Captures are never persisted.
+- The service worker (`src/pwa/sw.js`, built to `dist/sw.js`) caches only the files listed in its precache list, which the build generates from `dist/`. It never stores runtime responses; captures and key files are read with the File API and never pass through it. A browser test checks the Cache Storage contents after opening a capture.
+
+## Offline app (PWA)
+
+- `vite.config.ts` (`pwaPlugin`) writes `dist/sw.js` with two precache groups: the app shell and `wiregasm/*`, each named after a hash of its files (`epx-shell-…`, `epx-engine-…`). A deploy changes `sw.js`, so browsers install the new worker; an unchanged engine keeps its cache name and is not downloaded again. Old caches are deleted when the new worker activates.
+- The worker and its scope are registered relative to the page (`./sw.js`, scope `./`), so it works at a domain root and in a subdirectory. `manifest.webmanifest` uses relative `start_url` and `scope` for the same reason.
+- A new version waits until the user clicks "Reload to update" (a reload closes the open capture, so it is never forced). The start screen shows offline status and storage use from `navigator.storage.estimate()`.
+- `npm run dev` does not register the service worker.
 
 ## Measured performance (Node 26, same WASM, one core)
 

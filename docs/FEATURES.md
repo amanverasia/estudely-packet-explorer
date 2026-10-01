@@ -42,4 +42,4 @@ Not supported: live capture, files over 1 GiB (refused), files Wireshark cannot 
 - Names are only those seen in the capture (no reverse DNS, no GeoIP). MAC vendors come from Wireshark's offline OUI table and describe the network interface's maker, not the device.
 - Ports listed for a host are traffic observations, not open-port confirmations. No OS or device identification is done.
 - Performance is roughly 8–10k packets/second on a laptop core; captures above ~1–2 million packets may exhaust the 2 GiB WASM heap.
-- Engine download is 19 MB on first use per browser session (afterwards HTTP-cached).
+- Engine download is about 20 MB (compressed). After the first visit the app and engine are kept by a service worker for offline use; in browsers without service workers they are downloaded again per session (HTTP-cached).

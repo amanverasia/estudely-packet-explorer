@@ -5,6 +5,7 @@ import type { AnalysisModel } from '../engine/types';
 import { BuildTag } from './components/BuildTag';
 import { Strip } from './components/charts';
 import { Drawer } from './components/Drawer';
+import { OfflineStatus, UpdateBanner } from './components/Offline';
 import { Ctx, type AppCtx, type DrawerSpec } from './context';
 import { downloadBlob, safeBase, summaryJson } from './download';
 import { EngineClient, HARD_LIMIT_BYTES, SOFT_LIMIT_BYTES, type EngineState } from './engine';
@@ -80,6 +81,7 @@ export function App() {
       ) : (
         <Landing state={state} onOpen={openFile} onCancel={() => engine.cancel()} theme={theme} setTheme={setTheme} />
       )}
+      <UpdateBanner captureOpen={state.kind !== 'idle' && state.kind !== 'error'} />
     </>
   );
 }
@@ -178,6 +180,7 @@ function Landing({ state, onOpen, onCancel, theme, setTheme }: { state: EngineSt
           <div><h3>Formats</h3>pcap and pcapng (including multiple interfaces), plus other formats Wireshark 4.4's file reader supports, such as gzip-compressed pcap, snoop and ERF.</div>
           <div><h3>Size</h3>Tested up to 350 MB and 400,000 packets. Files over {bytes(HARD_LIMIT_BYTES)} are refused; over {bytes(SOFT_LIMIT_BYTES)} expect slow analysis.</div>
           <div><h3>Privacy</h3>No uploads, analytics or lookups. The capture stays in this tab's memory until you close it or the tab.</div>
+          <OfflineStatus />
         </div>
       </div>
       <BuildTag className="corner" />

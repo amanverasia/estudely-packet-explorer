@@ -17,7 +17,8 @@ npm run build
 - **Compression**: the WASM and data package are already gzipped and are decompressed in the browser with `DecompressionStream`. If a server adds `Content-Encoding: gzip` for `.gz` files, the browser decodes it and the app detects the missing gzip header and uses the bytes as-is. Either way works.
 - **Caching**: cache `assets/*` (content-hashed names) for a year. Cache `wiregasm/*` for a long time too, but change the URL or purge when upgrading Wiregasm. Don't cache `index.html` aggressively.
 - **No COOP/COEP needed**: the engine does not use threads or SharedArrayBuffer.
-- **Size**: about 21 MB in total, almost all of it the engine (downloaded on first capture open, not on page load).
+- **Size**: about 21 MB in total, almost all of it the engine. The service worker downloads it in the background after the first page load so the app works offline.
+- **Service worker**: `sw.js` must not be cached long (`public/_headers` sets `Cache-Control: no-cache`), or browsers notice new deploys late. Browsers check it on navigation anyway, at least once a day. `manifest.webmanifest` should be served as `application/manifest+json`.
 
 ## Live deployment: trace.esdy.cc (Cloudflare)
 
