@@ -331,3 +331,15 @@ p { margin: 0; }
 @media (forced-colors: active) {
   .barlist-row .fill, .dot { forced-color-adjust: none; }
 }
+
+/* ---------- build / source tag ---------- */
+.build-tag { display: grid; gap: 3px; font-size: 12px; color: var(--ink-3); line-height: 1.4; }
+.build-tag a { color: var(--ink-2); text-decoration: none; }
+.build-tag a:hover { color: var(--ink); text-decoration: underline; }
+.build-tag > a { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }
+.landing { position: relative; padding-bottom: 72px; }
+.build-tag.corner { position: absolute; right: 16px; bottom: 16px; justify-items: end; text-align: right; }
+.build-tag.mobile-only { display: none; padding-top: 8px; border-top: 1px solid var(--rule); }
+@media (max-width: 860px) {
+  .build-tag.mobile-only { display: grid; }
+}

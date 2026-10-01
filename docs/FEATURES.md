@@ -8,7 +8,7 @@
 | DNS | DNS / mDNS / LLMNR / NBNS tabs; transactions with client, server, name, type, response code, answers, status, response time; counts by name, type, response code; unanswered and repeated queries; client→resolver diagram | `dns.*`, `nbns.*` fields |
 | HTTP | HTTP/1.x requests: method, host, path, status, content type/length, request and response headers, pairing state; counts by host, method, status; explanations for encrypted or undecoded traffic | `http.*` fields after Wireshark reassembly |
 | TLS | ClientHello SNI, offered versions, ALPN and cipher suites; ServerHello negotiated version (and where it came from), cipher, ALPN; cleartext certificates (subject, issuer, validity, SAN, serial, algorithms, SHA-256) | `tls.handshake.*` fields, also in QUIC Initial packets |
-| Hosts | IPv4/IPv6 addresses, address range, source MACs and ARP MACs, sent/received packets and bytes, peers, ports peers used (with evidence), names learned with source and observed/inferred label | Packets, conversations, DNS/mDNS/NBNS/DHCP/SNI/Host |
+| Hosts | IPv4/IPv6 addresses, address range, source MACs (with the registered vendor of the address prefix from Wireshark's built-in table, or "locally administered") and ARP MACs, sent/received packets and bytes, peers, ports peers used (with evidence), names learned with source and observed/inferred label | Packets, conversations, DNS/mDNS/NBNS/DHCP/SNI/Host |
 | Connections | TCP/UDP sessions by stream index, other IP and non-IP groups; directional packets/bytes; start and duration; TCP flags seen and analysis counts; drill-down into the conversation's DNS/HTTP/TLS records and packets | Packets |
 | Network | Force-directed host graph, edge width = log bytes, edge colour = main protocol; protocol filter, host focus, node limit with "Other hosts" aggregation; node and edge details | Conversations |
 | Packet list | Wireshark's columns for every packet, Wireshark display filters, paged | Wiregasm `getFrames` |
@@ -39,7 +39,7 @@ Not supported: live capture, files over 1 GiB (refused), files Wireshark cannot 
 - HTTP pairing is FIFO per TCP stream; if a request is missing from the capture, later pairs in that stream can shift. Streams with gaps are called out.
 - DNS responses are matched only within 60 s of the query.
 - In the rare case of several DNS/HTTP messages in one packet spread across different reassembled buffers, the field-to-message split uses byte offsets and could mis-assign fields.
-- Names are only those seen in the capture (no reverse DNS, no GeoIP, no OUI-to-vendor lookups in the UI).
+- Names are only those seen in the capture (no reverse DNS, no GeoIP). MAC vendors come from Wireshark's offline OUI table and describe the network interface's maker, not the device.
 - Ports listed for a host are traffic observations, not open-port confirmations. No OS or device identification is done.
 - Performance is roughly 8–10k packets/second on a laptop core; captures above ~1–2 million packets may exhaust the 2 GiB WASM heap.
 - Engine download is 19 MB on first use per browser session (afterwards HTTP-cached).

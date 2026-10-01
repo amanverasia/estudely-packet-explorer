@@ -19,6 +19,7 @@
 --   T num carrier hstype version sni alpn(list) supver(list) ciphers(list) certs(list hex) recver
 --   A num opcode srcmac srcip dstmac dstip
 --   C num msgtype chaddr hostname yiaddr reqip
+--   V mac vendor locallyadministered           -- once per source MAC; vendor from Wireshark's built-in OUI table
 --   W message                                  -- extractor warnings
 
 local ARM_PATH = "/estx/arm"
@@ -38,6 +39,7 @@ local f = {
   iface = F("frame.interface_id"), ifname = F("frame.interface_name"), encap = F("frame.encap_type"),
   protos = F("frame.protocols"),
   ethsrc = F("eth.src"), ethdst = F("eth.dst"),
+  ethvendor = F("eth.src.oui_resolved"), ethlocal = F("eth.src.lg"),
   ipsrc = F("ip.src"), ipdst = F("ip.dst"), ip6src = F("ipv6.src"), ip6dst = F("ipv6.dst"),
   ipmf = F("ip.flags.mf"), ipfrag = F("ip.frag_offset"), ip6frag = F("ipv6.fraghdr.offset"), ip6mf = F("ipv6.fraghdr.more"),
   tcpsport = F("tcp.srcport"), tcpdport = F("tcp.dstport"), udpsport = F("udp.srcport"), udpdport = F("udp.dstport"),
@@ -104,6 +106,19 @@ local function val(field)
   return esc(v.value)
 end
 
+-- MAC addresses from their raw bytes. tostring() on an Ethernet address
+-- applies Wireshark's name resolution ("Intel_aa:bb:cc", "Broadcast").
+local function mac_text(fi)
+  if fi == nil then return "" end
+  local ok, hex = pcall(function() return fi.range:bytes():tohex() end)
+  if not ok or not hex or #hex ~= 12 then return esc(fi.value) end
+  return hex:lower():gsub("(%x%x)", "%1:"):sub(1, 17)
+end
+
+local function mac(field)
+  return mac_text(first(field))
+end
+
 local function present(field)
   return field ~= nil and field() ~= nil
 end
@@ -154,7 +169,7 @@ local function has(protos, name)
   return protos:find(":" .. name .. ":", 1, true) ~= nil
 end
 
-local state = { armed = false, out = nil, total = 0, ifaces = {} }
+local state = { armed = false, out = nil, total = 0, ifaces = {}, macs = {} }
 
 local function progress(phase, n)
   io.stdout:write("@@ESTX " .. phase .. " " .. n .. "\n")
@@ -172,6 +187,7 @@ local function try_arm()
   state.total = tonumber(total)
   state.armed = state.out ~= nil
   state.ifaces = {}
+  state.macs = {}
   if state.armed and #missing > 0 then
     state.out:write("W\tmissing fields: " .. esc(table.concat(missing, ", ")) .. "\n")
   end
@@ -289,12 +305,12 @@ end
 
 local function emit_arp(w, num)
   if not present(f.arp_op) then return end
-  w:write(table.concat({ "A", num, val(f.arp_op), val(f.arp_smac), val(f.arp_sip), val(f.arp_tmac), val(f.arp_tip) }, "\t"), "\n")
+  w:write(table.concat({ "A", num, val(f.arp_op), mac(f.arp_smac), val(f.arp_sip), mac(f.arp_tmac), val(f.arp_tip) }, "\t"), "\n")
 end
 
 local function emit_dhcp(w, num)
   if not present(f.dhcp_mac) then return end
-  w:write(table.concat({ "C", num, val(f.dhcp_type), val(f.dhcp_mac), val(f.dhcp_host), val(f.dhcp_yi), val(f.dhcp_req) }, "\t"), "\n")
+  w:write(table.concat({ "C", num, val(f.dhcp_type), mac(f.dhcp_mac), val(f.dhcp_host), val(f.dhcp_yi), val(f.dhcp_req) }, "\t"), "\n")
 end
 
 local function flag_str()
@@ -345,9 +361,16 @@ function p.dissector(tvb, pinfo, tree)
   local epoch = first(f.epoch)
 
   w:write(table.concat({ "P", num, epoch and tostring(epoch.value) or tostring(pinfo.abs_ts), val(f.len), val(f.caplen), ifid,
-    esc(protos), val(f.ethsrc), val(f.ethdst), src and esc(src.value) or "", dst and esc(dst.value) or "",
+    esc(protos), mac(f.ethsrc), mac(f.ethdst), src and esc(src.value) or "", dst and esc(dst.value) or "",
     sport and tostring(sport.value) or "", dport and tostring(dport.value) or "",
     val(f.tcpstream), val(f.udpstream), val(f.tcpflags), val(f.tcplen), flag_str() }, "\t"), "\n")
+
+  local srcmac = mac(f.ethsrc)
+  if srcmac ~= "" and not state.macs[srcmac] then
+    state.macs[srcmac] = true
+    local lg = first(f.ethlocal)
+    w:write(table.concat({ "V", srcmac, val(f.ethvendor), (lg and lg.value) and "1" or "0" }, "\t"), "\n")
+  end
 
   local segs = all(f.tcpseg)
   if #segs <= 1 then segs = all(f.ipfragment) end

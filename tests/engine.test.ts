@@ -227,3 +227,13 @@ describe('edge cases', () => {
     expect(m.dns.map((d) => d.qname)).toEqual(['ng.example', 'tun.example']);
   });
 });
+
+describe('MAC vendors', () => {
+  it('names registered prefix owners and flags locally administered addresses', async () => {
+    const { model: m } = await open('vendors.pcap');
+    const mac = (addr: string) => m.hosts.find((h) => h.addr === addr)!.macs[0];
+    expect(mac('10.0.1.10')).toEqual({ mac: '00:1b:21:aa:bb:cc', packets: 1, vendor: 'Intel Corporate', locallyAdministered: false });
+    expect(mac('10.0.1.20')).toMatchObject({ mac: 'f0:18:98:11:22:33', vendor: 'Apple, Inc.', locallyAdministered: false });
+    expect(mac('10.0.1.30')).toMatchObject({ mac: '06:11:22:33:44:55', vendor: null, locallyAdministered: true });
+  });
+});

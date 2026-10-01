@@ -1,14 +1,14 @@
 {
   "name": "estudely-packet-explorer",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "license": "GPL-2.0-or-later",
   "scripts": {
     "prepare-wasm": "node scripts/prepare-wiregasm.mjs",
     "dev": "npm run prepare-wasm && vite",
     "build": "npm run prepare-wasm && tsc -b && vite build",
-    "preview": "npm run build && wrangler dev",
+    "preview": "vite preview",
     "test": "npm run prepare-wasm && vitest run",
     "typecheck": "tsc -b",
     "fixtures": "python3 fixtures/generate.py",
@@ -27,7 +27,6 @@
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "^1.62.3",
     "@playwright/test": "^1.63.0",
     "@types/d3-force": "^3.0.10",
     "@types/d3-selection": "^3.0.12",

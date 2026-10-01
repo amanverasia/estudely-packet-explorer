@@ -509,7 +509,10 @@ export async function analyze(raw: RawRecords, meta: CaptureMeta, onProgress?: (
       ...rest,
       peers: _peers.size,
       conversations: _convs.size,
-      macs: [..._macs.entries()].sort((a, b) => b[1] - a[1]).map(([mac, packets]) => ({ mac, packets })),
+      macs: [..._macs.entries()].sort((a, b) => b[1] - a[1]).map(([mac, packets]) => {
+        const v = raw.macVendors.get(mac);
+        return { mac, packets, vendor: v?.vendor ?? null, locallyAdministered: v?.locallyAdministered ?? false };
+      }),
       protocols: [..._protos].sort(),
       clientPortCount: _clientPorts.size,
       servicePorts: rest.servicePorts

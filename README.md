@@ -1,36 +1,74 @@
 # Estudely Packet Explorer
 
-Open a `.pcap` or `.pcapng` file and explore it through protocol dashboards: **Overview, DNS, HTTP, TLS, Hosts, Connections and a Network graph**, plus a Wireshark-style packet list and per-packet decode drawer.
+**Open a packet capture and explore it as readable dashboards, entirely in your browser.**
 
-**Your capture is processed locally in your browser.** Decoding runs in Wireshark 4.4.5 compiled to WebAssembly ([Wiregasm](https://github.com/good-tools/wiregasm)) inside a Web Worker. There is no backend, no uploads, no analytics and no online lookups. The site is plain static files.
+### [Open the app at trace.esdy.cc](https://trace.esdy.cc)
 
-## Quick start
+Drop in a `.pcap` or `.pcapng` file and get organised views of its DNS lookups, web requests, TLS handshakes, hosts and connections, with the exact packets behind every row one click away. Decoding is done by [Wireshark](https://www.wireshark.org/) itself, compiled to WebAssembly, running inside the page.
+
+**Your capture is processed locally in your browser.** Nothing is uploaded: there is no server, no account, no analytics and no online lookups. The site is a set of static files.
+
+![Overview of a capture: packet counts, time range and traffic over time by protocol](docs/screenshots/overview.png)
+
+## What you can explore
+
+| View | What it shows |
+|---|---|
+| **Overview** | Packets, duration, bytes, time range at the file's own precision, traffic over time by protocol, top talkers, largest conversations, protocol hierarchy, and data-quality notes (truncated, malformed or missing packets) |
+| **DNS** | Every query and response for DNS, mDNS, LLMNR and NBNS: names, record types, response codes, answers and response times. Queries are matched to responses, repeated queries are kept as separate rows, unanswered queries are counted, and a diagram shows which clients used which resolvers |
+| **HTTP** | Cleartext HTTP/1.x requests paired with their responses: method, host, path, status and headers, grouped by host. Explains when traffic is encrypted or could not be decoded |
+| **TLS** | Server names (SNI), the versions, cipher suites and ALPN a client *offered* next to what the server *chose*, and certificates when they were sent in the clear |
+| **Hosts** | Every IPv4 and IPv6 address with its MAC addresses and their registered vendor, traffic sent and received, peers, the ports others connected to (with the evidence seen), and names learned from the capture, each labelled with its source |
+| **Connections** | TCP and UDP sessions with traffic in each direction, timing and TCP flags, with drill-down into each session's protocol records and packets |
+| **Network** | An interactive graph of which hosts talked to which, sized by traffic and coloured by protocol |
+| **Packet list** | Wireshark's own packet list and display filters, with the full decode and hex bytes of any packet |
+
+Every table can be searched, sorted and exported as CSV, and the whole analysis can be saved as a JSON summary. Both are ordinary downloads.
+
+![DNS view: queries matched to responses, response codes and client-to-resolver relationships](docs/screenshots/dns.png)
+
+## Honest by design
+
+- **Shows what the capture contains, and says what it can't see.** Missing values read "unavailable", encrypted traffic is called encrypted, and partial results are marked partial.
+- **Every record links to its source packets,** including all the TCP segments or IP fragments it was reassembled from.
+- **No guesses presented as facts.** There are no threat scores, attack verdicts or device fingerprinting. A port that received traffic is not called "open", and names a client merely *used* are labelled inferred.
+
+![TLS view: offered versus negotiated parameters for each handshake](docs/screenshots/tls.png)
+
+## How it works
+
+The capture is read by a Web Worker running [Wiregasm](https://github.com/good-tools/wiregasm), a WebAssembly build of Wireshark 4.4. A small Wireshark Lua script collects the fields each dashboard needs in a single decoding pass, after Wireshark has reassembled TCP streams and IP fragments. TypeScript then builds one shared model that every view reads. The full write-up is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+It handles pcap and pcapng (including several interfaces with different link types), IPv4 and IPv6, truncated and cut-short files, and timestamps down to nanoseconds. Captures of a few hundred megabytes work: about a minute per 400,000 packets. Files over 1 GB are refused. Known gaps (HTTP/2 request rows, decryption, and others) are listed in [docs/FEATURES.md](docs/FEATURES.md) and tracked in the [issues](https://github.com/amanverasia/estudely-packet-explorer/issues).
+
+## Run it yourself
 
 ```bash
 npm install
 npm run dev        # http://localhost:5173
-npm test           # engine tests: real Wiregasm against fixtures/
-npm run e2e        # build, serve from a subdirectory, run browser tests (Playwright)
-npm run build      # static site in dist/
-npm run preview    # serve dist/ locally
 ```
 
-Requires Node 20+ (developed on Node 26). Browser tests need Chromium once: `npx playwright install chromium`. `npm run prepare-wasm` (run automatically by dev/build/test) copies the engine from `node_modules/@goodtools/wiregasm` into `public/wiregasm/`.
+| Command | What it does |
+|---|---|
+| `npm test` | Engine tests: real Wireshark/WASM against synthetic captures in `fixtures/` |
+| `npm run e2e` | Builds the site, serves it from a subdirectory and runs the browser tests (run `npx playwright install chromium` once first) |
+| `npm run build` | Production build in `dist/`, a plain static site you can host anywhere, in any subdirectory |
+| `npm run deploy` | Builds and deploys to Cloudflare (needs `npx wrangler login`) |
+| `npm run fixtures` | Regenerates the test captures (needs Python with `scapy` and `cryptography`) |
 
-To regenerate the test captures: `python3 fixtures/generate.py` (needs `scapy` and `cryptography`).
+Requires Node 20 or later. Hosting notes, including the security headers to set, are in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
-## Documentation
+## Roadmap
 
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — how the engine, worker and shared model fit together, and the Wiregasm evaluation.
-- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — static hosting, subdirectories, headers, caching.
-- [docs/FEATURES.md](docs/FEATURES.md) — what each view shows, supported formats, known limitations.
-- [docs/LICENSES.md](docs/LICENSES.md) — dependency attribution and GPL obligations for the distributed WASM.
-- [docs/COMPLETION-REPORT.md](docs/COMPLETION-REPORT.md) — what works, what was tested, what is incomplete.
+Planned work is tracked as [GitHub issues](https://github.com/amanverasia/estudely-packet-explorer/issues). Next up:
+- decrypting TLS with a key log file you provide
+- HTTP/2 request rows
+- selecting a time range that filters every view
 
-## Licence
+## Licence and credits
 
 Copyright (C) 2026 Estudely and contributors.
 
-This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 2 of the License, or (at your option) any later version. It is distributed WITHOUT ANY WARRANTY; see [LICENSE](LICENSE).
+Estudely Packet Explorer is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 2 of the License or (at your option) any later version. It is distributed WITHOUT ANY WARRANTY; see [LICENSE](LICENSE).
 
-The bundled Wireshark/Wiregasm engine is GPL-2.0. Its corresponding source, including every library compiled into it, is in the [`engine-source-1.9.1` release](https://github.com/amanverasia/estudely-packet-explorer/releases/tag/engine-source-1.9.1). See [docs/LICENSES.md](docs/LICENSES.md).
+Packet decoding is by [Wireshark](https://www.wireshark.org/) via [Wiregasm](https://github.com/good-tools/wiregasm), both GPL-2.0. The corresponding source of the bundled engine, including every library compiled into it, is published in the [`engine-source-1.9.1` release](https://github.com/amanverasia/estudely-packet-explorer/releases/tag/engine-source-1.9.1). Other components and their licences are listed in [docs/LICENSES.md](docs/LICENSES.md).

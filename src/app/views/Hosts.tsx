@@ -20,8 +20,10 @@ export function Hosts() {
     { key: 'scope', header: 'Address range', width: '120px', value: (h) => h.scope },
     { key: 'names', header: 'Names seen in capture', width: 'minmax(180px, 1.6fr)', value: (h) => h.names.map((n) => n.name).join(', '),
       render: (h) => h.names.length ? <span>{h.names[0].name}{h.names.length > 1 && <span className="muted"> +{h.names.length - 1}</span>} <span className="muted">({h.names[0].source})</span></span> : '' },
-    { key: 'mac', header: 'Source MAC', width: '150px', value: (h) => h.macs.map((m) => m.mac).join(' '),
+    { key: 'mac', header: 'Source MAC', width: '170px', value: (h) => h.macs.map((m) => m.mac).join(' '),
       render: (h) => h.macs.length ? <span className="mono">{h.macs[0].mac}{h.macs.length > 1 && <span className="muted"> +{h.macs.length - 1}</span>}</span> : '' },
+    { key: 'vendor', header: 'MAC vendor', width: 'minmax(140px, 1fr)', value: (h) => (h.macs[0] ? vendorText(h.macs[0]) : null),
+      title: 'Registered owner of the MAC address prefix (Wireshark OUI table). Not a device identification.' },
     { key: 'txp', header: 'Sent pkts', width: '90px', align: 'right', value: (h) => h.txPackets, render: (h) => num(h.txPackets), noSearch: true },
     { key: 'txb', header: 'Sent', width: '90px', align: 'right', value: (h) => h.txBytes, render: (h) => bytes(h.txBytes), noSearch: true },
     { key: 'rxp', header: 'Recv pkts', width: '90px', align: 'right', value: (h) => h.rxPackets, render: (h) => num(h.rxPackets), noSearch: true },
@@ -75,12 +77,20 @@ function HostDetail({ host: h, onClose, go, openFrame, startEpoch, digits }: {
             <h3 style={{ marginBottom: 6 }}>MAC addresses</h3>
             {h.macs.length ? (
               <dl className="kv">
-                {h.macs.map((m) => <div key={m.mac} style={{ display: 'contents' }}><dt className="mono">{m.mac}</dt><dd>source of {plural(m.packets, 'packet')} from this address</dd></div>)}
+                {h.macs.map((m) => (
+                  <div key={m.mac} style={{ display: 'contents' }}>
+                    <dt className="mono">{m.mac}</dt>
+                    <dd>{vendorText(m)}; source of {plural(m.packets, 'packet')} from this address</dd>
+                  </div>
+                ))}
               </dl>
             ) : <p className="muted">No Ethernet source address observed (for example raw-IP or tunnelled captures).</p>}
             {h.arpMacs.length > 0 && <p style={{ marginTop: 6 }}>ARP announced this address at <span className="mono">{h.arpMacs.join(', ')}</span>.</p>}
             {h.macs.length > 0 && h.scope !== 'private' && h.scope !== 'link-local' && h.scope !== 'unique local' && (
               <p className="muted" style={{ marginTop: 6, fontSize: 12 }}>For addresses outside the local network the source MAC is usually a router, not this host.</p>
+            )}
+            {h.macs.length > 0 && (
+              <p className="muted" style={{ marginTop: 6, fontSize: 12 }}>Vendors are the registered owners of each address prefix, from Wireshark's built-in table. They describe the network interface's maker, not the device, and can be spoofed.</p>
             )}
           </div>
         </div>
@@ -118,4 +128,9 @@ function HostDetail({ host: h, onClose, go, openFrame, startEpoch, digits }: {
       </div>
     </Panel>
   );
+}
+
+function vendorText(m: Host['macs'][number]): string {
+  if (m.locallyAdministered) return 'locally administered (no vendor; often a randomised address)';
+  return m.vendor ?? 'vendor not in Wireshark\'s table';
 }

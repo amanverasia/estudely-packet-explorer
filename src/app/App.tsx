@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { AnalysisModel } from '../engine/types';
+import { BuildTag } from './components/BuildTag';
 import { Strip } from './components/charts';
 import { Drawer } from './components/Drawer';
 import { Ctx, type AppCtx, type DrawerSpec } from './context';
@@ -179,6 +180,7 @@ function Landing({ state, onOpen, onCancel, theme, setTheme }: { state: EngineSt
           <div><h3>Privacy</h3>No uploads, analytics or lookups. The capture stays in this tab's memory until you close it or the tab.</div>
         </div>
       </div>
+      <BuildTag className="corner" />
     </main>
   );
 }
@@ -245,6 +247,7 @@ function Workspace(props: {
           <div className="sidebar-foot">
             <p className="local-note"><ShieldIcon />{LOCAL_NOTICE}</p>
             <p>Decoded with Wireshark {c.engine.wireshark} via Wiregasm. <a href="./ABOUT.html" target="_blank" rel="noopener">Licences and limitations</a></p>
+            <BuildTag />
           </div>
         </aside>
         <div className="main">
@@ -272,6 +275,7 @@ function Workspace(props: {
           </header>
           <main className="content" id="content">
             <Suspense fallback={<div className="muted">Loading view…</div>}>{body}</Suspense>
+            <BuildTag className="mobile-only" />
           </main>
         </div>
       </div>

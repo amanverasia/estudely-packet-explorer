@@ -1,6 +1,7 @@
 // Copyright (C) 2026 Estudely and contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
 import { expect, test, type Page, type Request } from '@playwright/test';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const fixture = (name: string) => fileURLToPath(new URL(`../fixtures/${name}`, import.meta.url));
@@ -234,3 +235,24 @@ for (const vp of [{ name: 'tablet', width: 820, height: 1180 }, { name: 'phone',
     if (vp.name === 'phone') await expect(page.locator('.mobile-local')).toBeVisible();
   });
 }
+
+test('shows version, build and a source link on the start screen and in the workspace', async ({ page }) => {
+  const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
+  await page.goto('./');
+  const corner = page.locator('.build-tag.corner');
+  await expect(corner.getByRole('link', { name: 'Source on GitHub' })).toHaveAttribute('href', 'https://github.com/amanverasia/estudely-packet-explorer');
+  await expect(corner).toContainText(`Version ${version}, build`);
+  await openCapture(page, 'dns.pcap');
+  await expect(page.locator('.sidebar .build-tag')).toContainText(`Version ${version}`);
+});
+
+test('Hosts view shows registered MAC vendors and flags locally administered addresses', async ({ page }) => {
+  await page.goto('./');
+  await openCapture(page, 'vendors.pcap');
+  await view(page, 'hosts');
+  const hosts = page.getByRole('grid', { name: 'Hosts' });
+  await expect(hosts.getByRole('row').filter({ hasText: '10.0.1.10' })).toContainText('Intel Corporate');
+  await expect(hosts.getByRole('row').filter({ hasText: '10.0.1.20' })).toContainText('Apple, Inc.');
+  await expect(hosts.getByRole('row').filter({ hasText: '10.0.1.30' })).toContainText('locally administered');
+  await expect(hosts).toContainText('00:1b:21:aa:bb:cc');
+});

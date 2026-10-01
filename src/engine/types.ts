@@ -107,7 +107,12 @@ export interface Host {
   addr: string;
   ipVersion: 4 | 6;
   scope: string;
-  macs: { mac: string; packets: number }[];
+  /**
+   * Source MAC addresses of this host's packets. `vendor` is the registered
+   * owner of the address prefix (Wireshark's OUI table), not a device identity;
+   * locally administered (often randomised) addresses have no vendor.
+   */
+  macs: { mac: string; packets: number; vendor: string | null; locallyAdministered: boolean }[];
   arpMacs: string[];
   txPackets: number;
   txBytes: number;

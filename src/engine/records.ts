@@ -115,6 +115,8 @@ export interface RawRecords {
   arp: RawArp[];
   dhcp: RawDhcp[];
   ifaces: RawIface[];
+  /** Source MAC -> registered vendor (Wireshark's OUI table) and locally-administered bit. */
+  macVendors: Map<string, { vendor: string | null; locallyAdministered: boolean }>;
   warnings: string[];
   startEpoch: string | null;
   timestampDigits: number;
@@ -179,7 +181,7 @@ export function forEachLine(buf: Uint8Array, fn: (line: string) => void, onProgr
 export function parseRecords(buf: Uint8Array, onProgress?: (fraction: number) => void): RawRecords {
   const out: RawRecords = {
     packets: [], segments: new Map(), dns: [], nbns: [], http: [], tls: [], arp: [], dhcp: [], ifaces: [],
-    warnings: [], startEpoch: null, timestampDigits: 0,
+    macVendors: new Map(), warnings: [], startEpoch: null, timestampDigits: 0,
   };
   let baseSec = 0;
   let baseFrac = 0;
@@ -283,6 +285,9 @@ export function parseRecords(buf: Uint8Array, onProgress?: (fraction: number) =>
         break;
       case 'I':
         out.ifaces.push({ id: int(c[1]), linkType: str(c[2]) ?? 'unknown', name: str(c[3]) ?? '' });
+        break;
+      case 'V':
+        out.macVendors.set(unescapeField(c[1] ?? ''), { vendor: str(c[2]), locallyAdministered: c[3] === '1' });
         break;
       case 'W':
         out.warnings.push(unescapeField(c.slice(1).join('\t')));

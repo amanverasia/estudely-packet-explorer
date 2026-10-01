@@ -305,10 +305,23 @@ def pcapng_fixture():
     open(os.path.join(HERE, "multi-iface.pcapng"), "wb").write(body)
 
 
+# ----------------------------------------------------------------- MAC vendors
+def vendors_fixture():
+    """Real registered prefixes (Intel 00:1b:21, Apple f0:18:98) plus a locally administered MAC."""
+    c = Clock()
+    P = [
+        (Ether(src="00:1b:21:aa:bb:cc", dst="f0:18:98:11:22:33") / IP(src="10.0.1.10", dst="10.0.1.20") / UDP(sport=40000, dport=9) / Raw(b"x"), c.tick()),
+        (Ether(src="f0:18:98:11:22:33", dst="00:1b:21:aa:bb:cc") / IP(src="10.0.1.20", dst="10.0.1.10") / UDP(sport=9, dport=40000) / Raw(b"y"), c.tick()),
+        (Ether(src="06:11:22:33:44:55", dst="00:1b:21:aa:bb:cc") / IP(src="10.0.1.30", dst="10.0.1.10") / UDP(sport=40001, dport=9) / Raw(b"z"), c.tick()),
+    ]
+    wrpcap(os.path.join(HERE, "vendors.pcap"), stamp(P))
+
+
 if __name__ == "__main__":
     dns_fixture()
     http_fixture()
     tls_fixture()
     edge_fixture()
     pcapng_fixture()
+    vendors_fixture()
     print("fixtures written to", HERE)
