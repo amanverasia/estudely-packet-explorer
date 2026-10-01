@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Estudely and contributors
+// SPDX-License-Identifier: GPL-2.0-or-later
 import { expect, test, type Page, type Request } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 

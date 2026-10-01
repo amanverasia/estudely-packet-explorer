@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Estudely and contributors
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copies the Wiregasm runtime (Wireshark compiled to WebAssembly) out of
 // node_modules into public/wiregasm so it is self-hosted with the app.
 // The WASM and data package are shipped gzip-compressed and decompressed in

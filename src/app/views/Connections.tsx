@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Estudely and contributors
+// SPDX-License-Identifier: GPL-2.0-or-later
 import { useEffect, useMemo, useState } from 'react';
 import type { Conversation, PacketRow, Transport } from '../../engine/types';
 import { DataTable, type Column } from '../components/DataTable';

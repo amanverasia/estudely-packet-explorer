@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Estudely and contributors
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Minimal static server for tests: serves dist/ under a subdirectory, the way
 // a plain static host would (no rewrites, no special headers).
 import { createReadStream, statSync } from 'node:fs';

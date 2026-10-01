@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Estudely and contributors
+// SPDX-License-Identifier: GPL-2.0-or-later
 import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, type SimulationLinkDatum, type SimulationNodeDatum } from 'd3-force';
 import { select } from 'd3-selection';
 import { zoom, zoomIdentity } from 'd3-zoom';

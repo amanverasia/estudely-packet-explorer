@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Estudely and contributors
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Aggregates raw extractor records into the shared AnalysisModel.
 // Pure TypeScript: runs in the Web Worker and in Node tests.
 import type {

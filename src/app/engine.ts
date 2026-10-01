@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Estudely and contributors
+// SPDX-License-Identifier: GPL-2.0-or-later
 // UI-side controller for the analysis worker. One worker per capture:
 // cancelling or replacing a capture terminates the worker, which frees the
 // whole WASM heap. The compiled engine module is kept and handed to the next

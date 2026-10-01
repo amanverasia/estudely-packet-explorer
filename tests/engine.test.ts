@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Estudely and contributors
+// SPDX-License-Identifier: GPL-2.0-or-later
 // End-to-end engine tests: real Wiregasm (Wireshark WASM) + the Lua extractor
 // + the TypeScript aggregation, run against synthetic fixtures with known contents.
 import { readFileSync } from 'node:fs';

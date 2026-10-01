@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Estudely and contributors
+// SPDX-License-Identifier: GPL-2.0-or-later
 import { useMemo } from 'react';
 import type { TlsSession } from '../../engine/types';
 import { BarList } from '../components/charts';

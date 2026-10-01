@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Estudely and contributors
+// SPDX-License-Identifier: GPL-2.0-or-later
 import { useMemo, useState } from 'react';
 import { BarList, Legend, TimeChart, colorMap } from '../components/charts';
 import { DataTable } from '../components/DataTable';

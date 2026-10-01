@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Estudely and contributors
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Formatting helpers. Every function returns plain text; captured strings are
 // always rendered by React as text nodes, never as HTML.
 

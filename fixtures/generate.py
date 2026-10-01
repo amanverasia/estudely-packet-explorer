@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Estudely and contributors
+# SPDX-License-Identifier: GPL-2.0-or-later
 """Generate small synthetic capture fixtures with known expected contents.
 
 All traffic is fabricated with scapy between documentation/private addresses,

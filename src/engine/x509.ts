@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Estudely and contributors
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Minimal X.509 (DER) reader for certificates observed in cleartext TLS
 // handshakes. It extracts display fields only and never validates trust.
 import type { Certificate } from './types';

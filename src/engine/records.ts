@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Estudely and contributors
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Parses the tab-separated output of extractor.lua into typed raw records.
 // Lines are decoded incrementally from the byte buffer so a large output
 // never has to exist as one giant JS string.

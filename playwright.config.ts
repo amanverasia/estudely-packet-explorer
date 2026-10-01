@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Estudely and contributors
+// SPDX-License-Identifier: GPL-2.0-or-later
 import { defineConfig, devices } from '@playwright/test';
 
 // Runs against the production build served from a subdirectory by a plain

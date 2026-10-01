@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Estudely and contributors
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Drives Wiregasm for one capture: load -> armed extraction pass -> parse ->
 // aggregate. Also serves packet details and the packet list on demand.
 // Used by the Web Worker in the browser and directly by Node tests.

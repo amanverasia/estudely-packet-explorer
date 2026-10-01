@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Estudely and contributors
+// SPDX-License-Identifier: GPL-2.0-or-later
 import { useMemo, useState } from 'react';
 import type { DnsProto, DnsTransaction } from '../../engine/types';
 import { BarList, FlowChart } from '../components/charts';

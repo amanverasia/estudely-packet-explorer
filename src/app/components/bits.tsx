@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Estudely and contributors
+// SPDX-License-Identifier: GPL-2.0-or-later
 import type { ReactNode } from 'react';
 import { useApp } from '../context';
 

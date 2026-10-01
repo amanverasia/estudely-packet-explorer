@@ -1,3 +1,5 @@
+-- Copyright (C) 2026 Estudely and contributors
+-- SPDX-License-Identifier: GPL-2.0-or-later
 -- Estudely Packet Explorer field extractor (Wireshark Lua postdissector).
 --
 -- Runs inside Wiregasm (Wireshark compiled to WebAssembly). It is inert until

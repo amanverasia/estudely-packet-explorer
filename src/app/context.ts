@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Estudely and contributors
+// SPDX-License-Identifier: GPL-2.0-or-later
 import { createContext, useContext, type ReactNode } from 'react';
 import type { AnalysisModel } from '../engine/types';
 import type { EngineClient } from './engine';

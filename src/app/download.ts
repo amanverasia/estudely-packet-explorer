@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Estudely and contributors
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Local exports: files are built in memory and saved through a browser
 // download. Nothing is sent anywhere.
 import type { AnalysisModel } from '../engine/types';

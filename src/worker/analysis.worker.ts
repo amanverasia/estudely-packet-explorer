@@ -1,4 +1,6 @@
 /// <reference lib="webworker" />
+// Copyright (C) 2026 Estudely and contributors
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Analysis worker: hosts Wiregasm (Wireshark WASM) and one capture session.
 // The capture never leaves this worker except as aggregated results posted
 // back to the page. A new worker is created for every capture and terminated

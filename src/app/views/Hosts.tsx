@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Estudely and contributors
+// SPDX-License-Identifier: GPL-2.0-or-later
 import { useMemo, useState } from 'react';
 import type { Host } from '../../engine/types';
 import { DataTable, type Column } from '../components/DataTable';

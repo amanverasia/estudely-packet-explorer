@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Estudely and contributors
+// SPDX-License-Identifier: GPL-2.0-or-later
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FrameDetails, PacketRow, ProtoTreeNode } from '../../engine/types';
 import { useApp, type DrawerSpec } from '../context';

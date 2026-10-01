@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Estudely and contributors
+// SPDX-License-Identifier: GPL-2.0-or-later
 import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Timeline } from '../../engine/types';
 import { bytes, duration, num, pct } from '../format';

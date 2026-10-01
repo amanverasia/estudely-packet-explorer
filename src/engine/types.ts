@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Estudely and contributors
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Shared analysis model. Produced once per capture inside the worker and
 // consumed by every view, so tabs never re-parse the file.
 //
