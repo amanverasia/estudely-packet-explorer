@@ -18,7 +18,10 @@
 --   H num kind method uri version host ua code phrase ctype clen headers(list) server location
 --   T num carrier hstype version sni alpn(list) supver(list) ciphers(list) certs(list hex) recver
 --   A num opcode srcmac srcip dstmac dstip
---   C num msgtype chaddr hostname yiaddr reqip
+--   C num msgtype chaddr hostname yiaddr reqip xid serverid leasetime mask routers(list) dns(list)
+--   K num ipver type code typename codename ident seq qproto qsrc qdst qsport qdport   -- ICMP / ICMPv6
+--   X num version direction                    -- SSH version string; direction 0 = client to server
+--   Q num versions(list) supported(list)       -- QUIC long headers; supported = Version Negotiation list
 --   V mac vendor locallyadministered           -- once per source MAC; vendor from Wireshark's built-in OUI table
 --   W message                                  -- extractor warnings
 
@@ -78,6 +81,16 @@ local f = {
   arp_tmac = F("arp.dst.hw_mac"), arp_tip = F("arp.dst.proto_ipv4"),
   dhcp_type = F("dhcp.option.dhcp"), dhcp_mac = F("dhcp.hw.mac_addr"), dhcp_host = F("dhcp.option.hostname"),
   dhcp_yi = F("dhcp.ip.your"), dhcp_req = F("dhcp.option.requested_ip_address"),
+  dhcp_xid = F("dhcp.id"), dhcp_sid = F("dhcp.option.dhcp_server_id"), dhcp_lease = F("dhcp.option.ip_address_lease_time"),
+  dhcp_mask = F("dhcp.option.subnet_mask"), dhcp_router = F("dhcp.option.router"), dhcp_dns = F("dhcp.option.domain_name_server"),
+  -- ICMP / ICMPv6 (quoted headers of error messages are read from the second ip/ipv6 layer)
+  ipproto = F("ip.proto"), ip6nxt = F("ipv6.nxt"),
+  icmp_type = F("icmp.type"), icmp_code = F("icmp.code"), icmp_id = F("icmp.ident"), icmp_seq = F("icmp.seq"),
+  icmp6_type = F("icmpv6.type"), icmp6_code = F("icmpv6.code"),
+  icmp6_id = F("icmpv6.echo.identifier"), icmp6_seq = F("icmpv6.echo.sequence_number"),
+  -- SSH / QUIC
+  ssh_proto = F("ssh.protocol"), ssh_dir = F("ssh.direction"),
+  quic_ver = F("quic.version"), quic_sup = F("quic.supported_version"),
 }
 
 local esc_map = { ["\\"] = "\\\\", ["\t"] = "\\t", ["\n"] = "\\n", ["\r"] = "\\r", ["\31"] = "\\u" }
@@ -310,7 +323,58 @@ end
 
 local function emit_dhcp(w, num)
   if not present(f.dhcp_mac) then return end
-  w:write(table.concat({ "C", num, val(f.dhcp_type), mac(f.dhcp_mac), val(f.dhcp_host), val(f.dhcp_yi), val(f.dhcp_req) }, "\t"), "\n")
+  w:write(table.concat({ "C", num, val(f.dhcp_type), mac(f.dhcp_mac), val(f.dhcp_host), val(f.dhcp_yi), val(f.dhcp_req),
+    val(f.dhcp_xid), val(f.dhcp_sid), val(f.dhcp_lease), val(f.dhcp_mask), vals(all(f.dhcp_router)), vals(all(f.dhcp_dns)) }, "\t"), "\n")
+end
+
+-- "3 (Destination unreachable)" or "Destination Unreachable (1)" -> the name only
+local function code_name(fi)
+  if fi == nil then return "" end
+  local d = tostring(fi.display)
+  return esc(d:match("^%d+ %((.*)%)$") or d:match("^(.-) %(%d+%)$") or d)
+end
+
+-- One line per ICMP message (the outer one). Error messages quote the packet
+-- that caused them; its addresses come from the second (inner) IP layer and
+-- its ports from the only TCP/UDP layer present.
+local function emit_icmp(w, num, v6)
+  local ty, co, id, sq = f.icmp_type, f.icmp_code, f.icmp_id, f.icmp_seq
+  local src, dst, proto = f.ipsrc, f.ipdst, f.ipproto
+  if v6 then
+    ty, co, id, sq = f.icmp6_type, f.icmp6_code, f.icmp6_id, f.icmp6_seq
+    src, dst, proto = f.ip6src, f.ip6dst, f.ip6nxt
+  end
+  local t = first(ty)
+  if not t then return end
+  local c = first(co)
+  -- The quoted packet is whatever IP and TCP/UDP header follows the ICMP
+  -- header; tunnels (VXLAN, GRE, IP-in-IP) put more IP headers before it.
+  local function after(field)
+    for _, fi in ipairs(all(field)) do
+      if fi.offset > t.offset then return fi end
+    end
+    return nil
+  end
+  local qs, qd, qp = after(src), after(dst), after(proto)
+  local sport, dport = after(f.tcpsport), after(f.tcpdport)
+  if not sport then sport, dport = after(f.udpsport), after(f.udpdport) end
+  local inner = qs ~= nil
+  w:write(table.concat({ "K", num, v6 and "6" or "4", tostring(t.value), c and tostring(c.value) or "", code_name(t), code_name(c),
+    val(id), val(sq), (inner and qp) and code_name(qp) or "", inner and esc(qs.value) or "", (inner and qd) and esc(qd.value) or "",
+    (inner and sport) and tostring(sport.value) or "", (inner and dport) and tostring(dport.value) or "" }, "\t"), "\n")
+end
+
+local function emit_ssh(w, num)
+  for _, fi in ipairs(all(f.ssh_proto)) do
+    local d = first(f.ssh_dir)
+    w:write(table.concat({ "X", num, esc(fi.value), d == nil and "" or (d.value and "1" or "0") }, "\t"), "\n")
+  end
+end
+
+local function emit_quic(w, num)
+  local vs = all(f.quic_ver)
+  if #vs == 0 then return end
+  w:write(table.concat({ "Q", num, vals(vs, true), vals(all(f.quic_sup), true) }, "\t"), "\n")
 end
 
 local function flag_str()
@@ -384,7 +448,10 @@ function p.dissector(tvb, pinfo, tree)
     if has(wrapped, "http") then emit_http(w, num) end
     if has(wrapped, "tls") then emit_tls(w, num, has(wrapped, "quic") and "quic" or "tcp") end
     if has(wrapped, "dhcp") then emit_dhcp(w, num) end
+    if has(wrapped, "ssh") then emit_ssh(w, num) end
+    if has(wrapped, "quic") then emit_quic(w, num) end
   end
+  if has(wrapped, "icmp") then emit_icmp(w, num, false) elseif has(wrapped, "icmpv6") then emit_icmp(w, num, true) end
   if has(wrapped, "arp") then emit_arp(w, num) end
 
   if num % PROGRESS_EVERY == 0 then progress("extract", num) end

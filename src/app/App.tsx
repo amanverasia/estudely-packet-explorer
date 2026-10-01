@@ -18,10 +18,15 @@ const Hosts = lazy(() => import('./views/Hosts').then((m) => ({ default: m.Hosts
 const Connections = lazy(() => import('./views/Connections').then((m) => ({ default: m.Connections })));
 const Network = lazy(() => import('./views/Network').then((m) => ({ default: m.Network })));
 const Packets = lazy(() => import('./views/Packets').then((m) => ({ default: m.Packets })));
+const Dhcp = lazy(() => import('./views/Dhcp').then((m) => ({ default: m.Dhcp })));
+const Arp = lazy(() => import('./views/Arp').then((m) => ({ default: m.Arp })));
+const Icmp = lazy(() => import('./views/Icmp').then((m) => ({ default: m.Icmp })));
+const Ssh = lazy(() => import('./views/Ssh').then((m) => ({ default: m.Ssh })));
+const Quic = lazy(() => import('./views/Quic').then((m) => ({ default: m.Quic })));
 
 export const LOCAL_NOTICE = 'Your capture is processed locally in your browser.';
 
-const VIEWS = ['overview', 'dns', 'http', 'tls', 'hosts', 'connections', 'network', 'packets'] as const;
+const VIEWS = ['overview', 'dns', 'http', 'tls', 'hosts', 'connections', 'network', 'packets', 'dhcp', 'arp', 'icmp', 'ssh', 'quic'] as const;
 type View = (typeof VIEWS)[number];
 
 function parseHash(): { view: View; params: URLSearchParams } {
@@ -211,6 +216,11 @@ function Workspace(props: {
     { id: 'dns', label: 'DNS', count: model.dns.length },
     { id: 'http', label: 'HTTP', count: model.http.length },
     { id: 'tls', label: 'TLS', count: model.tls.length },
+    { id: 'quic', label: 'QUIC', count: model.quic.length },
+    { id: 'ssh', label: 'SSH', count: model.ssh.length },
+    { id: 'dhcp', label: 'DHCP', count: model.dhcp.length },
+    { id: 'arp', label: 'ARP', count: model.arp.length },
+    { id: 'icmp', label: 'ICMP', count: model.icmp.length },
     { id: 'hosts', label: 'Hosts', count: model.hosts.length },
     { id: 'connections', label: 'Connections', count: model.conversations.length },
     { id: 'network', label: 'Network' },
@@ -224,6 +234,11 @@ function Workspace(props: {
     case 'connections': body = <Connections key={props.params.toString()} />; break;
     case 'network': body = <Network />; break;
     case 'packets': body = <Packets key={props.params.toString()} />; break;
+    case 'dhcp': body = <Dhcp />; break;
+    case 'arp': body = <Arp />; break;
+    case 'icmp': body = <Icmp />; break;
+    case 'ssh': body = <Ssh />; break;
+    case 'quic': body = <Quic />; break;
     default: body = <Overview />;
   }
   return (

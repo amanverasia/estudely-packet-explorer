@@ -290,6 +290,140 @@ export interface TlsSession extends Provenance {
   certificateStatus: 'decoded' | 'encrypted (TLS 1.3)' | 'not observed';
 }
 
+export interface DhcpMessage {
+  frame: number;
+  t: number;
+  /** DHCP message type (option 53), e.g. "Discover", "ACK"; "BOOTP" when the option is absent. */
+  type: string;
+  src: string;
+  dst: string;
+}
+
+export type DhcpOutcome = 'acknowledged' | 'refused (NAK)' | 'offered, no ACK seen' | 'no server reply seen' | 'released' | 'declined';
+
+/** DHCP messages sharing one transaction id and client MAC. */
+export interface DhcpExchange extends Provenance {
+  id: number;
+  xid: number | null;
+  clientMac: string;
+  /** Host Name option (12) sent by the client. */
+  hostname: string | null;
+  requestedIp: string | null;
+  /** yiaddr of the last OFFER. */
+  offeredIp: string | null;
+  /** yiaddr of the ACK. */
+  assignedIp: string | null;
+  /** Server Identifier option (54), else the source address of the server's reply. */
+  server: string | null;
+  leaseTime: number | null;
+  subnetMask: string | null;
+  routers: string[];
+  dnsServers: string[];
+  start: number;
+  messages: DhcpMessage[];
+  outcome: DhcpOutcome;
+}
+
+export interface ArpRecord {
+  frame: number;
+  t: number;
+  op: string;
+  /** Sender hardware and protocol address. */
+  mac: string;
+  ip: string;
+  targetMac: string;
+  targetIp: string;
+  /** Sender and target protocol addresses are the same (an announcement). */
+  gratuitous: boolean;
+}
+
+/** One stretch of time in which ARP senders used the same MAC for an IP address. */
+export interface ArpPeriod {
+  mac: string;
+  firstFrame: number;
+  lastFrame: number;
+  firstSeen: number;
+  lastSeen: number;
+  messages: number;
+}
+
+/** IP-to-MAC mappings stated by ARP senders, in time order. */
+export interface ArpBinding extends Provenance {
+  ip: string;
+  macs: string[];
+  /** Times the stated MAC differed from the previous one. */
+  changes: number;
+  periods: ArpPeriod[];
+}
+
+export interface IcmpMessage extends Provenance {
+  id: number;
+  version: 4 | 6;
+  frame: number;
+  t: number;
+  src: string;
+  dst: string;
+  type: number;
+  code: number | null;
+  typeName: string | null;
+  codeName: string | null;
+  kind: 'error' | 'echo request' | 'echo reply' | 'other';
+  echo: null | {
+    ident: number | null;
+    seq: number | null;
+    /** For requests: replied / no reply seen. For replies: reply / reply without request. */
+    status: 'replied' | 'no reply seen' | 'reply' | 'reply without request';
+    pairedFrame: number | null;
+  };
+  /** The packet an error message quotes, linked to its conversation when one was captured. */
+  quoted: null | {
+    protocol: string | null;
+    src: string;
+    srcPort: number | null;
+    dst: string;
+    dstPort: number | null;
+    convId: number | null;
+  };
+}
+
+export interface SshSession extends Provenance {
+  id: number;
+  convId: number | null;
+  stream: number | null;
+  client: string;
+  clientPort: number | null;
+  server: string;
+  serverPort: number | null;
+  start: number;
+  /** Identification strings, e.g. "SSH-2.0-OpenSSH_9.6", as sent. */
+  clientVersion: string | null;
+  clientVersionFrame: number | null;
+  serverVersion: string | null;
+  serverVersionFrame: number | null;
+}
+
+/** QUIC traffic on one UDP conversation, from its long-header packets. */
+export interface QuicConnection extends Provenance {
+  id: number;
+  convId: number | null;
+  stream: number | null;
+  client: string;
+  clientPort: number | null;
+  server: string;
+  serverPort: number | null;
+  start: number;
+  /** Versions in long headers (Version Negotiation excluded). */
+  versions: string[];
+  /** Versions a Version Negotiation packet listed; null when none was seen. */
+  versionNegotiation: string[] | null;
+  /** From the ClientHello in the client's Initial packet (decrypted with the public Initial keys). */
+  sni: string | null;
+  alpn: string[];
+  clientHelloFrame: number | null;
+  /** All packets of the conversation that Wireshark decoded as QUIC. */
+  packets: number;
+}
+
 export interface Unsupported {
   /** TCP conversations on common cleartext HTTP ports with payload but no decoded HTTP. */
   httpPortsUndecoded: number[];
@@ -311,7 +445,12 @@ export interface AnalysisModel {
   dns: DnsTransaction[];
   http: HttpExchange[];
   tls: TlsSession[];
-  arp: { frame: number; op: string; mac: string; ip: string }[];
+  arp: ArpRecord[];
+  arpBindings: ArpBinding[];
+  dhcp: DhcpExchange[];
+  icmp: IcmpMessage[];
+  ssh: SshSession[];
+  quic: QuicConnection[];
   unsupported: Unsupported;
 }
 

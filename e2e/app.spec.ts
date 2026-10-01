@@ -282,7 +282,7 @@ for (const vp of [{ name: 'tablet', width: 820, height: 1180 }, { name: 'phone',
     const fits = () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
     expect(await fits()).toBe(true);
     await openCapture(page, 'dns.pcap');
-    for (const v of ['overview', 'dns', 'http', 'tls', 'hosts', 'connections', 'network', 'packets']) {
+    for (const v of ['overview', 'dns', 'http', 'tls', 'hosts', 'connections', 'network', 'packets', 'dhcp', 'arp', 'icmp', 'ssh', 'quic']) {
       await view(page, v);
       await page.waitForTimeout(300);
       expect(await fits(), `${v} overflows at ${vp.width}px`).toBe(true);
@@ -322,4 +322,59 @@ test('Hosts view shows registered MAC vendors and flags locally administered add
   await expect(hosts.getByRole('row').filter({ hasText: '10.0.1.20' })).toContainText('Apple, Inc.');
   await expect(hosts.getByRole('row').filter({ hasText: '10.0.1.30' })).toContainText('locally administered');
   await expect(hosts).toContainText('00:1b:21:aa:bb:cc');
+});
+
+test('DHCP, ARP, ICMP, SSH and QUIC views', async ({ page }) => {
+  const reqs = watchRequests(page);
+  const errs = errors(page);
+  await page.goto('./');
+  await openCapture(page, 'protocols.pcap');
+  const count = (id: string) => page.locator(`.nav a[href="#/${id}"] .nav-count`);
+  for (const [id, n] of [['dhcp', '3'], ['arp', '5'], ['icmp', '8'], ['ssh', '1'], ['quic', '2']]) await expect(count(id)).toHaveText(n);
+
+  await view(page, 'dhcp');
+  const dhcp = page.getByRole('grid', { name: 'DHCP exchanges' });
+  await expect(dhcp.getByRole('row')).toHaveCount(4);
+  const dora = dhcp.getByRole('row').filter({ hasText: '02:00:00:00:00:a1' });
+  for (const s of ['laptop-a1', 'Discover → Offer → Request → ACK', 'acknowledged', '10.0.2.50']) await expect(dora).toContainText(s);
+  await expect(dhcp.getByRole('row').filter({ hasText: '02:00:00:00:00:a2' })).toContainText('refused (NAK)');
+  await expect(dhcp.getByRole('row').filter({ hasText: '02:00:00:00:00:a3' })).toContainText('no server reply seen');
+  await dora.click();
+  const drawer = page.getByRole('dialog');
+  await expect(drawer).toContainText('1 h 0 min (3,600 s)');
+  await expect(drawer.getByRole('group', { name: 'Choose a source packet' }).getByRole('button')).toHaveText(['#1', '#2', '#3', '#4']);
+  await expect(drawer.getByText(/^Dynamic Host Configuration Protocol/).first()).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  await view(page, 'arp');
+  const mappings = page.getByRole('grid', { name: 'ARP mappings' });
+  await expect(mappings.getByRole('row')).toHaveCount(3);
+  await expect(mappings.getByRole('row').filter({ hasText: '10.0.2.1' })).toContainText('02:00:00:00:00:01, 02:00:00:00:00:fe');
+  await expect(page.getByRole('grid', { name: 'ARP messages' }).getByRole('row')).toHaveCount(6);
+
+  await view(page, 'icmp');
+  const icmp = page.getByRole('grid', { name: 'ICMP messages' });
+  await expect(icmp.getByRole('row')).toHaveCount(9);
+  const unreachable = icmp.getByRole('row').filter({ hasText: 'Port unreachable' }).filter({ hasText: '33434' });
+  await expect(unreachable).toContainText('UDP 10.0.2.50:51000 → 198.51.100.9:33434');
+  await expect(icmp.getByRole('row').filter({ hasText: 'seq 2' })).toContainText('no reply seen');
+  await page.getByRole('button', { name: 'Errors 3' }).click();
+  await expect(icmp.getByRole('row')).toHaveCount(4);
+  await unreachable.getByRole('button', { name: 'Conversation' }).click();
+  await expect(page.locator('.nav a[aria-current=page]')).toHaveAttribute('href', '#/connections');
+  await expect(page.getByRole('grid', { name: 'Conversation packets' }).getByRole('row')).toHaveCount(2);
+
+  await view(page, 'ssh');
+  const ssh = page.getByRole('grid', { name: 'SSH sessions' });
+  await expect(ssh).toContainText('SSH-2.0-OpenSSH_9.6');
+  await expect(ssh).toContainText('SSH-2.0-fixture_client_1.0');
+
+  await view(page, 'quic');
+  const quic = page.getByRole('grid', { name: 'QUIC conversations' });
+  await expect(quic.getByRole('row')).toHaveCount(3);
+  await expect(quic.getByRole('row').filter({ hasText: 'quic.example.net' })).toContainText('1 (0x00000001)');
+  await expect(quic).toContainText('lists 1 (0x00000001)');
+
+  expect(reqs.offenders()).toEqual([]);
+  expect(errs).toEqual([]);
 });

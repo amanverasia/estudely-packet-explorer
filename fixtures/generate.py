@@ -5,7 +5,7 @@
 
 All traffic is fabricated with scapy between documentation/private addresses,
 so the fixtures carry no third-party data and can be redistributed freely.
-Run: python3 fixtures/generate.py   (requires scapy and cryptography)
+Run: python3 fixtures/generate.py [name ...]   (requires scapy and cryptography)
 """
 import datetime
 import os
@@ -331,12 +331,176 @@ def follow_fixture():
     wrpcap(os.path.join(HERE, "follow.pcap"), stamp(P))
 
 
+# ------------------------------------------------- DHCP, ARP, ICMP, SSH, QUIC
+def quic_initial(version, dcid, scid, crypto, pn=0):
+    """A client Initial packet protected with the RFC 9001 Initial keys (QUIC v1 salt)."""
+    from cryptography.hazmat.primitives import hashes, hmac
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    def extract(salt, ikm):
+        h = hmac.HMAC(salt, hashes.SHA256())
+        h.update(ikm)
+        return h.finalize()
+
+    def expand_label(secret, label, length):
+        full = b"tls13 " + label
+        info = struct.pack("!HB", length, len(full)) + full + b"\x00"
+        out, block, i = b"", b"", 1
+        while len(out) < length:
+            h = hmac.HMAC(secret, hashes.SHA256())
+            h.update(block + info + bytes([i]))
+            block = h.finalize()
+            out += block
+            i += 1
+        return out[:length]
+
+    def varint(n):
+        return bytes([n]) if n < 64 else struct.pack("!H", 0x4000 | n)
+
+    secret = expand_label(extract(bytes.fromhex("38762cf7f55934b34d179ae6a4c80cadccbb7f0a"), dcid), b"client in", 32)
+    key, iv, hp = expand_label(secret, b"quic key", 16), expand_label(secret, b"quic iv", 12), expand_label(secret, b"quic hp", 16)
+    frames = b"\x06" + varint(0) + varint(len(crypto)) + crypto
+    frames += b"\x00" * (1162 - len(frames))  # PADDING: client Initial datagrams are at least 1200 bytes
+    pn_bytes = struct.pack("!I", pn)
+    header = (bytes([0xc3]) + struct.pack("!I", version) + bytes([len(dcid)]) + dcid + bytes([len(scid)]) + scid
+              + varint(0) + varint(len(pn_bytes) + len(frames) + 16) + pn_bytes)
+    nonce = bytes(a ^ b for a, b in zip(iv, b"\x00" * 8 + pn_bytes))
+    payload = AESGCM(key).encrypt(nonce, frames, header)
+    pn_off = len(header) - 4
+    enc = Cipher(algorithms.AES(hp), modes.ECB()).encryptor()
+    mask = enc.update((header + payload)[pn_off + 4:pn_off + 20])  # sample starts 4 bytes after the packet number
+    out = bytearray(header + payload)
+    out[0] ^= mask[0] & 0x0f
+    for i in range(4):
+        out[pn_off + i] ^= mask[1 + i]
+    return bytes(out)
+
+
+def protocols_fixture():
+    from scapy.layers.dhcp import BOOTP, DHCP
+    from scapy.layers.inet import ICMP
+    from scapy.layers.inet6 import ICMPv6DestUnreach, ICMPv6EchoReply, ICMPv6EchoRequest
+    from scapy.layers.l2 import ARP
+    c = Clock()
+    P = []
+    gw_mac, a1, a2, a3, other = "02:00:00:00:00:01", "02:00:00:00:00:a1", "02:00:00:00:00:a2", "02:00:00:00:00:a3", "02:00:00:00:00:fe"
+    bcast = "ff:ff:ff:ff:ff:ff"
+
+    def dhcp(src_mac, dst_mac, src, dst, op, chaddr, xid, opts, yiaddr="0.0.0.0"):
+        return (eth(src_mac, dst_mac) / IP(src=src, dst=dst) / UDP(sport=67 if op == 2 else 68, dport=68 if op == 2 else 67)
+                / BOOTP(op=op, chaddr=bytes.fromhex(chaddr.replace(":", "")) + b"\x00" * 10, xid=xid, yiaddr=yiaddr)
+                / DHCP(options=opts + ["end"]), c.tick())
+
+    # 1-4 DHCP DORA: laptop-a1 is assigned 10.0.2.50 by 10.0.2.1
+    server = [("server_id", "10.0.2.1"), ("lease_time", 3600), ("subnet_mask", "255.255.255.0"), ("router", "10.0.2.1"), ("name_server", "10.0.2.1")]
+    P += [dhcp(a1, bcast, "0.0.0.0", "255.255.255.255", 1, a1, 0x1001, [("message-type", "discover"), ("hostname", b"laptop-a1")]),
+          dhcp(gw_mac, a1, "10.0.2.1", "10.0.2.50", 2, a1, 0x1001, [("message-type", "offer")] + server, yiaddr="10.0.2.50"),
+          dhcp(a1, bcast, "0.0.0.0", "255.255.255.255", 1, a1, 0x1001, [("message-type", "request"), ("requested_addr", "10.0.2.50"), ("server_id", "10.0.2.1"), ("hostname", b"laptop-a1")]),
+          dhcp(gw_mac, a1, "10.0.2.1", "10.0.2.50", 2, a1, 0x1001, [("message-type", "ack")] + server, yiaddr="10.0.2.50")]
+    # 5-6 DHCP request refused with a NAK
+    P += [dhcp(a2, bcast, "0.0.0.0", "255.255.255.255", 1, a2, 0x2002, [("message-type", "request"), ("requested_addr", "10.0.2.99"), ("hostname", b"phone-a2")]),
+          dhcp(gw_mac, bcast, "10.0.2.1", "255.255.255.255", 2, a2, 0x2002, [("message-type", "nak"), ("server_id", "10.0.2.1")])]
+    # 7 DHCP discover with no reply
+    P += [dhcp(a3, bcast, "0.0.0.0", "255.255.255.255", 1, a3, 0x3003, [("message-type", "discover")])]
+
+    # 8-9 ARP request and reply; 10 gratuitous ARP claiming 10.0.2.1 from another MAC; 11 the original MAC again
+    P += [(eth(a1, bcast) / ARP(op=1, hwsrc=a1, psrc="10.0.2.50", hwdst="00:00:00:00:00:00", pdst="10.0.2.1"), c.tick()),
+          (eth(gw_mac, a1) / ARP(op=2, hwsrc=gw_mac, psrc="10.0.2.1", hwdst=a1, pdst="10.0.2.50"), c.tick()),
+          (eth(other, bcast) / ARP(op=2, hwsrc=other, psrc="10.0.2.1", hwdst=bcast, pdst="10.0.2.1"), c.tick(1.0)),
+          (eth(gw_mac, a1) / ARP(op=2, hwsrc=gw_mac, psrc="10.0.2.1", hwdst=a1, pdst="10.0.2.50"), c.tick(1.0))]
+    # 12 ARP probe (sender 0.0.0.0): not an IP-to-MAC mapping
+    P += [(eth(a3, bcast) / ARP(op=1, hwsrc=a3, psrc="0.0.0.0", hwdst="00:00:00:00:00:00", pdst="10.0.2.77"), c.tick())]
+
+    # 13-15 ICMP echo: seq 1 answered, seq 2 not
+    def v4(src_mac, dst_mac, src, dst, **kw):
+        return eth(src_mac, dst_mac) / IP(src=src, dst=dst, **kw)
+    P += [(v4(a1, gw_mac, "10.0.2.50", "192.0.2.1") / ICMP(type=8, id=1, seq=1) / Raw(b"ping"), c.tick()),
+          (v4(gw_mac, a1, "192.0.2.1", "10.0.2.50") / ICMP(type=0, id=1, seq=1) / Raw(b"ping"), c.tick()),
+          (v4(a1, gw_mac, "10.0.2.50", "192.0.2.1") / ICMP(type=8, id=1, seq=2) / Raw(b"ping"), c.tick())]
+    # 16-17 UDP datagram and the port unreachable that quotes it
+    probe = IP(src="10.0.2.50", dst="198.51.100.9") / UDP(sport=51000, dport=33434) / Raw(b"probe")
+    P += [(eth(a1, gw_mac) / probe, c.tick()),
+          (v4(gw_mac, a1, "198.51.100.9", "10.0.2.50") / ICMP(type=3, code=3) / bytes(probe)[:28], c.tick())]
+    # 18-19 UDP datagram with TTL 1 and the time exceeded from the gateway
+    ttl1 = IP(src="10.0.2.50", dst="203.0.113.5", ttl=1) / UDP(sport=51001, dport=33435) / Raw(b"probe")
+    P += [(eth(a1, gw_mac) / ttl1, c.tick()),
+          (v4(gw_mac, a1, "10.0.2.1", "10.0.2.50") / ICMP(type=11, code=0) / bytes(ttl1)[:28], c.tick())]
+    # 20-21 ICMPv6 echo; 22-23 UDP over IPv6 and the port unreachable that quotes it
+    P += [(eth(a1, gw_mac) / IPv6(src="fd00::50", dst="fd00::1") / ICMPv6EchoRequest(id=7, seq=1, data=b"v6"), c.tick()),
+          (eth(gw_mac, a1) / IPv6(src="fd00::1", dst="fd00::50") / ICMPv6EchoReply(id=7, seq=1, data=b"v6"), c.tick())]
+    probe6 = IPv6(src="fd00::50", dst="fd00::99") / UDP(sport=51002, dport=9999) / Raw(b"probe")
+    P += [(eth(a1, gw_mac) / probe6, c.tick()),
+          (eth(gw_mac, a1) / IPv6(src="fd00::99", dst="fd00::50") / ICMPv6DestUnreach(code=4) / bytes(probe6), c.tick())]
+
+    # 24-31 SSH: the server and the client send their version strings
+    P += tcp_flow(c, a1, gw_mac, "10.0.2.50", "10.0.2.22", 45000, 22,
+                  [("s", b"SSH-2.0-OpenSSH_9.6\r\n", None), ("c", b"SSH-2.0-fixture_client_1.0\r\n", None)])
+
+    # 32 QUIC v1 client Initial carrying a ClientHello (SNI quic.example.net, ALPN h3)
+    # Random fields pinned so regenerating gives the same bytes.
+    ch = TLSClientHello(version=0x0303, gmt_unix_time=0, random_bytes=b"\x00" * 28, sid=b"", ciphers=[0x1301, 0x1302],
+                        ext=[TLS_Ext_ServerName(servernames=[ServerName(servername=b"quic.example.net")]),
+                             TLS_Ext_SupportedVersion_CH(versions=[0x0304]),
+                             TLS_Ext_ALPN(protocols=[ProtocolName(protocol=b"h3")])])
+    dcid, scid = bytes.fromhex("8394c8f03e515708"), bytes.fromhex("c0ffee01")
+    P += [(v4(a1, gw_mac, "10.0.2.50", "198.51.100.20") / UDP(sport=52000, dport=443) / Raw(quic_initial(1, dcid, scid, bytes(ch))), c.tick())]
+    # 33-34 QUIC long header with an unknown version, answered by Version Negotiation offering version 1
+    unknown = bytes([0xc3]) + struct.pack("!I", 0x0a0a0a0a) + b"\x08" + bytes.fromhex("1122334455667788") + b"\x04" + bytes.fromhex("0badcafe") + b"\x00" * 1180
+    vn = bytes([0x80 | 0x2a]) + struct.pack("!I", 0) + b"\x04" + bytes.fromhex("0badcafe") + b"\x08" + bytes.fromhex("1122334455667788") + struct.pack("!I", 1)
+    P += [(v4(a1, gw_mac, "10.0.2.50", "198.51.100.21") / UDP(sport=52001, dport=443) / Raw(unknown), c.tick()),
+          (v4(gw_mac, a1, "198.51.100.21", "10.0.2.50") / UDP(sport=443, dport=52001) / Raw(vn), c.tick())]
+    wrpcap(os.path.join(HERE, "protocols.pcap"), stamp(P))
+
+
+def protocols_edge_fixture():
+    # Cases kept out of protocols.pcap so its frame numbers stay put.
+    from scapy.layers.dhcp import BOOTP, DHCP
+    from scapy.layers.inet import ICMP
+    from scapy.layers.vxlan import VXLAN
+    c = Clock()
+    P = []
+    gw_mac, b1, b2, a1 = "02:00:00:00:00:01", "02:00:00:00:00:b1", "02:00:00:00:00:b2", "02:00:00:00:00:a1"
+    bcast = "ff:ff:ff:ff:ff:ff"
+
+    def dhcp(src_mac, dst_mac, src, dst, op, chaddr, xid, opts, yiaddr="0.0.0.0"):
+        return (eth(src_mac, dst_mac) / IP(src=src, dst=dst) / UDP(sport=67 if op == 2 else 68, dport=68 if op == 2 else 67)
+                / BOOTP(op=op, chaddr=bytes.fromhex(chaddr.replace(":", "")) + b"\x00" * 10, xid=xid, yiaddr=yiaddr)
+                / DHCP(options=opts + ["end"]), c.tick())
+
+    server = [("server_id", "10.0.2.1"), ("lease_time", 3600)]
+    # 1-5 DORA, then the client declines the address under the same xid (it found it in use)
+    P += [dhcp(b1, bcast, "0.0.0.0", "255.255.255.255", 1, b1, 0x4004, [("message-type", "discover")]),
+          dhcp(gw_mac, b1, "10.0.2.1", "10.0.2.60", 2, b1, 0x4004, [("message-type", "offer")] + server, yiaddr="10.0.2.60"),
+          dhcp(b1, bcast, "0.0.0.0", "255.255.255.255", 1, b1, 0x4004, [("message-type", "request"), ("requested_addr", "10.0.2.60")]),
+          dhcp(gw_mac, b1, "10.0.2.1", "10.0.2.60", 2, b1, 0x4004, [("message-type", "ack")] + server, yiaddr="10.0.2.60"),
+          dhcp(b1, bcast, "0.0.0.0", "255.255.255.255", 1, b1, 0x4004, [("message-type", "decline"), ("requested_addr", "10.0.2.60"), ("server_id", "10.0.2.1")])]
+    # 6-9 a request refused with a NAK, then a request ACKed, all under one xid
+    P += [dhcp(b2, bcast, "0.0.0.0", "255.255.255.255", 1, b2, 0x5005, [("message-type", "request"), ("requested_addr", "10.0.2.99")]),
+          dhcp(gw_mac, bcast, "10.0.2.1", "255.255.255.255", 2, b2, 0x5005, [("message-type", "nak"), ("server_id", "10.0.2.1")]),
+          dhcp(b2, bcast, "0.0.0.0", "255.255.255.255", 1, b2, 0x5005, [("message-type", "request"), ("requested_addr", "10.0.2.61")]),
+          dhcp(gw_mac, b2, "10.0.2.1", "10.0.2.61", 2, b2, 0x5005, [("message-type", "ack")] + server, yiaddr="10.0.2.61")]
+
+    # 10-11 a UDP probe and the port unreachable quoting it, both carried in VXLAN between 172.16.0.1 and 172.16.0.2
+    def vxlan(inner):
+        return (eth(gw_mac, a1) / IP(src="172.16.0.1", dst="172.16.0.2") / UDP(sport=40000, dport=4789) / VXLAN(vni=42) / inner, c.tick())
+    probe = IP(src="10.0.2.50", dst="198.51.100.9") / UDP(sport=51000, dport=33434) / Raw(b"probe")
+    P += [vxlan(eth(a1, gw_mac) / probe),
+          vxlan(eth(gw_mac, a1) / IP(src="198.51.100.9", dst="10.0.2.50") / ICMP(type=3, code=3) / bytes(probe)[:28])]
+    # 12 an echo request in the tunnel: two IP headers, neither of them quoted
+    P += [vxlan(eth(a1, gw_mac) / IP(src="10.0.2.50", dst="192.0.2.1") / ICMP(type=8, id=9, seq=1) / Raw(b"ping"))]
+    wrpcap(os.path.join(HERE, "protocols-edge.pcap"), stamp(P))
+
+
+FIXTURES = {
+    "dns": dns_fixture, "http": http_fixture, "tls": tls_fixture, "edge": edge_fixture,
+    "pcapng": pcapng_fixture, "vendors": vendors_fixture, "protocols": protocols_fixture,
+    "protocols-edge": protocols_edge_fixture, "follow": follow_fixture,
+}
+
 if __name__ == "__main__":
-    dns_fixture()
-    http_fixture()
-    tls_fixture()
-    edge_fixture()
-    pcapng_fixture()
-    vendors_fixture()
-    follow_fixture()
+    # Optional names regenerate only those fixtures (tls.pcap uses a fresh key on every run).
+    import sys
+    for name in sys.argv[1:] or FIXTURES:
+        FIXTURES[name]()
     print("fixtures written to", HERE)

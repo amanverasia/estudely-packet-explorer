@@ -7,6 +7,7 @@ import type {
   NameSource, ProtoStat, ServicePort, Timeline, TlsSession, Transport,
 } from './types';
 import type { RawDns, RawNbns, RawPacket, RawRecords } from './records';
+import { buildArp, buildDhcp, buildIcmp, buildQuic, buildSsh, type ProtoCtx } from './protocols';
 import { fingerprint, hexToBytes, parseCertificate } from './x509';
 
 export interface CaptureMeta {
@@ -500,8 +501,16 @@ export async function analyze(raw: RawRecords, meta: CaptureMeta, onProgress?: (
   for (const s of tls) if (s.sni && s.clientHelloFrame !== null) addName(s.server, s.sni, 'TLS SNI', 'inferred', s.clientHelloFrame);
   for (const h of http) if (h.host && h.requestFrame !== null) addName(h.server, h.host.replace(/:\d+$/, ''), 'HTTP Host header', 'inferred', h.requestFrame);
 
-  const arp = raw.arp.map((a) => ({ frame: a.frame, op: a.opcode === 1 ? 'request' : a.opcode === 2 ? 'reply' : String(a.opcode), mac: a.srcMac, ip: a.srcIp }));
+  // ---- DHCP, ARP, ICMP, SSH, QUIC
+  onProgress?.('Reading DHCP, ARP, ICMP, SSH and QUIC');
+  const pctx: ProtoCtx = { packets, convOf, pkt, convOfFrame, conversations: convs, tls };
+  const { arp, bindings: arpBindings } = buildArp(raw.arp, pctx);
+  const dhcp = buildDhcp(raw.dhcp, pctx);
+  const icmp = buildIcmp(raw.icmp, pctx);
+  const ssh = buildSsh(raw.ssh, pctx);
+  const quic = buildQuic(raw.quic, pctx);
   for (const a of arp) {
+    if (a.ip === '0.0.0.0') continue;
     const h = hosts.get(a.ip);
     if (h && a.mac && !h.arpMacs.includes(a.mac)) h.arpMacs.push(a.mac);
   }
@@ -576,7 +585,7 @@ export async function analyze(raw: RawRecords, meta: CaptureMeta, onProgress?: (
     capture,
     protocolHierarchy: [...hier.values()].sort((a, b) => b.packets - a.packets),
     topProtocols: topList,
-    timeline, hosts: hostList, conversations: convs, dns, http, tls, arp, unsupported,
+    timeline, hosts: hostList, conversations: convs, dns, http, tls, arp, arpBindings, dhcp, icmp, ssh, quic, unsupported,
   };
   capture.analysisMs = Math.round(performance.now() - t0);
   return { model, index: { packets, convOf } };
