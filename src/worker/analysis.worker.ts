@@ -81,6 +81,7 @@ function handle(req: WorkerRequest): unknown {
     case 'packetList': return session.packetList(req.filter, req.skip, req.limit);
     case 'checkFilter': return session.checkFilter(req.filter);
     case 'rows': return session.rows(req);
+    case 'follow': return session.follow(req.transport, req.stream, req);
   }
 }
 
@@ -117,6 +118,7 @@ self.onmessage = async (ev: MessageEvent<ToWorker>) => {
       const data = handle(msg.req);
       const transfer: Transferable[] = [];
       if (msg.req.kind === 'frame') for (const s of (data as { sources: { bytes: Uint8Array }[] }).sources) transfer.push(s.bytes.buffer);
+      if (msg.req.kind === 'follow') transfer.push((data as { data: Uint8Array }).data.buffer);
       post({ type: 'response', id: msg.id, ok: true, data }, transfer);
     } catch (e) {
       post({ type: 'response', id: msg.id, ok: false, error: e instanceof Error ? e.message : String(e) });

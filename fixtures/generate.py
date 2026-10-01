@@ -317,6 +317,20 @@ def vendors_fixture():
     wrpcap(os.path.join(HERE, "vendors.pcap"), stamp(P))
 
 
+# --------------------------------------------------------------- Follow stream
+def follow_fixture():
+    """A TCP download larger than the follow-stream view cap, plus a short UDP exchange."""
+    c = Clock()
+    req = b"GET /big.txt HTTP/1.1\r\nHost: files.example.test\r\n\r\n"
+    body = b"".join(b"line %05d of the large follow-stream fixture body\n" % i for i in range(12000))
+    rsp = (b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n" % len(body)) + body
+    P = tcp_flow(c, MAC_CLIENT, MAC_SERVER, "10.0.0.5", "10.0.0.80", 41000, 80,
+                 [("c", req, None), ("s", rsp, [1400] * (len(rsp) // 1400))])
+    P += [(eth(MAC_CLIENT, MAC_SERVER) / IP(src="10.0.0.5", dst="10.0.0.80") / UDP(sport=41001, dport=7) / Raw(b"PING 1\n"), c.tick()),
+          (eth(MAC_SERVER, MAC_CLIENT) / IP(src="10.0.0.80", dst="10.0.0.5") / UDP(sport=7, dport=41001) / Raw(b"PONG 1\n"), c.tick())]
+    wrpcap(os.path.join(HERE, "follow.pcap"), stamp(P))
+
+
 if __name__ == "__main__":
     dns_fixture()
     http_fixture()
@@ -324,4 +338,5 @@ if __name__ == "__main__":
     edge_fixture()
     pcapng_fixture()
     vendors_fixture()
+    follow_fixture()
     print("fixtures written to", HERE)

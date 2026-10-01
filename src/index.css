@@ -355,3 +355,28 @@ p { margin: 0; }
 @media (max-width: 860px) {
   .build-tag.mobile-only { display: grid; }
 }
+
+/* ---------- follow stream ---------- */
+.follow { display: grid; gap: 10px; min-width: 0; }
+.follow-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; }
+.follow-tools .seg { flex-wrap: wrap; max-width: 100%; }
+.follow-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--ink-2); align-items: center; }
+.follow-legend > span { display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
+.follow-swatch.client, .follow-run.client { --dir: var(--s1); }
+.follow-swatch.server, .follow-run.server { --dir: var(--s2); }
+.follow-swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; flex: none; background: var(--dir); }
+.follow-body { max-height: min(60vh, 560px); overflow: auto; border: 1px solid var(--rule); border-radius: 6px; background: var(--panel-2); }
+.follow-body:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.follow-body > .muted { padding: 10px 12px; }
+.follow-run { border-left: 4px solid var(--dir); background: color-mix(in srgb, var(--dir) 9%, var(--panel)); }
+.follow-run + .follow-run { border-top: 1px solid var(--rule); }
+.follow-run.server { margin-left: 24px; }
+.follow-label { font-size: 11px; color: var(--ink-3); padding: 4px 10px 0; }
+.follow-run pre { margin: 0; padding: 2px 10px 6px; font: 12px/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink); }
+/* Hex dump lines keep their columns; the stream box scrolls sideways instead. */
+.follow-run pre.dump { white-space: pre; overflow-wrap: normal; }
+.follow-body:has(pre.dump) .follow-run { width: max-content; min-width: 100%; }
+.follow-body:has(pre.dump) .follow-run.server { min-width: calc(100% - 24px); }
+@media (forced-colors: active) {
+  .follow-swatch { forced-color-adjust: none; }
+}

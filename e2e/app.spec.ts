@@ -198,6 +198,62 @@ test('opening another capture replaces the first one entirely', async ({ page })
   await expect(page.getByRole('button', { name: 'Choose capture file' })).toBeVisible();
 });
 
+test('Follow stream: text and hex, directions distinguished, captured HTML inert, local save', async ({ page }) => {
+  const reqs = watchRequests(page);
+  const errs = errors(page);
+  await page.goto('./');
+  await openCapture(page, 'http.pcap');
+  await view(page, 'connections');
+  await page.getByRole('grid', { name: 'Conversations' }).getByRole('row').filter({ hasText: '10.0.0.5:40000' }).first().click();
+  await page.getByRole('button', { name: 'Follow stream' }).click();
+
+  const body = page.getByRole('region', { name: 'Stream content' });
+  await expect(body.locator('.follow-run.client').first()).toContainText('GET /index.html HTTP/1.1\nHost: www.example.test');
+  await expect(body.locator('.follow-run.client').first()).toContainText('Client → server, #4 to #5 (2 packets)');
+  await expect(body.locator('.follow-run.server').first()).toContainText('HTTP/1.1 200 OK');
+  await expect(body.locator('.follow-run')).toHaveCount(4);
+  // Captured markup is shown as text and never becomes DOM.
+  await expect(body).toContainText("<script>alert('captured content must not run')</script><b>hello</b>");
+  await expect(body.locator('script, b')).toHaveCount(0);
+  const [clientColor, serverColor] = await Promise.all(['client', 'server'].map((k) =>
+    body.locator(`.follow-run.${k}`).first().evaluate((el) => getComputedStyle(el).borderLeftColor)));
+  expect(clientColor).not.toBe(serverColor);
+
+  await page.getByRole('group', { name: 'Directions shown' }).getByRole('button', { name: /Server → client/ }).click();
+  await expect(body.locator('.follow-run.client')).toHaveCount(0);
+  await page.getByRole('group', { name: 'Format' }).getByRole('button', { name: 'Hex' }).click();
+  await expect(body.locator('.follow-run').first()).toContainText('00000000  48 54 54 50 2f 31 2e 31  20 32 30 30 20 4f 4b 0d  HTTP/1.1 200 OK.');
+
+  const dl = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Save raw' }).click();
+  const d = await dl;
+  expect(d.suggestedFilename()).toBe('http-tcp-stream-0-server.bin');
+  const saved = Buffer.concat(await (await d.createReadStream()).toArray()).toString('latin1');
+  expect(saved.startsWith('HTTP/1.1 200 OK\r\n')).toBe(true);
+  expect(saved.endsWith('HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n')).toBe(true);
+
+  // A large stream is capped in the view with a notice; the saved file is complete.
+  await openCapture(page, 'follow.pcap');
+  await view(page, 'connections');
+  await page.getByRole('grid', { name: 'Conversations' }).getByRole('row').filter({ hasText: '10.0.0.5:41000' }).click();
+  await page.getByRole('button', { name: 'Follow stream' }).click();
+  await expect(page.getByText('Showing part of the stream.')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Stream content' })).toContainText('line 00000 of the large');
+  const big = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Save raw' }).click();
+  const bd = await big;
+  expect(bd.suggestedFilename()).toBe('follow-tcp-stream-0.bin');
+  const all = Buffer.concat(await (await bd.createReadStream()).toArray());
+  expect(all.length).toBe(612069 + 51);
+
+  await page.getByRole('grid', { name: 'Conversations' }).getByRole('row').filter({ hasText: '10.0.0.5:41001' }).click();
+  await page.getByRole('button', { name: 'Follow stream' }).click();
+  await expect(page.getByRole('region', { name: 'Stream content' })).toHaveText(/PING 1[^]*PONG 1/);
+
+  expect(reqs.offenders()).toEqual([]);
+  expect(errs).toEqual([]);
+});
+
 test('exports are local downloads', async ({ page }) => {
   const reqs = watchRequests(page);
   await page.goto('./');
@@ -233,6 +289,17 @@ for (const vp of [{ name: 'tablet', width: 820, height: 1180 }, { name: 'phone',
       if (v === 'overview' || v === 'dns') await page.screenshot({ path: `test-results/${vp.name}-${v}.png`, fullPage: true });
     }
     if (vp.name === 'phone') await expect(page.locator('.mobile-local')).toBeVisible();
+
+    // The conversation detail and the follow panel (long text lines, a max-content hex dump) stay within the page.
+    await openCapture(page, 'follow.pcap');
+    await view(page, 'connections');
+    await page.getByRole('grid', { name: 'Conversations' }).getByRole('row').filter({ hasText: '10.0.0.5:41000' }).click();
+    await page.getByRole('button', { name: 'Follow stream' }).click();
+    await expect(page.getByRole('region', { name: 'Stream content' })).toContainText('line 00000 of the large');
+    expect(await fits(), `follow text overflows at ${vp.width}px`).toBe(true);
+    await page.getByRole('group', { name: 'Format' }).getByRole('button', { name: 'Hex' }).click();
+    await expect(page.getByRole('region', { name: 'Stream content' })).toContainText('00000000  ');
+    expect(await fits(), `follow hex overflows at ${vp.width}px`).toBe(true);
   });
 }
 

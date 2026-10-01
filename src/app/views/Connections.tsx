@@ -5,6 +5,7 @@ import type { Conversation, PacketRow, Transport } from '../../engine/types';
 import { DataTable, type Column } from '../components/DataTable';
 import { flagText } from '../components/Drawer';
 import { Addr, Note, Panel, Seg, ViewHead } from '../components/bits';
+import { FollowStream } from '../components/FollowStream';
 import { useApp } from '../context';
 import { bytes, duration, endpoint, num, plural, rel } from '../format';
 
@@ -67,7 +68,7 @@ export function Connections() {
       {hostFilter && (
         <Note>Showing conversations involving <span className="mono">{hostFilter}</span>. <button className="btn small" onClick={() => go('connections')}>Show all</button></Note>
       )}
-      {conv && <ConversationDetail c={conv} onClose={() => setSelected(null)} />}
+      {conv && <ConversationDetail key={conv.id} c={conv} onClose={() => setSelected(null)} />}
       <section className="panel">
         <DataTable label="Conversations" exportName="conversations" rows={rows} columns={columns} rowKey={(c) => c.id} selectedKey={selected}
           onRowClick={(c) => setSelected(c.id)} initialSort={{ key: 'start', dir: 'asc' }} searchPlaceholder="Search addresses, ports, protocols"
@@ -87,6 +88,8 @@ function ConversationDetail({ c, onClose }: { c: Conversation; onClose: () => vo
   const { model, engine, openDrawer } = useApp();
   const [packets, setPackets] = useState<{ rows: PacketRow[]; total: number } | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [follow, setFollow] = useState(false);
+  const canFollow = (c.transport === 'TCP' || c.transport === 'UDP') && c.stream !== null;
   useEffect(() => {
     setPackets(null);
     engine.request({ kind: 'rows', convId: c.id, limit: 20000 }).then(setPackets).catch((e: Error) => setErr(e.message));
@@ -109,8 +112,11 @@ function ConversationDetail({ c, onClose }: { c: Conversation; onClose: () => vo
   return (
     <Panel title={<span className="mono" style={{ overflowWrap: 'anywhere' }}>{endpoint(c.a, c.aPort)} ↔ {endpoint(c.b, c.bPort)}</span>}
       sub={`${c.transport}${c.stream !== null ? ` stream ${c.stream}` : ''}, ${c.appProtocol}`}
-      right={<button className="btn small ghost" onClick={onClose}>Close</button>}>
-      <div style={{ display: 'grid', gap: 16 }}>
+      right={<>
+        {canFollow && <button className="btn small" aria-pressed={follow} onClick={() => setFollow(!follow)}>{follow ? 'Hide stream' : 'Follow stream'}</button>}
+        <button className="btn small ghost" onClick={onClose}>Close</button>
+      </>}>
+      <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'minmax(0, 1fr)' }}>
         <div className="grid-2">
           <dl className="kv">
             <dt>A → B</dt><dd>{plural(c.packetsAB, 'packet')}, {bytes(c.bytesAB)}{t ? `, ${bytes(t.payloadBytesAB)} TCP payload` : ''}</dd>
@@ -148,6 +154,12 @@ function ConversationDetail({ c, onClose }: { c: Conversation; onClose: () => vo
                 TLS {s.sni ?? '(no SNI)'} — {s.negotiated?.version ?? 'no ServerHello seen'}
               </button>
             ))}
+          </div>
+        )}
+        {canFollow && follow && (
+          <div>
+            <h3 style={{ marginBottom: 6 }}>Follow {c.transport} stream {c.stream}</h3>
+            <FollowStream c={c} />
           </div>
         )}
         <div>
