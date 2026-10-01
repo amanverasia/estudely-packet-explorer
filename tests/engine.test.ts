@@ -29,11 +29,12 @@ beforeAll(async () => {
   expect(lib.init()).toBe(true);
 });
 
-async function open(name: string): Promise<{ model: AnalysisModel; session: CaptureSession }> {
+async function open(name: string, keyLogName?: string): Promise<{ model: AnalysisModel; session: CaptureSession }> {
   const session = new CaptureSession(lib, 'test');
   current = session;
   const bytes = new Uint8Array(readFileSync(join(root, 'fixtures', name)));
-  const model = await session.open(name, bytes, () => {});
+  const keyLog = keyLogName ? new Uint8Array(readFileSync(join(root, 'fixtures', keyLogName))) : null;
+  const model = await session.open(name, bytes, () => {}, keyLog);
   return { model, session };
 }
 
@@ -327,6 +328,26 @@ describe('TLS fixture', () => {
   });
 });
 
+describe('TLS 1.3 key-log fixture', () => {
+  it('decrypts known HTTP records with the matching key log and keeps them encrypted without it', async () => {
+    const { model: encrypted } = await open('tls13.pcap');
+    expect(encrypted.tls[0].decryptionStatus).toBe('encrypted');
+    expect(encrypted.http).toHaveLength(0);
+    expect(encrypted.unsupported.encryptedConversations).toBe(1);
+
+    const { model: decrypted, session } = await open('tls13.pcap', 'tls13.keys');
+    expect(decrypted.tls).toHaveLength(1);
+    expect(decrypted.tls[0].decryptionStatus).toBe('decrypted');
+    expect(decrypted.http).toHaveLength(1);
+    expect(decrypted.http[0]).toMatchObject({
+      method: 'GET', host: 'keylog.example.test', uri: '/decrypted',
+      userAgent: 'fixture-keylog/1.0', status: 200, decrypted: true,
+    });
+    const records = session.rows({ convId: decrypted.tls[0].convId! }).rows;
+    expect(records.some((row) => row.decrypted)).toBe(true);
+  });
+});
+
 describe('edge cases', () => {
   it('flags malformed, fragmented and truncated packets', async () => {
     const { model: m } = await open('edge.pcap');
@@ -455,6 +476,7 @@ describe('protocols fixture (DHCP, ARP, ICMP, SSH, QUIC)', () => {
       ['10.0.2.50', 52000, '198.51.100.20', 443, ['1 (0x00000001)'], null, 'quic.example.net', ['h3'], [32]],
       ['10.0.2.50', 52001, '198.51.100.21', 443, ['Unknown (0x0a0a0a0a)'], ['1 (0x00000001)'], null, [], [33, 34]],
     ]);
+    expect(m.tls.filter((t) => t.carrier === 'QUIC').map((t) => t.decryptionStatus)).toEqual(['no application data']);
   });
 });
 

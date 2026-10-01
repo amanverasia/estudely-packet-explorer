@@ -86,13 +86,14 @@ export function Packets() {
           <span className="dt-count">{busy ? 'Filtering…' : matched === null ? '' : `${num(matched)} of ${num(model.capture.packetCount)} packets`}</span>
         </form>
         {error && <div style={{ padding: '10px 16px' }}><Note kind="crit">{error}</Note></div>}
-        <div className="dt-scroll" ref={scrollRef} style={{ maxHeight: '70vh' }} role="grid" aria-label="Packets" aria-rowcount={(matched ?? 0) + 1}>
-          <div className="dt-grid">
-            <div className="dt-row dt-head" role="row" style={{ gridTemplateColumns: template }}>
+        <div className="dt-scroll" ref={scrollRef} style={{ maxHeight: '70vh' }} role="grid" tabIndex={0} aria-label="Packets" aria-busy={busy || columns.length === 0} aria-rowcount={matched === null ? -1 : matched + 1}>
+          <div className="dt-grid" role="presentation">
+            {columns.length > 0 && <div className="dt-row dt-head" role="row" style={{ gridTemplateColumns: template }}>
               {columns.map((c) => <div key={c} role="columnheader" className={c === 'No.' || c === 'Length' ? 'r' : undefined}>{c}</div>)}
-            </div>
-            <div className="dt-body" style={{ height: virt.getTotalSize(), position: 'relative' }}>
-              {matched === 0 && <div className="empty">No packets match this filter.</div>}
+            </div>}
+            <div className="dt-body" role="rowgroup" style={{ height: virt.getTotalSize(), position: 'relative' }}>
+              {columns.length === 0 && <div className="dt-row" role="row" style={{ gridTemplateColumns: '1fr' }}><div className="muted" role="gridcell">Loading packet columns…</div></div>}
+              {matched === 0 && <div className="dt-row" role="row" style={{ gridTemplateColumns: '1fr' }}><div className="empty" role="gridcell">No packets match this filter.</div></div>}
               {items.map((vi) => {
                 const r = rowAt(vi.index);
                 return (
@@ -102,7 +103,7 @@ export function Packets() {
                     onKeyDown={(e) => { if (r && e.key === 'Enter') openDrawer({ title: `Packet #${r.number}`, frames: [r.number] }); }}>
                     {r ? r.columns.map((c, i) => (
                       <div key={i} role="gridcell" className={columns[i] === 'No.' || columns[i] === 'Length' ? 'r' : columns[i] === 'Source' || columns[i] === 'Destination' ? 'mono' : undefined} title={c}>{c}</div>
-                    )) : <div className="muted">Loading…</div>}
+                    )) : <div className="muted" role="gridcell">Loading…</div>}
                   </div>
                 );
               })}

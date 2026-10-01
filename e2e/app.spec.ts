@@ -53,6 +53,7 @@ test('shows the local-processing notice before any file is chosen', async ({ pag
   await page.goto('./');
   await expect(page.getByText('Your capture is processed locally in your browser.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Choose capture file' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Choose TLS key log (optional)' })).toBeVisible();
 });
 
 test('axe WCAG 2.1 AA audit: start screen, every view and drawer in light and dark themes', async ({ page }) => {
@@ -217,6 +218,29 @@ test('TLS capture: offered vs negotiated, certificates, and empty DNS/HTTP state
   await expect(page.getByText(/3 conversations use TLS or QUIC/)).toBeVisible();
 });
 
+test('TLS 1.3 key log decrypts and marks records locally; a later capture has no reused keys', async ({ page }) => {
+  const reqs = watchRequests(page);
+  await page.goto('./');
+  await page.locator('input[type=file]').nth(1).setInputFiles(fixture('tls13.keys'));
+  await openCapture(page, 'tls13.pcap');
+  await expect(page.getByRole('status').filter({ hasText: 'TLS decryption:' })).toContainText('1 of 1 sessions decrypted');
+
+  await view(page, 'http');
+  const table = page.getByRole('grid', { name: 'HTTP messages' });
+  await expect(table).toContainText('keylog.example.test');
+  await expect(table).toContainText('/decrypted');
+  await expect(table).toContainText('Decrypted');
+
+  await page.getByRole('button', { name: 'Open another' }).click();
+  await expect(page.getByRole('button', { name: 'Choose TLS key log (optional)' })).toBeVisible();
+  await page.locator('input[type=file]').first().setInputFiles(fixture('tls13.pcap'));
+  await expect(page.locator('.cap-title h1')).toHaveText('tls13.pcap');
+  await expect(page.getByRole('status').filter({ hasText: 'TLS decryption:' })).toContainText('0 of 1 sessions decrypted');
+  await view(page, 'http');
+  await expect(page.getByText('No cleartext HTTP/1.x or HTTP/2 messages were decoded.')).toBeVisible();
+  expect(reqs.offenders()).toEqual([]);
+});
+
 test('edge cases: truncated/malformed notes, incomplete file, non-capture file', async ({ page }) => {
   await page.goto('./');
   await openCapture(page, 'edge.pcap');
@@ -238,7 +262,7 @@ test('edge cases: truncated/malformed notes, incomplete file, non-capture file',
 
 test('cancelling an analysis returns to the start and a later capture opens cleanly', async ({ page }) => {
   await page.goto('./');
-  await page.locator('input[type=file]').setInputFiles(fixture('http.pcap'));
+  await page.locator('input[type=file]').first().setInputFiles(fixture('http.pcap'));
   await expect(page.getByRole('progressbar')).toBeVisible();
   await page.getByRole('button', { name: 'Cancel' }).click();
   await expect(page.getByRole('button', { name: 'Choose capture file' })).toBeVisible();

@@ -27,6 +27,9 @@ export function Tls() {
       noSh: model.tls.filter((t) => t.clientHelloFrame !== null && t.serverHelloFrame === null).length,
       certs: model.tls.filter((t) => t.certificateStatus === 'decoded').length,
       encryptedCerts: model.tls.filter((t) => t.certificateStatus === 'encrypted (TLS 1.3)').length,
+      decrypted: model.tls.filter((t) => t.decryptionStatus === 'decrypted').length,
+      stillEncrypted: model.tls.filter((t) => t.decryptionStatus === 'encrypted').length,
+      noAppData: model.tls.filter((t) => t.decryptionStatus === 'no application data').length,
       quic: model.tls.filter((t) => t.carrier === 'QUIC').length,
     };
   }, [model.tls]);
@@ -39,6 +42,8 @@ export function Tls() {
     { key: 'server', header: 'Server', width: 'minmax(170px, 1.2fr)', value: (t) => endpoint(t.server, t.serverPort), render: (t) => <span className="mono">{endpoint(t.server, t.serverPort)}</span> },
     { key: 'sni', header: 'SNI (requested name)', width: 'minmax(180px, 1.6fr)', value: (t) => t.sni },
     { key: 'carrier', header: 'Over', width: '64px', value: (t) => t.carrier },
+    { key: 'decryption', header: 'Decryption', width: '150px', value: (t) => t.decryptionStatus,
+      render: (t) => <span className={`tag${t.decryptionStatus === 'decrypted' ? ' info' : t.decryptionStatus === 'encrypted' ? ' warn' : ''}`}>{t.decryptionStatus === 'no application data' ? 'No app data' : t.decryptionStatus}</span> },
     { key: 'offered', header: 'Versions offered', width: 'minmax(120px, 1fr)', value: (t) => (t.offered ? (t.offered.supportedVersions.length ? t.offered.supportedVersions.map(short).join(', ') : `${short(t.offered.legacyVersion)} (field only)`) : null) },
     { key: 'version', header: 'Negotiated', width: '96px', value: (t) => short(t.negotiated?.version), render: (t) => (t.negotiated ? short(t.negotiated.version) : <span className="muted">no ServerHello</span>) },
     { key: 'alpnOff', header: 'ALPN offered', width: 'minmax(110px, 1fr)', value: (t) => t.offered?.alpn.join(', ') },
@@ -52,15 +57,18 @@ export function Tls() {
   return (
     <>
       <ViewHead title="TLS">
-        Handshake details visible without decryption. “Offered” values come from the client's ClientHello; “negotiated” values come from the server's ServerHello. Application data stays encrypted.
+        “Offered” values come from the client's ClientHello; “negotiated” values come from the server's ServerHello. An optional TLS key log can decrypt matching sessions locally.
       </ViewHead>
-      <Note>Certificates are shown only when they were sent in cleartext (TLS 1.2 and earlier). In TLS 1.3 and QUIC the certificate is encrypted. No decryption keys are used and nothing is looked up online; certificate trust is not checked.</Note>
+      <Note>Session status is based on whether Wireshark decoded TLS application data. A session with no matching key stays encrypted. TLS 1.3 certificates are encrypted on the wire and may only appear if Wireshark can decode their handshake. Keys stay in this browser and certificate trust is not checked.</Note>
       {!model.tls.length ? (
         <div className="panel empty"><strong>No TLS handshakes were decoded.</strong>Handshakes that happened before the capture started, or on ports Wireshark does not associate with TLS, will not appear.</div>
       ) : (
         <>
           <dl className="facts" style={{ margin: 0 }}>
             <Fact label="Handshakes" value={num(model.tls.length)} small={stats.quic ? `${num(stats.quic)} over QUIC` : undefined} />
+            <Fact label="Sessions decrypted" value={num(stats.decrypted)} />
+            <Fact label="Still encrypted" value={num(stats.stillEncrypted)} />
+            <Fact label="No app data" value={num(stats.noAppData)} />
             <Fact label="Distinct SNI names" value={num(stats.sni.filter((s) => !s.key.startsWith('(')).length)} />
             <Fact label="No ServerHello seen" value={num(stats.noSh)} />
             <Fact label="Certificates decoded" value={num(stats.certs)} small="sessions" />
@@ -88,6 +96,7 @@ function TlsSummary({ t }: { t: TlsSession }) {
         <dt>Client</dt><dd className="mono">{endpoint(t.client, t.clientPort)}</dd>
         <dt>Server</dt><dd className="mono">{endpoint(t.server, t.serverPort)}</dd>
         <dt>Carried over</dt><dd>{t.carrier}{t.stream !== null ? ` stream ${t.stream}` : ''}</dd>
+        <dt>Application data</dt><dd>{t.decryptionStatus}</dd>
         <dt>SNI</dt><dd>{t.sni ?? (t.clientHelloFrame === null ? 'unavailable (ClientHello not captured)' : 'not sent')}</dd>
       </dl>
       <div className="grid-2">

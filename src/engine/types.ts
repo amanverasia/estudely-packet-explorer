@@ -247,6 +247,8 @@ export interface HttpExchange extends Provenance {
   state: 'complete' | 'no response seen' | 'response without request';
   /** Disagreement between stream-order pairing and Wireshark's frame references, when present. */
   pairingWarning: string | null;
+  /** True when this HTTP message was dissected inside a decrypted TLS session. */
+  decrypted: boolean;
 }
 
 export interface Certificate {
@@ -292,6 +294,7 @@ export interface TlsSession extends Provenance {
   } | null;
   certificates: Certificate[];
   certificateStatus: 'decoded' | 'encrypted (TLS 1.3)' | 'not observed';
+  decryptionStatus: 'decrypted' | 'encrypted' | 'no application data';
 }
 
 export interface DhcpMessage {
@@ -471,6 +474,7 @@ export interface PacketRow {
   protocol: string;
   flags: string;
   iface: number | null;
+  decrypted: boolean;
 }
 
 export interface ProtoTreeNode {

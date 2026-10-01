@@ -105,6 +105,8 @@ function ConversationDetail({ c, onClose }: { c: Conversation; onClose: () => vo
     { key: 't', header: 'Time (s)', width: '120px', align: 'right', value: (p) => p.t, render: (p) => rel(p.t, digits) },
     { key: 'dir', header: 'Direction', width: '70px', value: (p) => (p.src === c.a && (p.sport ?? null) === c.aPort ? 'A→B' : 'B→A') },
     { key: 'proto', header: 'Protocol', width: '96px', value: (p) => p.protocol },
+    { key: 'decryption', header: 'TLS data', width: '112px', value: (p) => p.decrypted ? 'Decrypted' : null,
+      render: (p) => p.decrypted ? <span className="tag info">Decrypted</span> : null },
     { key: 'len', header: 'Length', width: '80px', align: 'right', value: (p) => p.len, render: (p) => (p.caplen < p.len ? `${p.len} (${p.caplen} captured)` : num(p.len)) },
     { key: 'flags', header: 'Notes', width: 'minmax(200px, 2fr)', value: (p) => (p.flags ? flagText(p.flags) : '') },
   ];

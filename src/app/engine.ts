@@ -94,7 +94,7 @@ export class EngineClient {
   }
 
   /** Opens a capture locally. Any previous capture and its worker are discarded. */
-  open(file: File): void {
+  open(file: File, keyLog?: File | null): void {
     this.close();
     const missing = missingFeatures();
     if (missing.length) {
@@ -111,7 +111,7 @@ export class EngineClient {
     this.currentFile = file;
     this.startedAt = performance.now();
     this.listenerProgress({ phase: this.wasmModule ? 'read' : 'engine', fraction: null, message: this.wasmModule ? 'Starting…' : 'Loading the Wireshark engine…' });
-    const msg: ToWorker = { type: 'open', file };
+    const msg: ToWorker = { type: 'open', file, keyLog };
     this.worker.postMessage(msg);
   }
 

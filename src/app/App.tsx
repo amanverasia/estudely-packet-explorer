@@ -63,13 +63,13 @@ export function App() {
   }, [theme]);
   useEffect(() => () => engine.close(), [engine]);
 
-  const openFile = useCallback((file: File) => {
+  const openFile = useCallback((file: File, keyLog?: File | null) => {
     if (file.size > HARD_LIMIT_BYTES) {
       setState({ kind: 'error', fileName: file.name, message: `This file is ${bytes(file.size)}. The limit is ${bytes(HARD_LIMIT_BYTES)}: the WebAssembly engine has a 2 GiB memory ceiling and needs room for decoding state. Split the capture (for example with editcap -c) and open the parts.` });
       return;
     }
     setDrawer(null);
-    engine.open(file);
+    engine.open(file, keyLog);
   }, [engine]);
 
   const go = useCallback((view: string, params?: Record<string, string>) => {
@@ -100,14 +100,31 @@ function ThemeButton({ theme, setTheme }: { theme: Theme; setTheme: (t: Theme) =
   );
 }
 
-function OpenButton({ onOpen, primary, label = 'Open capture' }: { onOpen: (f: File) => void; primary?: boolean; label?: string }) {
+function OpenButton({ onOpen, primary, label = 'Open capture', keyLog: controlledKeyLog, onKeyLogChange }: {
+  onOpen: (f: File, keyLog?: File | null) => void; primary?: boolean; label?: string;
+  keyLog?: File | null; onKeyLogChange?: (file: File | null) => void;
+}) {
   const ref = useRef<HTMLInputElement>(null);
+  const keyRef = useRef<HTMLInputElement>(null);
+  const [localKeyLog, setLocalKeyLog] = useState<File | null>(null);
+  const keyLog = controlledKeyLog === undefined ? localKeyLog : controlledKeyLog;
+  const selectKeyLog = (file: File | null) => {
+    setLocalKeyLog(file);
+    onKeyLogChange?.(file);
+  };
   return (
-    <>
-      <button className={`btn${primary ? ' primary' : ''}`} onClick={() => ref.current?.click()}>{label}</button>
-      <input ref={ref} type="file" hidden accept=".pcap,.pcapng,.cap,.pcap.gz,.pcapng.gz,.ntar,.dmp,.erf,.snoop,application/vnd.tcpdump.pcap"
-        onChange={(e) => { const f = e.target.files?.[0]; if (f) onOpen(f); e.target.value = ''; }} />
-    </>
+    <div style={{ display: 'grid', justifyItems: 'start', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+        <button className={`btn${primary ? ' primary' : ''}`} onClick={() => ref.current?.click()}>{label}</button>
+        <input ref={ref} type="file" hidden accept=".pcap,.pcapng,.cap,.pcap.gz,.pcapng.gz,.ntar,.dmp,.erf,.snoop,application/vnd.tcpdump.pcap"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) { onOpen(f, keyLog); selectKeyLog(null); } e.target.value = ''; }} />
+        <button className="btn" onClick={() => keyRef.current?.click()}>{keyLog ? 'Change TLS key log' : 'Choose TLS key log (optional)'}</button>
+        <input ref={keyRef} type="file" hidden accept=".txt,text/plain"
+          onChange={(e) => { selectKeyLog(e.target.files?.[0] ?? null); e.target.value = ''; }} />
+        {keyLog && <><span className="muted" title={keyLog.name}>{keyLog.name}</span><button className="btn small ghost" onClick={() => selectKeyLog(null)}>Clear key log</button></>}
+      </div>
+      <span className="muted" style={{ fontSize: 12 }}>Key logs contain session secrets. They are read locally and held only while this capture is open.</span>
+    </div>
   );
 }
 
@@ -124,8 +141,9 @@ const PHASES: { phase: string; label: string }[] = [
   { phase: 'analyze', label: 'Build summaries' },
 ];
 
-function Landing({ state, onOpen, onCancel, theme, setTheme }: { state: EngineState; onOpen: (f: File) => void; onCancel: () => void; theme: Theme; setTheme: (t: Theme) => void }) {
+function Landing({ state, onOpen, onCancel, theme, setTheme }: { state: EngineState; onOpen: (f: File, keyLog?: File | null) => void; onCancel: () => void; theme: Theme; setTheme: (t: Theme) => void }) {
   const [over, setOver] = useState(false);
+  const [keyLog, setKeyLog] = useState<File | null>(null);
   const [now, setNow] = useState(performance.now());
   useEffect(() => {
     if (state.kind !== 'working') return;
@@ -138,7 +156,7 @@ function Landing({ state, onOpen, onCancel, theme, setTheme }: { state: EngineSt
     <main className="landing"
       onDragOver={(e) => { e.preventDefault(); setOver(true); }}
       onDragLeave={() => setOver(false)}
-      onDrop={(e) => { e.preventDefault(); setOver(false); const f = e.dataTransfer.files?.[0]; if (f && !working) onOpen(f); }}>
+      onDrop={(e) => { e.preventDefault(); setOver(false); const f = e.dataTransfer.files?.[0]; if (f && !working) { onOpen(f, keyLog); setKeyLog(null); } }}>
       <div className="landing-card">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ flex: 1 }}>
@@ -169,7 +187,7 @@ function Landing({ state, onOpen, onCancel, theme, setTheme }: { state: EngineSt
           <section className={`drop${over ? ' over' : ''}`}>
             <h2>Open a packet capture</h2>
             <p className="ink2" style={{ maxWidth: '52ch' }}>Choose a .pcap or .pcapng file, or drop it here. Wireshark's dissectors run inside this page, so the file is opened, not uploaded.</p>
-            <OpenButton onOpen={onOpen} primary label="Choose capture file" />
+            <OpenButton onOpen={onOpen} primary label="Choose capture file" keyLog={keyLog} onKeyLogChange={setKeyLog} />
             <p className="local-note" style={{ fontSize: 13 }}><ShieldIcon />{LOCAL_NOTICE}</p>
           </section>
         )}
@@ -195,7 +213,7 @@ function Landing({ state, onOpen, onCancel, theme, setTheme }: { state: EngineSt
 
 function Workspace(props: {
   model: AnalysisModel; engine: EngineClient; view: View; params: URLSearchParams; go: AppCtx['go']; openDrawer: (d: DrawerSpec) => void;
-  onOpen: (f: File) => void; onClose: () => void; theme: Theme; setTheme: (t: Theme) => void; drawer: DrawerSpec | null; closeDrawer: () => void;
+  onOpen: (f: File, keyLog?: File | null) => void; onClose: () => void; theme: Theme; setTheme: (t: Theme) => void; drawer: DrawerSpec | null; closeDrawer: () => void;
 }) {
   const { model, view } = props;
   const c = model.capture;
@@ -292,6 +310,7 @@ function Workspace(props: {
             <p className="mobile-local local-note" style={{ fontSize: 12, padding: '4px 0 8px' }}><ShieldIcon />{LOCAL_NOTICE}</p>
           </header>
           <main className="content" id="content">
+            {model.tls.length > 0 && <TlsStatusBanner sessions={model.tls} />}
             <Suspense fallback={<div className="muted">Loading view…</div>}>{body}</Suspense>
             <BuildTag className="mobile-only" />
           </main>
@@ -299,5 +318,16 @@ function Workspace(props: {
       </div>
       {props.drawer && <Drawer spec={props.drawer} onClose={props.closeDrawer} />}
     </Ctx.Provider>
+  );
+}
+
+function TlsStatusBanner({ sessions }: { sessions: AnalysisModel['tls'] }) {
+  const decrypted = sessions.filter((s) => s.decryptionStatus === 'decrypted').length;
+  const encrypted = sessions.filter((s) => s.decryptionStatus === 'encrypted').length;
+  const noData = sessions.length - decrypted - encrypted;
+  return (
+    <div className="note info" role="status" style={{ marginBottom: 14 }}>
+      <b>TLS decryption:</b> {num(decrypted)} of {num(sessions.length)} sessions decrypted; {num(encrypted)} with application data remain encrypted; {num(noData)} had no application data to assess.
+    </div>
   );
 }

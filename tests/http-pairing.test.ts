@@ -22,6 +22,10 @@ const packet = (frame: number, clientToServer: boolean): RawPacket => ({
   tcpFlags: 0x18,
   tcpLen: 60,
   flags: '',
+  tlsAppData: false,
+  quicStreamData: false,
+  quicShort: false,
+  decrypted: false,
 });
 
 const request = (frame: number, responseIn: number, uri = `/request-${frame}`): RawHttp => ({

@@ -11,7 +11,7 @@
 --
 -- Line formats (fields separated by TAB, lists by \31, escaped with \\ \t \n \r \u):
 --   I iface encap ifname
---   P num epoch len caplen iface protos ethsrc ethdst src dst sport dport tcpstream udpstream tcpflags tcplen flags
+--   P num epoch len caplen iface protos ethsrc ethdst src dst sport dport tcpstream udpstream tcpflags tcplen flags tlsapp quicstream quicshort
 --   S num frames(list)                         -- frames that contributed to reassembled data
 --   D num proto id isresp opcode rcode qname qtype qclass ancount nscount arcount rrs(list of sec|name|type|ttl|value) flags
 --   N num id isresp opcode rcode names(list) addrs(list) qtype
@@ -53,6 +53,8 @@ local f = {
   lost = F("tcp.analysis.lost_segment"), dupack = F("tcp.analysis.duplicate_ack"), zerowin = F("tcp.analysis.zero_window"),
   malformed = F("_ws.malformed"), severity = F("_ws.expert.severity"),
   tcpseg = F("tcp.segment"), ipfragment = F("ip.fragment"),
+  tls_app_data = F("tls.app_data"),
+  quic_stream_data = F("quic.stream_data"), quic_short = F("quic.short"),
   -- DNS / mDNS / LLMNR share the DNS dissector's fields
   p_dns = F("dns"), p_mdns = F("mdns"), p_llmnr = F("llmnr"),
   dns_id = F("dns.id"), dns_resp = F("dns.flags.response"), dns_opcode = F("dns.flags.opcode"), dns_rcode = F("dns.flags.rcode"),
@@ -526,7 +528,9 @@ function p.dissector(tvb, pinfo, tree)
   w:write(table.concat({ "P", num, epoch and tostring(epoch.value) or tostring(pinfo.abs_ts), val(f.len), val(f.caplen), ifid,
     esc(protos), mac(f.ethsrc), mac(f.ethdst), src and esc(src.value) or "", dst and esc(dst.value) or "",
     sport and tostring(sport.value) or "", dport and tostring(dport.value) or "",
-    val(f.tcpstream), val(f.udpstream), val(f.tcpflags), val(f.tcplen), flag_str() }, "\t"), "\n")
+    val(f.tcpstream), val(f.udpstream), val(f.tcpflags), val(f.tcplen), flag_str(),
+    present(f.tls_app_data) and "1" or "0", present(f.quic_stream_data) and "1" or "0",
+    present(f.quic_short) and "1" or "0" }, "\t"), "\n")
 
   local srcmac = mac(f.ethsrc)
   if srcmac ~= "" and not state.macs[srcmac] then

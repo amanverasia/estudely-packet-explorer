@@ -45,6 +45,8 @@ export function Http() {
     { key: 'h2stream', header: 'H2 stream', width: '84px', value: (h) => h.http2StreamId },
     { key: 'method', header: 'Method', width: '80px', value: (h) => h.method },
     { key: 'host', header: 'Host', width: 'minmax(150px, 1.2fr)', value: (h) => h.host },
+    { key: 'tls', header: 'TLS data', width: '110px', value: (h) => h.decrypted ? 'Decrypted' : null,
+      render: (h) => h.decrypted ? <span className="tag info">Decrypted</span> : null },
     { key: 'uri', header: 'Path', width: 'minmax(220px, 2.5fr)', value: (h) => h.uri },
     { key: 'status', header: 'Status', width: '74px', value: (h) => h.status, render: (h) => statusTag(h.status) },
     { key: 'ctype', header: 'Content type', width: 'minmax(130px, 1fr)', value: (h) => h.contentType },
@@ -59,8 +61,8 @@ export function Http() {
 
   const limits = (
     <div className="notes">
-      {u.encryptedConversations > 0 && <Note>{plural(u.encryptedConversations, 'conversation')} use TLS or QUIC. HTTP inside them is encrypted and is not shown here; see the TLS view for what the handshakes reveal.</Note>}
-      {u.http2Packets > 0 && <Note kind="info">{plural(u.http2Packets, 'packet')} carry cleartext HTTP/2. Where Wireshark reconstructs request or response headers, they appear as HTTP/2 rows. HTTP/2 inside TLS is not visible until key-log decryption is supported; HTTP/3 request rows are not shown.</Note>}
+      {u.encryptedConversations > 0 && <Note>{plural(u.encryptedConversations, 'conversation')} use TLS or QUIC, so their application payload is not shown here unless Wireshark decodes it. The TLS view shows how many TLS sessions decrypted and whether app data was captured.</Note>}
+      {u.http2Packets > 0 && <Note kind="info">{plural(u.http2Packets, 'packet')} carry HTTP/2. Reconstructed messages appear here, including TLS sessions successfully decrypted with a supplied key log. HTTP/3 request rows are not shown.</Note>}
       {u.httpPortsUndecoded.length > 0 && (
         <Note kind="warn">{plural(u.httpPortsUndecoded.length, 'TCP conversation')} on common HTTP ports carried data that Wireshark did not decode as HTTP (for example a non-HTTP protocol, missing segments, or a stream that started before the capture).{' '}
           <button className="btn small" onClick={() => go('connections', { conv: String(u.httpPortsUndecoded[0]) })}>Open the first</button></Note>

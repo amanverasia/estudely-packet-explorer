@@ -298,7 +298,7 @@ export async function analyze(raw: RawRecords, meta: CaptureMeta, onProgress?: (
         method: h.method, host: h.host, uri: h.uri, version: h.version, userAgent: h.userAgent, requestHeaders: h.headers,
         requestFrame: h.frame, requestTime: p.t, requestContentType: h.contentType, status: null, phrase: null,
         responseVersion: null, responseHeaders: [], contentType: null, contentLength: null, serverHeader: null,
-        location: null, responseFrame: null, responseTime: null, state: 'no response seen', pairingWarning: null, frames: [...frames],
+        location: null, responseFrame: null, responseTime: null, state: 'no response seen', pairingWarning: null, decrypted: false, frames: [...frames],
       };
       http.push(ex);
       const sameFrame = requestExchangeByFrame.get(h.frame) ?? [];
@@ -351,7 +351,7 @@ export async function analyze(raw: RawRecords, meta: CaptureMeta, onProgress?: (
           method: null, host: null, uri: null, version: null, userAgent: null, requestHeaders: [], requestFrame: null,
           requestTime: null, requestContentType: null, status: null, phrase: null, responseVersion: null, responseHeaders: [],
           contentType: null, contentLength: null, serverHeader: null, location: null, responseFrame: null, responseTime: null,
-          state: 'response without request', pairingWarning: pairingWarnings.length ? pairingWarnings.join(' ') : null, frames: [],
+          state: 'response without request', pairingWarning: pairingWarnings.length ? pairingWarnings.join(' ') : null, decrypted: false, frames: [],
         };
         http.push(ex);
       } else {
@@ -396,7 +396,7 @@ export async function analyze(raw: RawRecords, meta: CaptureMeta, onProgress?: (
         id: tls.length, carrier, stream, convId, client: p.src, clientPort: p.sport, server: p.dst, serverPort: p.dport,
         sni: t.sni, clientHelloFrame: t.frame, clientHelloTime: p.t,
         offered: { legacyVersion: t.version, supportedVersions: t.supportedVersions, alpn: t.alpn, cipherSuites: t.ciphers },
-        serverHelloFrame: null, negotiated: null, certificates: [], certificateStatus: 'not observed', frames: [...frames],
+        serverHelloFrame: null, negotiated: null, certificates: [], certificateStatus: 'not observed', decryptionStatus: 'no application data', frames: [...frames],
       };
       tls.push(s);
       if (convId !== null) tlsByConv.set(convId, s);
@@ -406,7 +406,7 @@ export async function analyze(raw: RawRecords, meta: CaptureMeta, onProgress?: (
       s = {
         id: tls.length, carrier, stream, convId, client: p.dst, clientPort: p.dport, server: p.src, serverPort: p.sport,
         sni: null, clientHelloFrame: null, clientHelloTime: null, offered: null, serverHelloFrame: null, negotiated: null,
-        certificates: [], certificateStatus: 'not observed', frames: [],
+        certificates: [], certificateStatus: 'not observed', decryptionStatus: 'no application data', frames: [],
       };
       tls.push(s);
       if (convId !== null) tlsByConv.set(convId, s);
@@ -436,6 +436,28 @@ export async function analyze(raw: RawRecords, meta: CaptureMeta, onProgress?: (
     else if (s.negotiated?.version?.includes('1.3') || s.carrier === 'QUIC') s.certificateStatus = 'encrypted (TLS 1.3)';
     if (s.convId !== null) convs[s.convId].records.tls++;
   }
+
+  // A protocol stack entry after TLS (other than generic `data`) means
+  // Wireshark decrypted the application record and dispatched its plaintext.
+  const tlsDataByConv = new Map<number, { hasAppData: boolean; frames: number[]; decryptedFrames: number[] }>();
+  for (let i = 0; i < packets.length; i++) {
+    const p = packets[i];
+    if (!p.tlsAppData && !p.quicStreamData && !p.quicShort && !p.decrypted) continue;
+    const convId = convOf[i];
+    if (convId < 0) continue;
+    let data = tlsDataByConv.get(convId);
+    if (!data) tlsDataByConv.set(convId, data = { hasAppData: false, frames: [], decryptedFrames: [] });
+    data.hasAppData ||= p.tlsAppData || p.quicStreamData || p.quicShort;
+    if (p.tlsAppData || p.quicStreamData || p.quicShort) data.frames.push(p.frame);
+    if (p.decrypted) data.decryptedFrames.push(p.frame);
+  }
+  for (const s of tls) {
+    const data = s.convId === null ? undefined : tlsDataByConv.get(s.convId);
+    s.decryptionStatus = data?.decryptedFrames.length ? 'decrypted' : data?.hasAppData ? 'encrypted' : 'no application data';
+    if (data) s.frames = [...new Set([...s.frames, ...data.frames])].sort((a, b) => a - b);
+  }
+  const decryptedConvIds = new Set(tls.filter((s) => s.decryptionStatus === 'decrypted' && s.convId !== null).map((s) => s.convId!));
+  for (const h of http) h.decrypted = h.convId !== null && decryptedConvIds.has(h.convId);
 
   // ---- hosts
   onProgress?.('Building host inventory');

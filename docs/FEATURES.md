@@ -6,9 +6,9 @@
 |---|---|---|
 | Overview | Packets, duration, bytes on wire vs captured, file size, hosts, conversations, time range (UTC, file precision), interfaces, traffic over time (bytes or packets, stacked by top protocol), protocol distribution, top talkers, largest conversations, protocol hierarchy, data-quality notes | Every packet |
 | DNS | DNS / mDNS / LLMNR / NBNS tabs; transactions with client, server, name, type, response code, answers, status, response time; counts by name, type, response code; unanswered and repeated queries; client→resolver diagram | `dns.*`, `nbns.*` fields |
-| HTTP | HTTP/1.x and HTTP/2 requests: method, host, path, status, content type/length, request and response headers, pairing state; HTTP/2 stream IDs; counts by host, method, status; explanations for encrypted or undecoded traffic | `http.*` and decoded `http2.*` header fields |
-| TLS | ClientHello SNI, offered versions, ALPN and cipher suites; ServerHello negotiated version (and where it came from), cipher, ALPN; cleartext certificates (subject, issuer, validity, SAN, serial, algorithms, SHA-256) | `tls.handshake.*` fields, also in QUIC Initial packets |
-| QUIC | Per UDP conversation: versions in long headers, versions listed by Version Negotiation, SNI and offered ALPN from the Initial ClientHello, QUIC packet count | `quic.version`, `quic.supported_version`, `tls.handshake.*` |
+| HTTP | HTTP/1.x and HTTP/2 requests: method, host, path, status, content type/length, request and response headers, pairing state; HTTP/2 stream IDs; decrypted TLS messages are marked; counts by host, method, status; explanations for encrypted or undecoded traffic | `http.*` and decoded `http2.*` header fields |
+| TLS | ClientHello SNI, offered versions, ALPN and cipher suites; ServerHello negotiated version (and where it came from), cipher, ALPN; cleartext certificates; per-session status for decrypted, still-encrypted, or absent application data | `tls.handshake.*`, `tls.app_data`, and the packet protocol stack |
+| QUIC | Per UDP conversation: versions in long headers, versions listed by Version Negotiation, SNI and offered ALPN from the Initial ClientHello, packet count; matching TLS key logs can expose decrypted QUIC stream packets | `quic.version`, `quic.supported_version`, `quic.stream_data`, `tls.handshake.*` |
 | SSH | Client and server identification strings per TCP session | `ssh.protocol`, `ssh.direction` |
 | DHCP | DHCPv4 exchanges by transaction ID + client MAC: message sequence, outcome (ACK, NAK, offer only, no server reply), client host name, requested/offered/assigned address, server, lease time, subnet mask, routers, DNS servers | `dhcp.*` fields |
 | ARP | Every request/reply (sender and target, gratuitous flag); per IPv4 address the MACs ARP senders stated, in time order, with the number of changes. Probes (sender 0.0.0.0) state no mapping | `arp.*` fields |
@@ -39,8 +39,8 @@ Not supported: live capture, files over 1 GiB (refused), files Wireshark cannot 
 
 ## Known limitations
 
-- **HTTP/3 is not turned into request rows.** HTTP/2 rows are available when Wireshark reconstructs a request or response header block. HTTP/2 inside TLS remains encrypted until decryption is configured.
-- **No decryption.** TLS application data, TLS 1.3 certificates, QUIC beyond the Initial packets, DoH/DoT stay encrypted. No key-log support yet.
+- **HTTP/3 is not turned into request rows.** HTTP/2 rows are available when Wireshark reconstructs a request or response header block, including decrypted sessions when a matching key log is supplied.
+- **Decryption needs matching secrets.** TLS application data stays encrypted unless a matching key log is supplied. TLS 1.3 certificates remain encrypted unless Wireshark exposes them through the decrypted handshake. QUIC/HTTP/3 request rows and DoH/DoT remain unsupported.
 - HTTP uses Wireshark's request/response frame links when available and falls back to stream order otherwise. Disagreements with stream order are flagged; a bad link reported by Wireshark can still mispair a response.
 - DNS responses are matched only within 60 s of the query.
 - In the rare case of several DNS/HTTP messages in one packet where a field has no source Tvb, its offset cannot be checked against a specific reassembly buffer and may be assigned ambiguously.

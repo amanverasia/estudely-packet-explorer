@@ -23,6 +23,10 @@ export interface RawPacket {
   tcpFlags: number | null;
   tcpLen: number | null;
   flags: string;
+  tlsAppData: boolean;
+  quicStreamData: boolean;
+  quicShort: boolean;
+  decrypted: boolean;
 }
 
 export interface RawDns {
@@ -270,6 +274,14 @@ export function parseRecords(buf: Uint8Array, onProgress?: (fraction: number) =>
           tcpFlags: int(c[15]),
           tcpLen: int(c[16]),
           flags: intern(c[17]),
+          tlsAppData: bool(c[18]),
+          quicStreamData: bool(c[19]),
+          quicShort: bool(c[20]),
+          decrypted: (() => {
+            const stack = intern(c[6]).split(':');
+            const tls = stack.lastIndexOf('tls');
+            return bool(c[19]) || (tls >= 0 && stack.slice(tls + 1).some((p) => p !== 'data'));
+          })(),
         });
         break;
       }

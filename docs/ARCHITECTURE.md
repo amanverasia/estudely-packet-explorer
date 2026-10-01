@@ -5,7 +5,7 @@
 ```
  UI thread (React)                         Analysis worker (one per capture)
  ─────────────────                         ─────────────────────────────────
- File picker / drop  ── File object ──▶    file.arrayBuffer()  (local read)
+ File picker / drop  ── capture + key log ──▶ file.arrayBuffer()  (local read)
  EngineClient        ◀── progress ───      Wiregasm (Wireshark 4.4.5 WASM)
    │                                         1. load()        index packets
    │                                         2. armed pass    Lua extractor writes TSV
@@ -16,6 +16,8 @@
 ```
 
 All views read one shared `AnalysisModel` (`src/engine/types.ts`). The file is decoded once; tabs never re-parse it.
+
+An optional TLS key log follows the capture directly to the worker. The worker places it in the virtual filesystem and applies Wireshark's `tls.keylog_file` preference. Wireshark can read the file again during later dissections, so the temporary copy stays in the in-memory filesystem until the worker is terminated with the capture.
 
 ## Why Wiregasm
 
@@ -61,7 +63,7 @@ Pure TypeScript, unit-testable in Node:
 - **Conversations**: TCP/UDP by Wireshark `tcp.stream` / `udp.stream` (so a reused 4-tuple after FIN is a separate session); other IP by protocol + address pair; non-IP by protocol + MAC pair. Endpoint A is the SYN sender when a SYN is seen, else the first packet's sender (labelled as such).
 - **DNS/LLMNR/NBNS correlation**: key = protocol + transport + client address + client port + transaction ID; the response must come from the queried server (or any server if the query went to a broadcast/multicast address) within 60 s. A repeated query (same key, name, type, server, still unanswered) becomes its own row with status `retransmitted` linked to the original. A reused ID after an answer starts a new transaction. Unmatched responses are `response without query` or `duplicate response`. mDNS messages are listed individually.
 - **HTTP**: Wireshark's `http.request_in` / `http.response_in` frame references take precedence when available; stream FIFO is the fallback. Disagreements with stream order are shown in the HTTP view. 1xx interim responses (except 101) do not consume a request. HTTP/2 header blocks pair by TCP stream and HTTP/2 stream ID, including blocks completed by CONTINUATION frames.
-- **TLS**: one session per ClientHello; ServerHello/Certificate attach to the latest session in that conversation. Negotiated version comes from the ServerHello `supported_versions` extension when present, else the version field. Certificates are parsed from DER in `src/engine/x509.ts` (display fields only, no trust validation) and fingerprinted with WebCrypto.
+- **TLS**: one session per ClientHello; ServerHello/Certificate attach to the latest session in that conversation. Negotiated version comes from the ServerHello `supported_versions` extension when present, else the version field. Session decryption status uses application data records and an inner protocol present after TLS in the packet protocol stack; decrypted application packets and HTTP rows are marked. Certificates are parsed from DER in `src/engine/x509.ts` (display fields only, no trust validation) and fingerprinted with WebCrypto.
 - **Hosts**: per IP address; source MACs; ARP-announced MACs; ports peers sent traffic to with evidence (`handshake completed`, `SYN-ACK sent`, `SYN received, no SYN-ACK seen`, `mid-stream traffic`, `UDP traffic received`); names with source and observed/inferred kind.
 - **DHCP, ARP, ICMP, SSH, QUIC** (`src/engine/protocols.ts`): DHCP messages group by transaction ID + client MAC, the outcome taken from the last deciding message (a DECLINE after an ACK reads as declined); ARP mappings come from sender addresses in frame order, a change being a different MAC than the previous message for that IP; ICMP echo replies pair with the oldest unanswered request of the same addresses, identifier and sequence number; the quoted packet of an error is the IP and TCP/UDP header after the ICMP header (so tunnel headers before it are skipped), and error messages link to the latest captured TCP/UDP conversation with the quoted 5-tuple that started before the error; SSH and QUIC records group per conversation, with the QUIC client taken from the Initial ClientHello.
 - **Timeline**: ~150 bins at a "nice" width from the earliest timestamp (timestamps need not be monotonic), stacked by highest decoded protocol (top 6 + Other).
@@ -80,6 +82,7 @@ Times are stored relative to the first packet so that nanosecond precision survi
 - Captured strings are rendered only as React text nodes. Nothing is rendered as HTML; bodies are never rendered; CSV exports neutralise spreadsheet formulas.
 - The production page ships a Content-Security-Policy with `connect-src 'self'`; the only network requests are same-origin GETs for the app and engine files (verified in Chromium, Firefox and WebKit with request logging — no request has a body).
 - Theme preference is the only thing written to `localStorage`. Captures are never persisted.
+- A selected key log is read with the File API and passed to the analysis worker. Its temporary virtual file and imported secrets stay in the worker's memory until that capture is closed; the user's original key-log file is never modified.
 - The service worker (`src/pwa/sw.js`, built to `dist/sw.js`) caches only the files listed in its precache list, which the build generates from `dist/`. It never stores runtime responses; captures and key files are read with the File API and never pass through it. A browser test checks the Cache Storage contents after opening a capture.
 
 ## Offline app (PWA)

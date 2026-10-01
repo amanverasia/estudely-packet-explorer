@@ -19,6 +19,8 @@ export interface WiregasmModule {
   wiresharkVersion(): string;
   getColumns(): WgVector<string>;
   checkFilter(filter: string): { ok: boolean; error: string };
+  setPref(module: string, key: string, value: string): { code: number; error: string };
+  applyPreferences(): void;
 }
 
 export type ProgressPhase = 'engine' | 'read' | 'load' | 'extract' | 'parse' | 'analyze';
@@ -33,6 +35,7 @@ const ESTX_DIR = '/estx';
 const OUT_PATH = '/estx/out.tsv';
 const ARM_PATH = '/estx/arm';
 const DONE_PATH = '/estx/done';
+const TLS_KEYLOG_PATH = '/estx/tls-keys.log';
 
 /** Install the Lua extractor. Must run before lib.init(). */
 export function installExtractor(lib: WiregasmModule, luaSource: string): void {
@@ -109,9 +112,23 @@ export class CaptureSession {
     }
   }
 
-  async open(fileName: string, bytes: Uint8Array, onProgress: (p: Progress) => void): Promise<AnalysisModel> {
+  async open(fileName: string, bytes: Uint8Array, onProgress: (p: Progress) => void, keyLog?: Uint8Array | null): Promise<AnalysisModel> {
     this.progress = onProgress;
     const FS = this.lib.FS;
+    // Keep the optional key log only in Wiregasm's in-memory filesystem while
+    // this worker analyzes the capture. Wireshark may revisit packets during
+    // dissection, so the file is removed when this session closes; terminating
+    // the per-capture worker then releases the imported secrets as well.
+    try { FS.unlink(TLS_KEYLOG_PATH); } catch { /* no previous key log */ }
+    if (keyLog?.length) FS.writeFile(TLS_KEYLOG_PATH, keyLog);
+    try {
+      const pref = this.lib.setPref('tls', 'keylog_file', keyLog?.length ? TLS_KEYLOG_PATH : '');
+      if (pref.code !== 0) throw new Error(pref.error || 'Wireshark could not set the TLS key log preference.');
+      this.lib.applyPreferences();
+    } catch (error) {
+      try { FS.unlink(TLS_KEYLOG_PATH); } catch { /* no key log file */ }
+      throw error;
+    }
     // Hand the buffer to the in-memory FS without an extra copy (canOwn).
     const stream = FS.open(this.path, 'w+');
     FS.write(stream, bytes, 0, bytes.length, 0, true);
@@ -257,6 +274,7 @@ export class CaptureSession {
       out.push({
         frame: p.frame, t: p.t, len: p.len, caplen: p.caplen, src: p.src || p.ethSrc, dst: p.dst || p.ethDst,
         sport: p.sport, dport: p.dport, protocol: protoName(topProtocol(p.protos)), flags: p.flags, iface: p.iface,
+        decrypted: p.decrypted,
       });
     };
     if (opts.convId !== undefined) {
@@ -274,6 +292,7 @@ export class CaptureSession {
       this.sess = null;
     }
     try { this.lib.FS.unlink(this.path); } catch { /* ignore */ }
+    try { this.lib.FS.unlink(TLS_KEYLOG_PATH); } catch { /* ignore */ }
     this.index = null;
   }
 }

@@ -9,7 +9,9 @@ Run: python3 fixtures/generate.py [name ...]   (requires scapy and cryptography)
 """
 import datetime
 import os
+import ssl
 import struct
+import tempfile
 
 from scapy.all import (DNS, DNSQR, DNSRR, IP, TCP, UDP, Ether, IPv6, Raw,
                        fragment, wrpcap)
@@ -358,6 +360,96 @@ def tls_fixture():
     wrpcap(os.path.join(HERE, "tls.pcap"), stamp(P))
 
 
+def tls13_fixture():
+    """Create TLS 1.3 application traffic plus its matching NSS key log."""
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+
+    c = Clock()
+    exchanges = []
+    keylog_path = os.path.join(HERE, "tls13.keys")
+    cert_key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "keylog.example.test")])
+    cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(cert_key.public_key())
+            .serial_number(0x1337)
+            .not_valid_before(datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc))
+            .not_valid_after(datetime.datetime(2034, 1, 1, tzinfo=datetime.timezone.utc))
+            .add_extension(x509.SubjectAlternativeName([x509.DNSName("keylog.example.test")]), critical=False)
+            .sign(cert_key, hashes.SHA256()))
+    with tempfile.TemporaryDirectory() as tmp:
+        cert_path, private_path = os.path.join(tmp, "server.pem"), os.path.join(tmp, "server.key")
+        with open(cert_path, "wb") as f:
+            f.write(cert.public_bytes(serialization.Encoding.PEM))
+        with open(private_path, "wb") as f:
+            f.write(cert_key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
+
+        client_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        client_ctx.check_hostname = False
+        client_ctx.verify_mode = ssl.CERT_NONE
+        client_ctx.minimum_version = client_ctx.maximum_version = ssl.TLSVersion.TLSv1_3
+        client_ctx.set_alpn_protocols(["http/1.1"])
+        open(keylog_path, "w", encoding="ascii").close()
+        client_ctx.keylog_filename = keylog_path
+
+        server_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        server_ctx.minimum_version = server_ctx.maximum_version = ssl.TLSVersion.TLSv1_3
+        server_ctx.set_alpn_protocols(["http/1.1"])
+        server_ctx.load_cert_chain(cert_path, private_path)
+        client_in, client_out = ssl.MemoryBIO(), ssl.MemoryBIO()
+        server_in, server_out = ssl.MemoryBIO(), ssl.MemoryBIO()
+        client = client_ctx.wrap_bio(client_in, client_out, server_side=False, server_hostname="keylog.example.test")
+        server = server_ctx.wrap_bio(server_in, server_out, server_side=True)
+
+        def transfer(out, incoming, direction):
+            data = out.read()
+            if data:
+                exchanges.append((direction, data, None))
+                incoming.write(data)
+                return True
+            return False
+
+        client_done = server_done = False
+        for _ in range(100):
+            progressed = False
+            if not client_done:
+                try:
+                    client.do_handshake()
+                    client_done = True
+                except (ssl.SSLWantReadError, ssl.SSLWantWriteError):
+                    pass
+                progressed |= transfer(client_out, server_in, "c")
+            if not server_done:
+                try:
+                    server.do_handshake()
+                    server_done = True
+                except (ssl.SSLWantReadError, ssl.SSLWantWriteError):
+                    pass
+                progressed |= transfer(server_out, client_in, "s")
+            if client_done and server_done:
+                break
+            if not progressed and not client_done and not server_done:
+                raise RuntimeError("TLS fixture handshake stalled")
+        if not client_done or not server_done:
+            raise RuntimeError("TLS fixture handshake did not complete")
+
+        request = b"GET /decrypted HTTP/1.1\r\nHost: keylog.example.test\r\nUser-Agent: fixture-keylog/1.0\r\n\r\n"
+        response = b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 19\r\n\r\nknown plaintext 13\n"
+        client.write(request)
+        transfer(client_out, server_in, "c")
+        if server.read(len(request)) != request:
+            raise RuntimeError("TLS fixture server did not receive the HTTP request")
+        server.write(response)
+        transfer(server_out, client_in, "s")
+        if client.read(len(response)) != response:
+            raise RuntimeError("TLS fixture client did not receive the HTTP response")
+
+    P = tcp_flow(Clock(), MAC_CLIENT, MAC_SERVER, "10.0.0.5", "198.51.100.13", 43100, 443,
+                 exchanges, isn=(1300, 8700))
+    wrpcap(os.path.join(HERE, "tls13.pcap"), stamp(P))
+
+
 # ---------------------------------------------------------- malformed / truncated
 def edge_fixture():
     c = Clock()
@@ -610,13 +702,13 @@ def protocols_edge_fixture():
 
 FIXTURES = {
     "dns": dns_fixture, "http": http_fixture, "sources": source_fixture, "http-pairing": http_pairing_fixture,
-    "http2": http2_fixture, "tls": tls_fixture, "edge": edge_fixture,
+    "http2": http2_fixture, "tls": tls_fixture, "tls13": tls13_fixture, "edge": edge_fixture,
     "pcapng": pcapng_fixture, "vendors": vendors_fixture, "protocols": protocols_fixture,
     "protocols-edge": protocols_edge_fixture, "follow": follow_fixture,
 }
 
 if __name__ == "__main__":
-    # Optional names regenerate only those fixtures (tls.pcap uses a fresh key on every run).
+    # TLS fixtures use fresh ephemeral keys on each generation; tls13.keys matches tls13.pcap.
     import sys
     for name in sys.argv[1:] or FIXTURES:
         FIXTURES[name]()

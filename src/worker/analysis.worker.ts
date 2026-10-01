@@ -108,8 +108,9 @@ self.onmessage = async (ev: MessageEvent<ToWorker>) => {
     try {
       post({ type: 'progress', progress: { phase: 'read', fraction: null, message: 'Reading file from your device…' } });
       const bytes = new Uint8Array(await msg.file.arrayBuffer());
+      const keyLog = msg.keyLog ? new Uint8Array(await msg.keyLog.arrayBuffer()) : null;
       session = new CaptureSession(lib!, wiregasmVersion);
-      const model = await session.open(msg.file.name, bytes, (progress) => post({ type: 'progress', progress }));
+      const model = await session.open(msg.file.name, bytes, (progress) => post({ type: 'progress', progress }), keyLog);
       post({ type: 'ready', model });
     } catch (e) {
       session?.close();

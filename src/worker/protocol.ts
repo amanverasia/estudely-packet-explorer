@@ -6,7 +6,7 @@ import type { Progress } from '../engine/session';
 
 export type ToWorker =
   | { type: 'init'; base: string; wasmModule: WebAssembly.Module | null; data: ArrayBuffer | null }
-  | { type: 'open'; file: File }
+  | { type: 'open'; file: File; keyLog?: File | null }
   | { type: 'request'; id: number; req: WorkerRequest };
 
 export type WorkerRequest =
