@@ -29,4 +29,8 @@ To regenerate the test captures: `python3 fixtures/generate.py` (needs `scapy` a
 
 ## Licence
 
-The Wireshark/Wiregasm engine is GPL-2.0. Because the app is distributed together with it, this repository is marked `GPL-2.0-or-later`; see [docs/LICENSES.md](docs/LICENSES.md) before changing that.
+Copyright (C) 2026 Estudely and contributors.
+
+This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 2 of the License, or (at your option) any later version. It is distributed WITHOUT ANY WARRANTY; see [LICENSE](LICENSE).
+
+The bundled Wireshark/Wiregasm engine is GPL-2.0. Its corresponding source, including every library compiled into it, is in the [`engine-source-1.9.1` release](https://github.com/amanverasia/estudely-packet-explorer/releases/tag/engine-source-1.9.1). See [docs/LICENSES.md](docs/LICENSES.md).

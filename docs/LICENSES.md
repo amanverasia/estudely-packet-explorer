@@ -16,12 +16,18 @@
 Publishing the built site distributes Wireshark object code, so GPL-2.0 §3 applies:
 
 1. **Licence text** — shipped at `wiregasm/LICENSE-GPL-2.0.txt` in every build and linked from the in-app *Licences and limitations* page (`ABOUT.html`).
-2. **Corresponding source** — the exact sources are public: Wiregasm v1.9.1 (<https://github.com/good-tools/wiregasm/tree/v1.9.1>, including its patches and build scripts) and Wireshark 4.4.5 (<https://www.wireshark.org/download/src/all-versions/wireshark-4.4.5.tar.xz>). GPL-2.0 §3(b)/(c) wording expects you to *offer* the source yourself; the conservative practice is to mirror those tarballs (or this repository plus a pinned copy of the Wiregasm tag) somewhere you control and link it from `ABOUT.html`. If you modify or rebuild the WASM, you must publish your modified source.
+2. **Corresponding source**: hosted in this repository's release [`engine-source-1.9.1`](https://github.com/amanverasia/estudely-packet-explorer/releases/tag/engine-source-1.9.1) and linked from `ABOUT.html`. It contains Wiregasm v1.9.1 (build scripts and patches), Wireshark 4.4.5, and every library compiled into the WASM: GLib 2.75.0, libffi 3.4.4, PCRE2 10.42, libgpg-error 1.46, libgcrypt 1.10.1, c-ares 1.15.0, nghttp2 1.61.0, and Lua 5.4.6. Each archive was verified against the checksum Wiregasm (or Wireshark's build, for Lua) pins, and the release includes `SHA256SUMS`. **When you upgrade Wiregasm, publish a new source release for the new version and update the link.** If you ever modify or rebuild the WASM, publish your modified source too.
 3. **No additional restrictions** — don't add terms that limit recipients' GPL rights.
 
 ## The app's own code
 
-Whether a web page that loads a GPL WASM module is a "work based on" Wireshark is not settled. This repository is marked `GPL-2.0-or-later` as the conservative choice, which makes distribution straightforward. If Estudely wants a different licence for the UI code, get legal advice first — this is a decision for the project owner, not something the code decides.
+Decision (option A): the whole application is licensed **GPL-2.0-or-later**. The full licence text is in `LICENSE`. This repository is the app's corresponding source, so it must be publicly reachable (public repository, or another public copy) before the site is deployed publicly, and `ABOUT.html` links to it.
+
+What this allows and requires:
+- Estudely can host, brand and use the app commercially.
+- Anyone who receives the app may get its source, modify it and redistribute it under the same licence.
+- Contributions are accepted under the same licence.
+- Dependencies under MIT, ISC and the Open Font License are compatible; keep their notices.
 
 ## Test fixtures
 
