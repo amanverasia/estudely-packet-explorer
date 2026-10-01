@@ -14,7 +14,7 @@ function watchRequests(page: Page) {
     all,
     offenders: () => all.filter((r) => {
       const u = new URL(r.url());
-      return u.origin !== 'http://localhost:4173' || r.method() !== 'GET' || r.postDataBuffer() !== null;
+      return u.origin !== `http://localhost:${process.env.PORT ?? 4173}` || r.method() !== 'GET' || r.postDataBuffer() !== null;
     }).map((r) => `${r.method()} ${r.url()}`),
   };
 }
