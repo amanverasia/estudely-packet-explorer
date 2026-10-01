@@ -421,6 +421,9 @@ export async function analyze(raw: RawRecords, meta: CaptureMeta, onProgress?: (
     s._peers.add(p.dst); d._peers.add(p.src);
     if (p.ethSrc) s._macs.set(p.ethSrc, (s._macs.get(p.ethSrc) ?? 0) + 1);
     s._protos.add(topOf[i]); d._protos.add(topOf[i]);
+    // The subnet is not in the capture, but an IPv4 packet sent to the Ethernet
+    // broadcast MAC shows its destination is a (subnet) broadcast address.
+    if (p.ethDst === 'ff:ff:ff:ff:ff:ff' && d.ipVersion === 4 && d.scope !== 'unspecified') d.scope = 'broadcast';
     const c = convOf[i];
     if (c >= 0) { s._convs.add(c); d._convs.add(c); }
   }

@@ -94,6 +94,11 @@ describe('DNS fixture', () => {
     expect(nbns[0]).toMatchObject({ status: 'answered', queryFrame: 28, responseFrame: 29, server: '10.0.0.20', qname: 'FILESERVER<00>' });
   });
 
+  it('marks a subnet broadcast address as broadcast when sent to the Ethernet broadcast MAC', () => {
+    expect(m.hosts.find((h) => h.addr === '10.0.0.255')?.scope).toBe('broadcast');
+    expect(m.hosts.find((h) => h.addr === '10.0.0.20')?.scope).toBe('private');
+  });
+
   it('records names with their source', () => {
     const printer = m.hosts.find((h) => h.addr === '10.0.0.9')!;
     expect(printer.names).toEqual([{ name: 'printer.local', source: 'mDNS', kind: 'observed', frame: 27 }]);

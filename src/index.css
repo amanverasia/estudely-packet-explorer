@@ -15,6 +15,7 @@
   --ink-2: #4c5663;
   --ink-3: #6f7a86;
   --rule: #dbe1e7;
+  --scroll-shadow: rgba(16, 24, 32, .18);
   --rule-strong: #c3ccd5;
   --accent: #0a6670;
   --accent-ink: #ffffff;
@@ -48,6 +49,7 @@
     --ink-2: #b4bec9;
     --ink-3: #8a95a1;
     --rule: #29313a;
+    --scroll-shadow: rgba(0, 0, 0, .6);
     --rule-strong: #38424d;
     --accent: #52b7c0;
     --accent-ink: #0b1d20;
@@ -76,6 +78,7 @@
   --ink-2: #b4bec9;
   --ink-3: #8a95a1;
   --rule: #29313a;
+  --scroll-shadow: rgba(0, 0, 0, .6);
   --rule-strong: #38424d;
   --accent: #52b7c0;
   --accent-ink: #0b1d20;
@@ -190,8 +193,9 @@ p { margin: 0; }
 .view-head { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
 .view-head p { color: var(--ink-2); max-width: 72ch; margin-top: 4px; }
 
-.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); border: 1px solid var(--rule); border-radius: 8px; background: var(--panel); overflow: hidden; }
-.fact { padding: 12px 16px; border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule); margin: 0 -1px -1px 0; }
+/* Flex rather than grid so the last row stretches instead of leaving empty cells. */
+.facts { display: flex; flex-wrap: wrap; border: 1px solid var(--rule); border-radius: 8px; background: var(--panel); overflow: hidden; }
+.fact { flex: 1 1 150px; min-width: 0; padding: 12px 16px; border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule); margin: 0 -1px -1px 0; }
 .fact dt { font-size: 12px; color: var(--ink-3); }
 .fact dd { margin: 2px 0 0; font-size: 20px; font-weight: 500; font-variant-numeric: tabular-nums; line-height: 1.25; }
 .fact dd small { font-size: 12px; color: var(--ink-3); font-weight: 400; margin-left: 4px; }
@@ -313,7 +317,15 @@ p { margin: 0; }
 }
 @media (max-width: 860px) {
   .shell { grid-template-columns: minmax(0, 1fr); }
-  .sidebar { position: static; height: auto; flex-direction: row; align-items: center; gap: 8px; padding: 8px 16px; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--rule); }
+  .sidebar { position: static; height: auto; flex-direction: row; align-items: center; gap: 8px; padding: 8px 16px; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--rule);
+    /* Scroll shadows: an edge shadow appears where more tabs are hidden. */
+    background:
+      linear-gradient(to right, var(--panel) 30%, transparent) left / 40px 100% no-repeat local,
+      linear-gradient(to left, var(--panel) 30%, transparent) right / 40px 100% no-repeat local,
+      radial-gradient(farthest-side at 0 50%, var(--scroll-shadow), transparent) left / 14px 100% no-repeat scroll,
+      radial-gradient(farthest-side at 100% 50%, var(--scroll-shadow), transparent) right / 14px 100% no-repeat scroll,
+      var(--panel);
+  }
   .brand { padding: 0 8px 0 0; flex: none; }
   .brand-sub, .sidebar-foot, .nav-sep { display: none; }
   .nav { flex-direction: row; }
