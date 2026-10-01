@@ -1,6 +1,6 @@
 // Copyright (C) 2026 Estudely and contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
-import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import type { Timeline } from '../../engine/types';
 import { bytes, duration, num, pct } from '../format';
 
@@ -55,9 +55,16 @@ export function Legend({ items }: { items: { key: string; color: string; label?:
 }
 
 /** Stacked columns per time bin, one series per top protocol. */
-export function TimeChart({ timeline, metric, height = 220, colors }: { timeline: Timeline; metric: 'packets' | 'bytes'; height?: number; colors: Map<string, string> }) {
+export interface TimeSelection { start: number; end: number }
+
+export function TimeChart({ timeline, metric, height = 220, colors, selection = null, onRangeChange }: {
+  timeline: Timeline; metric: 'packets' | 'bytes'; height?: number; colors: Map<string, string>;
+  selection?: TimeSelection | null; onRangeChange?: (start: number, end: number) => void;
+}) {
   const [ref, width] = useWidth<HTMLDivElement>();
   const [hover, setHover] = useState<number | null>(null);
+  const drag = useRef<{ start: number; end: number } | null>(null);
+  const [dragRange, setDragRange] = useState<{ start: number; end: number } | null>(null);
   const series = timeline.series.filter((s) => s.key !== 'All');
   const total = timeline.series.find((s) => s.key === 'All')!;
   const values = metric === 'packets' ? total.packets : total.bytes;
@@ -74,18 +81,47 @@ export function TimeChart({ timeline, metric, height = 220, colors }: { timeline
     const count = Math.max(2, Math.min(6, Math.floor(iw / 110)));
     return Array.from({ length: count + 1 }, (_, i) => (i / count) * n);
   }, [iw, n]);
+  const pointerBin = (e: ReactPointerEvent<SVGSVGElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    return Math.max(0, Math.min(n, Math.floor((e.clientX - rect.left - m.l) / bw)));
+  };
+  const finishBrush = (e: ReactPointerEvent<SVGSVGElement>) => {
+    if (!drag.current) return;
+    const a = drag.current.start, b = pointerBin(e);
+    drag.current = null; setDragRange(null);
+    let lo = Math.min(a, b), hi = Math.max(a, b);
+    if (lo === hi) hi = Math.min(n, lo + 1);
+    if (hi <= lo) return;
+    const start = timeline.origin + lo * timeline.binSeconds;
+    const end = Math.min(timeline.end, timeline.origin + hi * timeline.binSeconds);
+    if (end > start) onRangeChange?.(start, end);
+  };
+  const visibleSelection = dragRange ?? selection;
+  const selectionStart = visibleSelection ? Math.max(0, Math.min(n, Math.floor((visibleSelection.start - timeline.origin) / timeline.binSeconds))) : 0;
+  const selectionEnd = visibleSelection ? Math.max(selectionStart, Math.min(n, Math.ceil((visibleSelection.end - timeline.origin) / timeline.binSeconds))) : 0;
 
   return (
     <div className="chart-wrap" ref={ref}>
       {width > 0 && (
         <svg width={width} height={height} role="img" aria-label={`${metric === 'packets' ? 'Packets' : 'Bytes'} per ${duration(timeline.binSeconds)} interval, stacked by protocol`}
           onMouseLeave={() => setHover(null)}
-          onMouseMove={(e) => {
-            const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
-            const x = e.clientX - rect.left - m.l;
-            const i = Math.floor(x / bw);
+          style={{ touchAction: onRangeChange ? 'none' : undefined, cursor: onRangeChange ? 'crosshair' : undefined }}
+          onPointerDown={(e) => {
+            if (!onRangeChange || e.button !== 0) return;
+            const start = pointerBin(e); drag.current = { start, end: start }; setDragRange({ start: timeline.origin + start * timeline.binSeconds, end: timeline.origin + (start + 1) * timeline.binSeconds });
+            e.currentTarget.setPointerCapture(e.pointerId);
+          }}
+          onPointerMove={(e) => {
+            if (drag.current) {
+              const next = pointerBin(e); drag.current.end = next;
+              const lo = Math.min(drag.current.start, next), hi = Math.min(n, Math.max(drag.current.start, next) || drag.current.start + 1);
+              setDragRange({ start: timeline.origin + lo * timeline.binSeconds, end: Math.min(timeline.end, timeline.origin + Math.max(lo + 1, hi) * timeline.binSeconds) });
+            }
+            const i = pointerBin(e);
             setHover(i >= 0 && i < n ? i : null);
-          }}>
+          }}
+          onPointerUp={finishBrush}
+          onPointerCancel={() => { drag.current = null; setDragRange(null); }}>
           <g transform={`translate(${m.l},${m.t})`}>
             <g className="axis">
               {ticks.map((t) => (
@@ -115,6 +151,7 @@ export function TimeChart({ timeline, metric, height = 220, colors }: { timeline
                 </g>
               );
             })}
+            {visibleSelection && selectionEnd > selectionStart && <rect x={selectionStart * bw} y={0} width={(selectionEnd - selectionStart) * bw} height={ih} fill="var(--accent)" fillOpacity={0.12} stroke="var(--accent)" strokeOpacity={0.8} pointerEvents="none" />}
             {hover !== null && <line x1={hover * bw + bw / 2} x2={hover * bw + bw / 2} y1={0} y2={ih} stroke="var(--ink-3)" strokeDasharray="3 3" />}
           </g>
         </svg>
@@ -138,24 +175,42 @@ export function TimeChart({ timeline, metric, height = 220, colors }: { timeline
 }
 
 /** Capture-wide traffic strip shown under the header on every view. */
-export function Strip({ timeline }: { timeline: Timeline }) {
+export function Strip({ timeline, selection = null, onRangeChange }: { timeline: Timeline; selection?: TimeSelection | null; onRangeChange?: (start: number, end: number) => void }) {
   const [ref, width] = useWidth<HTMLDivElement>();
+  const drag = useRef<number | null>(null);
+  const [dragRange, setDragRange] = useState<TimeSelection | null>(null);
   const total = timeline.series.find((s) => s.key === 'All')!.bytes;
   const max = Math.max(1, ...total);
   const h = 34;
   const bw = width / Math.max(1, total.length);
   // Short captures have few bins; cap the bar width so they stay bars, not blocks.
   const barW = Math.min(8, Math.max(0.6, bw - (bw > 4 ? 1 : 0)));
+  const binAt = (e: ReactPointerEvent<SVGSVGElement>) => Math.max(0, Math.min(total.length, Math.floor((e.clientX - e.currentTarget.getBoundingClientRect().left) / Math.max(1, bw))));
+  const visibleSelection = dragRange ?? selection;
+  const selectionStart = visibleSelection ? Math.max(0, Math.min(total.length, Math.floor((visibleSelection.start - timeline.origin) / timeline.binSeconds))) : 0;
+  const selectionEnd = visibleSelection ? Math.max(selectionStart, Math.min(total.length, Math.ceil((visibleSelection.end - timeline.origin) / timeline.binSeconds))) : 0;
   return (
-    <div ref={ref} className="strip" aria-hidden="true">
+    <div ref={ref} className="strip">
       {width > 0 && (
-        <svg width={width} height={h}>
+        <svg width={width} height={h} role="img" aria-label="Capture traffic strip. Drag to choose a time range."
+          style={{ touchAction: 'none', cursor: 'crosshair' }}
+          onPointerDown={(e) => { if (!onRangeChange || e.button !== 0) return; const i = binAt(e); drag.current = i; setDragRange({ start: timeline.origin + i * timeline.binSeconds, end: Math.min(timeline.end, timeline.origin + (i + 1) * timeline.binSeconds) }); e.currentTarget.setPointerCapture(e.pointerId); }}
+          onPointerMove={(e) => { if (drag.current === null) return; const i = binAt(e); const lo = Math.min(drag.current, i), hi = Math.min(total.length, Math.max(drag.current, i) || drag.current + 1); setDragRange({ start: timeline.origin + lo * timeline.binSeconds, end: Math.min(timeline.end, timeline.origin + Math.max(lo + 1, hi) * timeline.binSeconds) }); }}
+          onPointerUp={(e) => {
+            if (drag.current === null) return;
+            const a = drag.current, b = binAt(e); drag.current = null; setDragRange(null);
+            const lo = Math.min(a, b), hi = Math.max(a, b) === lo ? Math.min(total.length, lo + 1) : Math.max(a, b);
+            const start = timeline.origin + lo * timeline.binSeconds, end = Math.min(timeline.end, timeline.origin + hi * timeline.binSeconds);
+            if (end > start) onRangeChange?.(start, end);
+          }}
+          onPointerCancel={() => { drag.current = null; setDragRange(null); }}>
           {/* Baseline across the whole capture, so quiet stretches read as "no traffic" rather than missing chart. */}
           <line x1={0} x2={width} y1={h - 0.5} y2={h - 0.5} stroke="var(--rule-strong)" />
           {total.map((v, i) => {
             const bh = v ? Math.max(1.5, (v / max) * (h - 4)) : 0;
             return <rect key={i} x={i * bw + (bw - barW) / 2} y={h - bh} width={barW} height={bh} rx={barW > 4 ? 1 : 0} fill="var(--accent)" opacity={0.75} />;
           })}
+          {visibleSelection && selectionEnd > selectionStart && <rect x={selectionStart * bw} y={0} width={(selectionEnd - selectionStart) * bw} height={h} fill="var(--accent)" fillOpacity={0.18} stroke="var(--accent)" strokeOpacity={0.8} pointerEvents="none" />}
         </svg>
       )}
     </div>

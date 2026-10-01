@@ -22,7 +22,7 @@ export function tcpState(c: Conversation): string {
 }
 
 export function Connections() {
-  const { model, params, go } = useApp();
+  const { model, params, go, filter } = useApp();
   const [transport, setTransport] = useState<'all' | Transport>('all');
   const [app, setApp] = useState('all');
   const hostFilter = params.get('host');
@@ -35,7 +35,7 @@ export function Connections() {
   const rows = useMemo(() => model.conversations.filter((c) =>
     (transport === 'all' || c.transport === transport) && (app === 'all' || c.appProtocol === app)
     && (!hostFilter || c.a === hostFilter || c.b === hostFilter)), [model.conversations, transport, app, hostFilter]);
-  const conv = selected !== null ? model.conversations[selected] ?? null : null;
+  const conv = selected !== null ? model.conversations.find((c) => c.id === selected) ?? null : null;
   const counts = useMemo(() => {
     const m: Record<string, number> = { TCP: 0, UDP: 0, IP: 0, 'Non-IP': 0 };
     for (const c of model.conversations) m[c.transport]++;
@@ -68,6 +68,7 @@ export function Connections() {
       {hostFilter && (
         <Note>Showing conversations involving <span className="mono">{hostFilter}</span>. <button className="btn small" onClick={() => go('connections')}>Show all</button></Note>
       )}
+      {(filter.start !== null || filter.host) && <Note>Conversation rows include matching packets; directional packet/byte totals and times reflect the selected traffic. TCP flags and analysis counters describe the full conversation.</Note>}
       {conv && <ConversationDetail key={conv.id} c={conv} onClose={() => setSelected(null)} />}
       <section className="panel">
         <DataTable label="Conversations" exportName="conversations" rows={rows} columns={columns} rowKey={(c) => c.id} selectedKey={selected}

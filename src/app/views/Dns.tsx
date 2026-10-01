@@ -146,7 +146,7 @@ function DnsSummary({ d }: { d: DnsTransaction }) {
   return (
     <section style={{ display: 'grid', gap: 10 }}>
       <dl className="kv">
-        <dt>Status</dt><dd>{d.status}{d.relatedTo !== null && <> (related to row {d.relatedTo + 1}, query packet #{model.dns[d.relatedTo]?.queryFrame ?? model.dns[d.relatedTo]?.responseFrame})</>}</dd>
+        <dt>Status</dt><dd>{d.status}{d.relatedTo !== null && <> (related to row {d.relatedTo + 1}, query packet #{model.dns.find((related) => related.id === d.relatedTo)?.queryFrame ?? model.dns.find((related) => related.id === d.relatedTo)?.responseFrame})</>}</dd>
         <dt>Client</dt><dd className="mono">{endpoint(d.client, d.clientPort)}</dd>
         <dt>Server</dt><dd className="mono">{endpoint(d.server, d.serverPort)}</dd>
         <dt>Transport</dt><dd>{d.transport}{d.truncatedFlag ? ' — truncated (TC) flag set by server' : ''}</dd>

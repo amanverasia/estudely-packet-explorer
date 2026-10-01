@@ -71,9 +71,26 @@ export interface TimelineSeries {
 export interface Timeline {
   /** Relative time of the first bin (negative if some timestamps precede the first packet). */
   origin: number;
+  /** Relative time of the final packet. */
+  end: number;
   binSeconds: number;
   bins: number;
   series: TimelineSeries[];
+}
+
+/** Compact packet index used by shared time/host filters in the UI. */
+export interface FilterIndex {
+  /** Relative timestamps indexed by Wireshark frame number. */
+  frameTimes: Float64Array;
+  lengths: Uint32Array;
+  capturedLengths: Uint32Array;
+  sourceHosts: Int32Array;
+  destinationHosts: Int32Array;
+  conversations: Int32Array;
+  topProtocols: Uint32Array;
+  directionAB: Uint8Array;
+  hostAddresses: string[];
+  protocolNames: string[];
 }
 
 export type NameSource =
@@ -444,6 +461,7 @@ export interface Unsupported {
 
 export interface AnalysisModel {
   capture: CaptureInfo;
+  filterIndex: FilterIndex;
   protocolHierarchy: ProtoStat[];
   topProtocols: ProtoStat[];
   timeline: Timeline;

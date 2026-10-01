@@ -16,7 +16,7 @@ interface GEdge extends SimulationLinkDatum<GNode> { key: string; a: string; b: 
 const OTHER_NODE = 'Other hosts';
 
 export function Network() {
-  const { model, params, go, nameOf } = useApp();
+  const { model, params, go, nameOf, filter } = useApp();
   const [proto, setProto] = useState('all');
   const [focus, setFocus] = useState<string>(params.get('host') ?? '');
   const [limit, setLimit] = useState(60);
@@ -138,7 +138,7 @@ export function Network() {
 
   return (
     <>
-      <ViewHead title="Network">Hosts linked by the traffic between them. Line width scales with bytes on wire (log scale); line colour is the pair's main protocol by bytes. Node size scales with the host's total bytes.</ViewHead>
+      <ViewHead title="Network">Hosts linked by the traffic between them. Line width scales with bytes on wire (log scale); line colour is the pair's main protocol by bytes. Node size scales with the host's total bytes.{filter.start !== null || filter.host ? ' Totals reflect the selected packets.' : ''}</ViewHead>
       <Panel title="Host graph" sub={`${plural(graph.nodes.length, 'node')}, ${plural(graph.edges.length, 'link')}${graph.folded ? `; ${num(graph.folded)} smaller hosts grouped as “${OTHER_NODE}”` : ''}`}
         right={<>
           <select className="select" value={proto} onChange={(e) => setProto(e.target.value)} aria-label="Protocol filter">
@@ -245,7 +245,7 @@ function radius(b: number, max: number): number {
 }
 
 function NodeDetail({ id, n, edges, onFocus, go }: { id: string; n: GNode; edges: GEdge[]; onFocus: () => void; go: (v: string, p?: Record<string, string>) => void }) {
-  const { nameOf } = useApp();
+  const { nameOf, setHostFilter, filter } = useApp();
   const mine = edges.filter((e) => e.a === id || e.b === id).sort((a, b) => b.bytes - a.bytes);
   return (
     <>
@@ -262,6 +262,7 @@ function NodeDetail({ id, n, edges, onFocus, go }: { id: string; n: GNode; edges
         <div className="actions">
           <button className="btn small" onClick={onFocus}>Focus</button>
           <button className="btn small" onClick={() => go('hosts', { host: id })}>Host details</button>
+          <button className="btn small" onClick={() => setHostFilter(id)} aria-pressed={filter.host === id}>{filter.host === id ? 'Filtered across views' : 'Filter all views'}</button>
         </div>
       )}
     </>

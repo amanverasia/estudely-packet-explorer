@@ -7,6 +7,7 @@ import { Strip } from './components/charts';
 import { Drawer } from './components/Drawer';
 import { OfflineStatus, UpdateBanner } from './components/Offline';
 import { Ctx, type AppCtx, type DrawerSpec } from './context';
+import { applySharedFilter, type SharedFilter } from './filtering';
 import { downloadBlob, safeBase, summaryJson } from './download';
 import { EngineClient, HARD_LIMIT_BYTES, SOFT_LIMIT_BYTES, type EngineState } from './engine';
 import { bytes, duration, num } from './format';
@@ -72,9 +73,26 @@ export function App() {
     engine.open(file, keyLog);
   }, [engine]);
 
+  const patchRouteParams = useCallback((updates: Record<string, string | null>) => {
+    const current = parseHash();
+    for (const [key, value] of Object.entries(updates)) {
+      if (value === null) current.params.delete(key);
+      else current.params.set(key, value);
+    }
+    const q = current.params.toString();
+    location.hash = `#/${current.view}${q ? `?${q}` : ''}`;
+  }, []);
+
   const go = useCallback((view: string, params?: Record<string, string>) => {
-    const q = params ? '?' + new URLSearchParams(params).toString() : '';
-    location.hash = `#/${view}${q}`;
+    const current = parseHash().params;
+    const next = new URLSearchParams();
+    for (const key of ['t0', 't1', 'hf']) {
+      const value = current.get(key);
+      if (value !== null) next.set(key, value);
+    }
+    for (const [key, value] of Object.entries(params ?? {})) next.set(key, value);
+    const q = next.toString();
+    location.hash = `#/${view}${q ? `?${q}` : ''}`;
   }, []);
 
   const model = state.kind === 'ready' ? state.model : null;
@@ -82,6 +100,7 @@ export function App() {
     <>
       {model ? (
         <Workspace model={model} engine={engine} view={route.view} params={route.params} go={go} openDrawer={setDrawer}
+          patchRouteParams={patchRouteParams}
           onOpen={openFile} onClose={() => { engine.cancel(); setDrawer(null); }} theme={theme} setTheme={setTheme} drawer={drawer} closeDrawer={() => setDrawer(null)} />
       ) : (
         <Landing state={state} onOpen={openFile} onCancel={() => engine.cancel()} theme={theme} setTheme={setTheme} />
@@ -212,38 +231,62 @@ function Landing({ state, onOpen, onCancel, theme, setTheme }: { state: EngineSt
 }
 
 function Workspace(props: {
-  model: AnalysisModel; engine: EngineClient; view: View; params: URLSearchParams; go: AppCtx['go']; openDrawer: (d: DrawerSpec) => void;
+  model: AnalysisModel; engine: EngineClient; view: View; params: URLSearchParams; go: AppCtx['go']; patchRouteParams: (p: Record<string, string | null>) => void; openDrawer: (d: DrawerSpec) => void;
   onOpen: (f: File, keyLog?: File | null) => void; onClose: () => void; theme: Theme; setTheme: (t: Theme) => void; drawer: DrawerSpec | null; closeDrawer: () => void;
 }) {
-  const { model, view } = props;
-  const c = model.capture;
+  const { model: sourceModel, view } = props;
+  const c = sourceModel.capture;
+  const filter: SharedFilter = useMemo(() => {
+    const origin = sourceModel.timeline.origin;
+    const limit = origin + c.duration;
+    const rawStart = props.params.get('t0'), rawEnd = props.params.get('t1');
+    let start: number | null = null, end: number | null = null;
+    if (rawStart !== null && rawEnd !== null && Number.isFinite(Number(rawStart)) && Number.isFinite(Number(rawEnd))) {
+      const a = Math.max(origin, Math.min(limit, Number(rawStart)));
+      const b = Math.max(origin, Math.min(limit, Number(rawEnd)));
+      if (a < b && (a > origin || b < limit)) { start = a; end = b; }
+    }
+    const host = props.params.get('hf');
+    return { start, end, host: host && sourceModel.hosts.some((h) => h.addr === host) ? host : null };
+  }, [props.params, sourceModel, c.duration]);
+  const { model, stats } = useMemo(() => applySharedFilter(sourceModel, filter), [sourceModel, filter]);
+  const setHostFilter = useCallback((host: string | null) => props.patchRouteParams({ hf: host }), [props.patchRouteParams]);
+  const setTimeRange = useCallback((start: number, end: number) => {
+    const min = sourceModel.timeline.origin, max = min + c.duration;
+    const a = Math.max(min, Math.min(max, start)), b = Math.max(min, Math.min(max, end));
+    if (a >= b || (a <= min && b >= max)) props.patchRouteParams({ t0: null, t1: null });
+    else props.patchRouteParams({ t0: String(a), t1: String(b) });
+  }, [sourceModel.timeline.origin, c.duration, props.patchRouteParams]);
+  const clearTimeRange = useCallback(() => props.patchRouteParams({ t0: null, t1: null }), [props.patchRouteParams]);
+  const clearFilters = useCallback(() => props.patchRouteParams({ t0: null, t1: null, hf: null }), [props.patchRouteParams]);
   const names = useMemo(() => {
     const m = new Map<string, string>();
-    for (const h of model.hosts) {
+    for (const h of sourceModel.hosts) {
       const best = h.names.find((n) => n.kind === 'observed') ?? h.names[0];
       if (best) m.set(h.addr, best.name);
     }
     return m;
-  }, [model.hosts]);
+  }, [sourceModel.hosts]);
   const ctx: AppCtx = useMemo(() => ({
     model, engine: props.engine, openDrawer: props.openDrawer, go: props.go, params: props.params, nameOf: (a: string) => names.get(a) ?? null,
-  }), [model, props.engine, props.openDrawer, props.go, props.params, names]);
+    filter, stats, setHostFilter, setTimeRange, clearTimeRange, clearFilters,
+  }), [model, props.engine, props.openDrawer, props.go, props.params, names, filter, stats, setHostFilter, setTimeRange, clearTimeRange, clearFilters]);
 
   useEffect(() => { document.title = `${c.fileName} — Estudely Packet Explorer`; return () => { document.title = 'Estudely Packet Explorer'; }; }, [c.fileName]);
   useEffect(() => { document.querySelector('.main')?.scrollTo?.(0, 0); window.scrollTo(0, 0); }, [view]);
 
-  const nav: { id: View; label: string; count?: number }[] = [
+  const nav: { id: View; label: string; count?: number; total?: number }[] = [
     { id: 'overview', label: 'Overview' },
-    { id: 'dns', label: 'DNS', count: model.dns.length },
-    { id: 'http', label: 'HTTP', count: model.http.length },
-    { id: 'tls', label: 'TLS', count: model.tls.length },
-    { id: 'quic', label: 'QUIC', count: model.quic.length },
-    { id: 'ssh', label: 'SSH', count: model.ssh.length },
-    { id: 'dhcp', label: 'DHCP', count: model.dhcp.length },
-    { id: 'arp', label: 'ARP', count: model.arp.length },
-    { id: 'icmp', label: 'ICMP', count: model.icmp.length },
-    { id: 'hosts', label: 'Hosts', count: model.hosts.length },
-    { id: 'connections', label: 'Connections', count: model.conversations.length },
+    { id: 'dns', label: 'DNS', count: model.dns.length, total: sourceModel.dns.length },
+    { id: 'http', label: 'HTTP', count: model.http.length, total: sourceModel.http.length },
+    { id: 'tls', label: 'TLS', count: model.tls.length, total: sourceModel.tls.length },
+    { id: 'quic', label: 'QUIC', count: model.quic.length, total: sourceModel.quic.length },
+    { id: 'ssh', label: 'SSH', count: model.ssh.length, total: sourceModel.ssh.length },
+    { id: 'dhcp', label: 'DHCP', count: model.dhcp.length, total: sourceModel.dhcp.length },
+    { id: 'arp', label: 'ARP', count: model.arp.length, total: sourceModel.arp.length },
+    { id: 'icmp', label: 'ICMP', count: model.icmp.length, total: sourceModel.icmp.length },
+    { id: 'hosts', label: 'Hosts', count: model.hosts.length, total: sourceModel.hosts.length },
+    { id: 'connections', label: 'Connections', count: model.conversations.length, total: sourceModel.conversations.length },
     { id: 'network', label: 'Network' },
   ];
   let body: ReactNode;
@@ -272,13 +315,13 @@ function Workspace(props: {
           </div>
           <nav className="nav">
             {nav.map((n) => (
-              <a key={n.id} href={`#/${n.id}`} aria-current={view === n.id ? 'page' : undefined}>
+              <a key={n.id} href={`#/${n.id}`} onClick={(e) => { e.preventDefault(); props.go(n.id); }} aria-current={view === n.id ? 'page' : undefined}>
                 <span className="nav-mark" aria-hidden="true" />{n.label}
-                {n.count !== undefined && <span className="nav-count">{num(n.count)}</span>}
+                {n.count !== undefined && <span className="nav-count">{num(n.count)}{n.total !== undefined && n.total !== n.count ? `/${num(n.total)}` : ''}</span>}
               </a>
             ))}
             <div className="nav-sep" />
-            <a href="#/packets" aria-current={view === 'packets' ? 'page' : undefined}><span className="nav-mark" aria-hidden="true" />Packet list<span className="nav-count">{num(c.packetCount)}</span></a>
+            <a href="#/packets" onClick={(e) => { e.preventDefault(); props.go('packets'); }} aria-current={view === 'packets' ? 'page' : undefined}><span className="nav-mark" aria-hidden="true" />Packet list<span className="nav-count">{num(stats.packets)}{stats.packets !== c.packetCount ? `/${num(c.packetCount)}` : ''}</span></a>
           </nav>
           <div className="sidebar-foot">
             <p className="local-note"><ShieldIcon />{LOCAL_NOTICE}</p>
@@ -292,25 +335,33 @@ function Workspace(props: {
               <div className="cap-title">
                 <h1>{c.fileName}</h1>
                 <div className="cap-facts">
-                  <span><b>{num(c.packetCount)}</b> packets</span>
-                  <span><b>{duration(c.duration)}</b></span>
-                  <span><b>{bytes(c.wireBytes)}</b> on wire</span>
-                  <span><b>{num(model.hosts.length)}</b> hosts</span>
+                  <span><b>{num(stats.packets)}</b>{stats.packets !== c.packetCount ? ` / ${num(c.packetCount)}` : ''} packets</span>
+                  <span><b>{duration(filter.start !== null && filter.end !== null ? filter.end - filter.start : stats.end !== null && stats.start !== null ? Math.max(0, stats.end - stats.start) : c.duration)}</b>{filter.start !== null || filter.host ? ' selected' : ''}</span>
+                  <span><b>{bytes(stats.wireBytes)}</b> on wire{stats.wireBytes !== c.wireBytes ? ` / ${bytes(c.wireBytes)}` : ''}</span>
+                  <span><b>{num(model.hosts.length)}</b>{stats.allHosts !== model.hosts.length ? ` / ${num(stats.allHosts)}` : ''} hosts</span>
                   {c.incomplete && <span className="tag bad">incomplete file</span>}
                 </div>
               </div>
               <div className="actions">
-                <button className="btn" onClick={() => downloadBlob(`${safeBase(c.fileName)}-summary.json`, new Blob([summaryJson(model)], { type: 'application/json' }))}>Export JSON summary</button>
+                <button className="btn" onClick={() => downloadBlob(`${safeBase(c.fileName)}-summary.json`, new Blob([summaryJson(sourceModel)], { type: 'application/json' }))}>Export JSON summary</button>
                 <OpenButton onOpen={props.onOpen} label="Open another" />
                 <button className="btn" onClick={props.onClose} title="Close this capture and free its memory">Close</button>
                 <ThemeButton theme={props.theme} setTheme={props.setTheme} />
               </div>
             </div>
-            <Strip timeline={model.timeline} />
+            <Strip timeline={sourceModel.timeline} selection={filter.start !== null && filter.end !== null ? { start: filter.start, end: filter.end } : null} onRangeChange={setTimeRange} />
+            {(filter.start !== null || filter.host) && <div className="filter-chips" aria-label="Shared filters">
+              {filter.start !== null && filter.end !== null && <button className="filter-chip" onClick={clearTimeRange} aria-label="Remove time range filter">Time {rangeLabel(filter.start, filter.end)} <span aria-hidden="true">×</span></button>}
+              {filter.host && <button className="filter-chip" onClick={() => setHostFilter(null)} aria-label={`Remove host filter for ${filter.host}`}>Host {filter.host} <span aria-hidden="true">×</span></button>}
+              <button className="btn ghost small" onClick={clearFilters}>Clear filters</button>
+            </div>}
             <p className="mobile-local local-note" style={{ fontSize: 12, padding: '4px 0 8px' }}><ShieldIcon />{LOCAL_NOTICE}</p>
           </header>
           <main className="content" id="content">
             {model.tls.length > 0 && <TlsStatusBanner sessions={model.tls} />}
+            {(filter.start !== null || filter.host) && <div className="note info" role="status">
+              Shared filter: {num(stats.packets)} of {num(c.packetCount)} packets, {num(model.dns.length)} of {num(sourceModel.dns.length)} DNS records, {num(model.http.length)} of {num(sourceModel.http.length)} HTTP records, {num(model.tls.length)} of {num(sourceModel.tls.length)} TLS sessions, {num(model.hosts.length)} of {num(sourceModel.hosts.length)} hosts, and {num(model.conversations.length)} of {num(sourceModel.conversations.length)} conversations. A correlated exchange appears when any source packet meets the filter; its details can include packets outside the time window.
+            </div>}
             <Suspense fallback={<div className="muted">Loading view…</div>}>{body}</Suspense>
             <BuildTag className="mobile-only" />
           </main>
@@ -319,6 +370,11 @@ function Workspace(props: {
       {props.drawer && <Drawer spec={props.drawer} onClose={props.closeDrawer} />}
     </Ctx.Provider>
   );
+}
+
+function rangeLabel(start: number, end: number): string {
+  const fmt = (v: number) => `${+v.toFixed(3)} s`;
+  return `${fmt(start)}–${fmt(end)}`;
 }
 
 function TlsStatusBanner({ sessions }: { sessions: AnalysisModel['tls'] }) {

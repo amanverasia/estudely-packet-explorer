@@ -15,7 +15,7 @@
  Drawer / packet list ── requests ──▶      getFrame(n) / getFrames(filter, skip, limit)
 ```
 
-All views read one shared `AnalysisModel` (`src/engine/types.ts`). The file is decoded once; tabs never re-parse it.
+All views read one shared `AnalysisModel` (`src/engine/types.ts`). The file is decoded once; tabs never re-parse it. The model carries a compact, columnar packet filter index (times, lengths, endpoint/stream IDs and top protocol IDs), not packet payloads. The UI uses it to recalculate time/host-filtered packet, host and conversation totals. Protocol hierarchy and non-traffic host metadata remain capture-wide.
 
 An optional TLS key log follows the capture directly to the worker. The worker places it in the virtual filesystem and applies Wireshark's `tls.keylog_file` preference. Wireshark can read the file again during later dissections, so the temporary copy stays in the in-memory filesystem until the worker is terminated with the capture.
 

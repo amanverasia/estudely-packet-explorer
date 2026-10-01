@@ -159,6 +159,14 @@ p { margin: 0; }
 .cap-facts b { font-weight: 500; color: var(--ink); font-variant-numeric: tabular-nums; }
 .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .strip { margin-top: 10px; height: 34px; display: block; width: 100%; }
+.strip svg { display: block; width: 100%; }
+.filter-chips { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 6px 0 8px; }
+.filter-chip { display: inline-flex; align-items: center; gap: 8px; min-height: 26px; padding: 0 9px; border: 1px solid var(--rule-strong); border-radius: 999px; background: var(--panel-2); color: var(--ink-2); cursor: pointer; font-size: 12px; }
+.filter-chip:hover { background: var(--hover); color: var(--ink); }
+.filter-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+.filter-controls label { display: grid; gap: 5px; color: var(--ink-2); font-size: 12px; }
+.filter-controls .input { width: 180px; }
+.filter-detail { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: 13px; }
 .content { padding: 22px 24px 48px; display: grid; gap: 18px; min-width: 0; }
 
 /* ---------- controls ---------- */

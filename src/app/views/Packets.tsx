@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Estudely and contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Note, ViewHead } from '../components/bits';
 import { useApp } from '../context';
 import { num } from '../format';
@@ -10,7 +10,7 @@ const PAGE = 500;
 const ROW = 30;
 
 export function Packets() {
-  const { engine, params, openDrawer, model } = useApp();
+  const { engine, params, openDrawer, model, filter: sharedFilter } = useApp();
   const [draft, setDraft] = useState(params.get('filter') ?? '');
   const [filter, setFilter] = useState(params.get('filter') ?? '');
   const [error, setError] = useState<string | null>(null);
@@ -22,11 +22,20 @@ export function Packets() {
   const [, force] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const gen = useRef(0);
+  const sharedDisplay = useMemo(() => {
+    const terms: string[] = [];
+    if (sharedFilter.start !== null && sharedFilter.end !== null) {
+      terms.push(`(frame.time_relative_capture_start >= ${sharedFilter.start.toPrecision(12)} && frame.time_relative_capture_start <= ${sharedFilter.end.toPrecision(12)})`);
+    }
+    if (sharedFilter.host) terms.push(`(${sharedFilter.host.includes(':') ? 'ipv6.addr' : 'ip.addr'} == ${sharedFilter.host})`);
+    return terms.join(' && ');
+  }, [sharedFilter.start, sharedFilter.end, sharedFilter.host]);
+  const queryFilter = useMemo(() => [filter.trim() ? `(${filter.trim()})` : '', sharedDisplay].filter(Boolean).join(' && '), [filter, sharedDisplay]);
 
   const loadPage = useCallback((p: number, g: number) => {
     if (pages.current.has(p) || inflight.current.has(p)) return;
     inflight.current.add(p);
-    engine.request({ kind: 'packetList', filter, skip: p * PAGE, limit: PAGE }).then((res) => {
+    engine.request({ kind: 'packetList', filter: queryFilter, skip: p * PAGE, limit: PAGE }).then((res) => {
       if (g !== gen.current) return;
       pages.current.set(p, res.rows);
       inflight.current.delete(p);
@@ -34,7 +43,7 @@ export function Packets() {
       setMatched(res.matched);
       force((x) => x + 1);
     }).catch((e: Error) => { if (g === gen.current) setError(e.message); });
-  }, [engine, filter]);
+  }, [engine, queryFilter]);
 
   useEffect(() => {
     gen.current++;
@@ -44,19 +53,20 @@ export function Packets() {
     setError(null);
     setBusy(true);
     const g = gen.current;
-    engine.request({ kind: 'packetList', filter, skip: 0, limit: PAGE }).then((res) => {
+    engine.request({ kind: 'packetList', filter: queryFilter, skip: 0, limit: PAGE }).then((res) => {
       if (g !== gen.current) return;
       pages.current.set(0, res.rows);
       setColumns(res.columns);
       setMatched(res.matched);
       setBusy(false);
     }).catch((e: Error) => { if (g === gen.current) { setError(e.message); setBusy(false); } });
-  }, [engine, filter]);
+  }, [engine, queryFilter]);
 
   const apply = async () => {
     const f = draft.trim();
-    if (f) {
-      const r = await engine.request({ kind: 'checkFilter', filter: f });
+    const composed = [f ? `(${f})` : '', sharedDisplay].filter(Boolean).join(' && ');
+    if (composed) {
+      const r = await engine.request({ kind: 'checkFilter', filter: composed });
       if (!r.ok) { setError(`Invalid display filter: ${r.error}`); return; }
     }
     setFilter(f);
@@ -78,6 +88,7 @@ export function Packets() {
   return (
     <>
       <ViewHead title="Packet list">Every packet with Wireshark's summary columns. Use a Wireshark display filter to narrow the list; filtering re-scans the capture, which takes a moment on large files.</ViewHead>
+      {sharedDisplay && <Note>Shared time and host filters are combined with the Wireshark display filter for this list.</Note>}
       <section className="panel">
         <form className="dt-tools" onSubmit={(e) => { e.preventDefault(); void apply(); }}>
           <input className="input mono" style={{ maxWidth: 520 }} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Display filter, e.g. dns.flags.rcode != 0 or tcp.stream == 3" aria-label="Wireshark display filter" spellCheck={false} />

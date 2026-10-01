@@ -8,7 +8,7 @@ import { useApp } from '../context';
 import { absTime, bytes, num, plural } from '../format';
 
 export function Hosts() {
-  const { model, params, go, openDrawer } = useApp();
+  const { model, params, go, openDrawer, filter, setHostFilter } = useApp();
   const [family, setFamily] = useState<'all' | '4' | '6'>('all');
   const [selected, setSelected] = useState<string | null>(params.get('host'));
   const rows = useMemo(() => model.hosts.filter((h) => family === 'all' || String(h.ipVersion) === family), [model.hosts, family]);
@@ -40,7 +40,9 @@ export function Hosts() {
         One row per IP address seen as a packet source or destination. Bytes are original frame lengths.
       </ViewHead>
       <Note>Ports listed are those observed in this capture's traffic, with the evidence seen for each. They do not show whether a port is open now, and no operating-system or device identification is attempted.</Note>
+      {(filter.start !== null || filter.host) && <Note>Sent/received packet and byte totals are recalculated for the selected traffic. MAC addresses, names, ports, peers, and protocol labels remain whole-capture metadata.</Note>}
       {host && <HostDetail host={host} onClose={() => setSelected(null)} go={go} digits={digits}
+        onFilter={() => setHostFilter(host.addr)} isFiltered={filter.host === host.addr}
         openFrame={(f, title) => openDrawer({ title, frames: [f] })} startEpoch={model.capture.startEpoch} />}
       <section className="panel">
         <DataTable label="Hosts" exportName="hosts" rows={rows} columns={columns} rowKey={(h) => h.addr} selectedKey={selected}
@@ -51,8 +53,9 @@ export function Hosts() {
   );
 }
 
-function HostDetail({ host: h, onClose, go, openFrame, startEpoch, digits }: {
+function HostDetail({ host: h, onClose, go, onFilter, isFiltered, openFrame, startEpoch, digits }: {
   host: Host; onClose: () => void; go: (v: string, p?: Record<string, string>) => void;
+  onFilter: () => void; isFiltered: boolean;
   openFrame: (f: number, title: string) => void; startEpoch: string | null; digits: number;
 }) {
   return (
@@ -60,6 +63,7 @@ function HostDetail({ host: h, onClose, go, openFrame, startEpoch, digits }: {
       right={<>
         <button className="btn small" onClick={() => go('connections', { host: h.addr })}>Connections ({num(h.conversations)})</button>
         <button className="btn small" onClick={() => go('network', { host: h.addr })}>Show in graph</button>
+        <button className="btn small" onClick={onFilter} aria-pressed={isFiltered}>{isFiltered ? 'Filtered across views' : 'Filter all views to host'}</button>
         <button className="btn small ghost" onClick={onClose}>Close</button>
       </>}>
       <div className="grid-2">

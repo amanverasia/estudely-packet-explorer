@@ -3,6 +3,7 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import type { AnalysisModel } from '../engine/types';
 import type { EngineClient } from './engine';
+import type { FilterStats, SharedFilter } from './filtering';
 
 export interface DrawerSpec {
   title: string;
@@ -14,9 +15,15 @@ export interface DrawerSpec {
 
 export interface AppCtx {
   model: AnalysisModel;
+  filter: SharedFilter;
+  stats: FilterStats;
   engine: EngineClient;
   openDrawer: (spec: DrawerSpec) => void;
   go: (view: string, params?: Record<string, string>) => void;
+  setHostFilter: (host: string | null) => void;
+  setTimeRange: (start: number, end: number) => void;
+  clearTimeRange: () => void;
+  clearFilters: () => void;
   params: URLSearchParams;
   /** Best learned name for an address, for secondary labels. */
   nameOf: (addr: string) => string | null;

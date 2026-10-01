@@ -1,6 +1,6 @@
 // Copyright (C) 2026 Estudely and contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { BarList, Legend, TimeChart, colorMap } from '../components/charts';
 import { DataTable } from '../components/DataTable';
 import { Addr, Fact, Note, Panel, Seg, ViewHead } from '../components/bits';
@@ -8,7 +8,7 @@ import { useApp } from '../context';
 import { absTime, bytes, duration, endpoint, num, pct, plural } from '../format';
 
 export function Overview() {
-  const { model, go } = useApp();
+  const { model, go, filter, stats, setTimeRange, setHostFilter } = useApp();
   const c = model.capture;
   const [metric, setMetric] = useState<'packets' | 'bytes'>('bytes');
   const [protoMetric, setProtoMetric] = useState<'packets' | 'bytes'>('packets');
@@ -17,6 +17,8 @@ export function Overview() {
   const end = c.startEpoch ? absTime(c.startEpoch, model.timeline.origin + c.duration, Math.min(c.timestampDigits, 6)) : null;
   const start = c.startEpoch ? absTime(c.startEpoch, model.timeline.origin, Math.min(c.timestampDigits, 6)) : null;
   const ip = model.conversations.filter((x) => x.transport === 'TCP' || x.transport === 'UDP');
+  const selectedDuration = filter.start !== null && filter.end !== null ? filter.end - filter.start
+    : stats.start !== null && stats.end !== null ? Math.max(0, stats.end - stats.start) : c.duration;
 
   const talkers = model.hosts.slice(0, 50).map((h) => ({ key: h.addr, value: h.txBytes + h.rxBytes, label: <Addr addr={h.addr} />, detail: `${bytes(h.txBytes)} sent, ${bytes(h.rxBytes)} received` }));
   const convs = [...model.conversations].sort((a, b) => b.bytesAB + b.bytesBA - (a.bytesAB + a.bytesBA)).slice(0, 50);
@@ -31,17 +33,18 @@ export function Overview() {
 
   return (
     <>
-      <ViewHead title="Overview">What this capture contains, measured from every packet in the file.</ViewHead>
+      <ViewHead title="Overview">{filter.start !== null || filter.host ? 'Filtered totals reflect the selected packets; capture-wide protocol hierarchy and metadata are labelled.' : 'What this capture contains, measured from every packet in the file.'}</ViewHead>
       <CaptureNotes />
+      <TimeFilterControls />
       <dl className="facts" style={{ margin: 0 }}>
-        <Fact label="Packets" value={num(c.packetCount)} />
-        <Fact label="Duration" value={duration(c.duration)} />
-        <Fact label="Bytes on wire" value={bytes(c.wireBytes)} title="Sum of original frame lengths" />
-        <Fact label="Bytes captured" value={bytes(c.capturedBytes)} small={c.truncatedPackets ? `${num(c.truncatedPackets)} truncated` : undefined} />
+        <Fact label="Packets" value={num(stats.packets)} small={stats.packets !== c.packetCount ? `${num(c.packetCount)} in full capture` : undefined} />
+        <Fact label="Duration" value={duration(selectedDuration)} small={filter.start !== null || filter.host ? 'selected traffic' : undefined} />
+        <Fact label="Bytes on wire" value={bytes(stats.wireBytes)} title="Sum of original frame lengths" small={stats.wireBytes !== c.wireBytes ? `${bytes(c.wireBytes)} in full capture` : undefined} />
+        <Fact label="Bytes captured" value={bytes(stats.capturedBytes)} small={stats.capturedBytes !== c.capturedBytes ? `${bytes(c.capturedBytes)} in full capture` : c.truncatedPackets ? `${num(c.truncatedPackets)} truncated` : undefined} />
         <Fact label="File size" value={bytes(c.fileSize)} />
-        <Fact label="IP hosts" value={num(model.hosts.length)} />
-        <Fact label="TCP/UDP conversations" value={num(ip.length)} small={`${num(model.conversations.length)} total`} />
-        <Fact label="Average rate" value={c.duration > 0 ? `${bytes(Math.round(c.wireBytes / c.duration))}/s` : '—'} />
+        <Fact label="IP hosts" value={num(stats.hosts)} small={stats.hosts !== stats.allHosts ? `${num(stats.allHosts)} in full capture` : undefined} />
+        <Fact label="TCP/UDP conversations" value={num(ip.length)} small={filter.start !== null || filter.host ? `${num(stats.allConversations)} total in full capture` : `${num(model.conversations.length)} total`} />
+        <Fact label="Average rate" value={selectedDuration > 0 ? `${bytes(Math.round(stats.wireBytes / selectedDuration))}/s` : '—'} />
       </dl>
       <Panel title="Time range" sub="UTC, at the precision stored in the file">
         <dl className="kv">
@@ -71,8 +74,10 @@ export function Overview() {
       >
         <div style={{ display: 'grid', gap: 10 }}>
           <Legend items={keys.map((k) => ({ key: k, color: colors.get(k)! }))} />
-          <TimeChart timeline={model.timeline} metric={metric} colors={colors} />
-          <p className="muted" style={{ fontSize: 12 }}>Series are each packet's highest decoded protocol. Times are relative to the first packet.</p>
+          <TimeChart timeline={model.timeline} metric={metric} colors={colors}
+            selection={filter.start !== null && filter.end !== null ? { start: filter.start, end: filter.end } : null}
+            onRangeChange={setTimeRange} />
+          <p className="muted" style={{ fontSize: 12 }}>Series are each packet's highest decoded protocol. Times are relative to the first packet. Drag to apply this window to every view.</p>
         </div>
       </Panel>
       <div className="grid-2">
@@ -80,14 +85,14 @@ export function Overview() {
           right={<Seg label="Protocol metric" value={protoMetric} onChange={setProtoMetric} options={[{ value: 'packets', label: 'Packets' }, { value: 'bytes', label: 'Bytes' }]} />}>
           <BarList items={protoItems} format={protoMetric === 'bytes' ? bytes : num} limit={10} />
         </Panel>
-        <Panel title="Top talkers" sub="Bytes sent + received per IP address">
-          <BarList items={talkers} format={bytes} limit={8} onSelect={(addr) => go('hosts', { host: addr })} emptyText="No IP traffic in this capture." />
+        <Panel title="Top talkers" sub={filter.start !== null || filter.host ? 'Bytes sent + received in the selected traffic' : 'Bytes sent + received per IP address'}>
+          <BarList items={talkers} format={bytes} limit={8} onSelect={(addr) => setHostFilter(addr)} emptyText="No IP traffic in this capture." />
         </Panel>
       </div>
       <Panel title="Largest conversations" sub="Bytes on wire in both directions">
         <BarList items={convItems} format={bytes} limit={8} onSelect={(id) => go('connections', { conv: id })} />
       </Panel>
-      <Panel title="Protocol hierarchy" sub="Packets containing each protocol at any layer; a packet counts once per protocol" flush>
+      <Panel title="Protocol hierarchy" sub={`Packets containing each protocol at any layer; a packet counts once per protocol${filter.start !== null || filter.host ? ' · whole-capture totals' : ''}`} flush>
         <DataTable label="Protocol hierarchy" exportName="protocol-hierarchy" rows={model.protocolHierarchy} rowKey={(r) => r.proto} height={360}
           initialSort={{ key: 'packets', dir: 'desc' }}
           columns={[
@@ -101,6 +106,33 @@ export function Overview() {
   );
 }
 
+function TimeFilterControls() {
+  const { model, filter, setTimeRange, setHostFilter, clearFilters } = useApp();
+  const min = model.timeline.origin;
+  const max = model.timeline.end;
+  const [start, setStart] = useState(String(filter.start ?? min));
+  const [end, setEnd] = useState(String(filter.end ?? max));
+  useEffect(() => {
+    setStart(String(filter.start ?? min));
+    setEnd(String(filter.end ?? max));
+  }, [filter.start, filter.end, min, max]);
+  const a = Number(start), b = Number(end);
+  const valid = Number.isFinite(a) && Number.isFinite(b) && a >= min && b <= max && a < b;
+  return (
+    <Panel title="Shared filters" sub="Choose a window here or drag across either traffic chart. Values are seconds relative to the first packet.">
+      <form className="filter-controls" onSubmit={(e) => { e.preventDefault(); if (valid) setTimeRange(a, b); }}>
+        <label>Start (s)<input className="input mono" type="number" step={model.timeline.binSeconds} min={min} max={max} value={start} onChange={(e) => setStart(e.target.value)} aria-label="Time range start in seconds" /></label>
+        <label>End (s)<input className="input mono" type="number" step={model.timeline.binSeconds} min={min} max={max} value={end} onChange={(e) => setEnd(e.target.value)} aria-label="Time range end in seconds" /></label>
+        <button className="btn primary" type="submit" disabled={!valid}>Apply time range</button>
+        {filter.host && <span className="filter-detail">Host: <span className="mono">{filter.host}</span> <button type="button" className="btn small ghost" onClick={() => setHostFilter(null)}>Remove</button></span>}
+        {(filter.start !== null || filter.host) && <button type="button" className="btn ghost" onClick={clearFilters}>Clear all filters</button>}
+      </form>
+      {!valid && <p className="note warn" style={{ marginTop: 10 }}>End must be later than start, within this capture.</p>}
+      {(filter.start !== null || filter.host) && <p className="muted" style={{ fontSize: 12, margin: '10px 0 0' }}>Traffic and host packet/byte totals are recalculated for the filter. Host metadata and protocol hierarchy remain whole-capture values.</p>}
+    </Panel>
+  );
+}
+
 function precisionText(d: number): string {
   if (d <= 0) return 'whole seconds (or all timestamps fall on whole seconds)';
   if (d <= 3) return `milliseconds or coarser (${d} decimal digit${d > 1 ? 's' : ''} used)`;
@@ -110,7 +142,7 @@ function precisionText(d: number): string {
 
 /** Data-quality notes shared by the Overview. */
 export function CaptureNotes() {
-  const { model } = useApp();
+  const { model, filter } = useApp();
   const c = model.capture;
   const notes = [];
   if (c.incomplete) notes.push(<Note key="inc" kind="crit"><b>Incomplete capture.</b> {c.incomplete}</Note>);
@@ -120,6 +152,7 @@ export function CaptureNotes() {
   if (c.lostSegments) notes.push(<Note key="lost" kind="info">Wireshark saw {plural(c.lostSegments, 'gap')} in TCP sequence numbers (segments not captured). Reassembled protocols in those streams may be partial.</Note>);
   if (c.nonMonotonicTimestamps) notes.push(<Note key="ts" kind="info">{plural(c.nonMonotonicTimestamps, 'packet')} have timestamps earlier than the packet before them. Durations use the earliest and latest timestamps.</Note>);
   if (c.retransmissions || c.outOfOrder) notes.push(<Note key="re" kind="info">TCP analysis: {num(c.retransmissions)} retransmissions, {num(c.outOfOrder)} out-of-order segments, {num(c.duplicateAcks)} duplicate ACKs. Byte counts include retransmitted packets.</Note>);
+  if (filter.start !== null || filter.host) notes.unshift(<Note key="capture-scope" kind="info">These data-quality notes and protocol counters describe the full capture.</Note>);
   if (!notes.length) return null;
   return <div className="notes">{notes}</div>;
 }

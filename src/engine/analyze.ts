@@ -625,7 +625,37 @@ export async function analyze(raw: RawRecords, meta: CaptureMeta, onProgress?: (
     total.packets[b]++;
     total.bytes[b] += p.len;
   }
-  const timeline: Timeline = { origin: minT, binSeconds, bins, series: [total, ...series.filter((s) => s.packets.some((x) => x > 0))] };
+  const timeline: Timeline = { origin: minT, end: maxT, binSeconds, bins, series: [total, ...series.filter((s) => s.packets.some((x) => x > 0))] };
+
+  // Keep a small, columnar packet index in the shared model. It lets the UI
+  // apply time/host filters and recompute traffic totals without retaining or
+  // exposing decoded packet payloads.
+  const hostAddresses = hostList.map((h) => h.addr);
+  const hostIds = new Map(hostAddresses.map((addr, id) => [addr, id]));
+  const protocolNames = topList.map((s) => s.proto);
+  const protocolIds = new Map(protocolNames.map((name, id) => [name, id]));
+  const maxFrame = packets.reduce((max, p) => Math.max(max, p.frame), 0);
+  const frameTimes = new Float64Array(maxFrame + 1);
+  const lengths = new Uint32Array(packets.length);
+  const capturedLengths = new Uint32Array(packets.length);
+  const sourceHosts = new Int32Array(packets.length).fill(-1);
+  const destinationHosts = new Int32Array(packets.length).fill(-1);
+  const conversations = new Int32Array(convOf);
+  const topProtocols = new Uint32Array(packets.length);
+  const directionAB = new Uint8Array(packets.length);
+  for (let i = 0; i < packets.length; i++) {
+    const p = packets[i];
+    frameTimes[p.frame] = p.t;
+    lengths[i] = p.len;
+    capturedLengths[i] = p.caplen;
+    sourceHosts[i] = hostIds.get(p.src) ?? -1;
+    destinationHosts[i] = hostIds.get(p.dst) ?? -1;
+    topProtocols[i] = protocolIds.get(topOf[i]) ?? 0;
+    const conv = convOf[i] >= 0 ? convs[convOf[i]] : null;
+    directionAB[i] = conv && (p.src || p.ethSrc || '?') === conv.a
+      && ((conv.transport !== 'TCP' && conv.transport !== 'UDP') || p.sport === conv.aPort) ? 1 : 0;
+  }
+  const filterIndex = { frameTimes, lengths, capturedLengths, sourceHosts, destinationHosts, conversations, topProtocols, directionAB, hostAddresses, protocolNames };
 
   // ---- unsupported / encrypted context
   const HTTP_PORTS = new Set([80, 8080, 8000, 8008, 8888, 3128]);
@@ -648,7 +678,7 @@ export async function analyze(raw: RawRecords, meta: CaptureMeta, onProgress?: (
     warnings: [...meta.warnings, ...raw.warnings], engine: meta.engine, analysisMs: 0,
   };
   const model: AnalysisModel = {
-    capture,
+    capture, filterIndex,
     protocolHierarchy: [...hier.values()].sort((a, b) => b.packets - a.packets),
     topProtocols: topList,
     timeline, hosts: hostList, conversations: convs, dns, http, tls, arp, arpBindings, dhcp, icmp, ssh, quic, unsupported,

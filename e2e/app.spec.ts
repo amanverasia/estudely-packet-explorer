@@ -167,6 +167,64 @@ test('HTTP capture: requests, hosts, sessions, graph and packet list', async ({ 
   expect(errs).toEqual([]);
 });
 
+test('shared filters brush traffic, round-trip in the URL, and apply from a host', async ({ page }) => {
+  await page.goto('./');
+  await openCapture(page, 'http.pcap');
+  const packetFact = page.locator('.cap-facts').getByText(/packets/).first();
+  await expect(packetFact).toContainText('31 packets');
+
+  const strip = page.getByRole('img', { name: 'Capture traffic strip. Drag to choose a time range.' });
+  const box = await strip.boundingBox();
+  expect(box).not.toBeNull();
+  const y = box!.y + box!.height / 2;
+  await page.mouse.move(box!.x + box!.width * 0.005, y);
+  await page.mouse.down();
+  await page.mouse.move(box!.x + box!.width * 0.05, y, { steps: 4 });
+  await page.mouse.up();
+  await expect(page.getByRole('button', { name: 'Remove time range filter' })).toBeVisible();
+  const rangeHash = await page.evaluate(() => location.hash);
+  expect(rangeHash).toMatch(/[?&]t0=/);
+  expect(rangeHash).toMatch(/[?&]t1=/);
+  const filteredPacketFact = page.locator('.cap-facts').getByText(/packets/).first();
+  const filteredCount = Number((await filteredPacketFact.innerText()).split('/')[0].trim());
+  expect(filteredCount).toBeGreaterThan(0);
+  expect(filteredCount).toBeLessThan(31);
+
+  await page.locator('.nav a[href="#/http"]').click();
+  await expect(page.getByRole('button', { name: 'Remove time range filter' })).toBeVisible();
+  await expect(page.locator('.nav a[href="#/http"] .nav-count')).toHaveText('3/5');
+  const filteredRows = page.getByRole('grid', { name: 'HTTP messages' }).getByRole('row');
+  await expect(filteredRows).toHaveCount(4);
+  await page.locator('.nav a[href="#/packets"]').click();
+  await expect(page.getByText('19 of 31 packets')).toBeVisible();
+  await page.locator('.nav a[href="#/http"]').click();
+
+  await page.getByRole('button', { name: 'Remove time range filter' }).click();
+  await expect(page.getByRole('button', { name: 'Remove time range filter' })).toHaveCount(0);
+  await expect(page.getByRole('grid', { name: 'HTTP messages' }).getByRole('row')).toHaveCount(6);
+  await page.locator('.nav a[href="#/overview"]').click();
+  const rangeStart = page.getByLabel('Time range start in seconds');
+  const rangeEnd = page.getByLabel('Time range end in seconds');
+  await rangeStart.fill('0');
+  await rangeEnd.fill('0.5');
+  await rangeEnd.press('Enter');
+  await expect(page.getByRole('button', { name: 'Remove time range filter' })).toBeVisible();
+  await page.getByRole('button', { name: 'Remove time range filter' }).click();
+  await page.evaluate((hash) => { location.hash = hash; }, rangeHash);
+  await expect(page.getByRole('button', { name: 'Remove time range filter' })).toBeVisible();
+  await page.locator('.nav a[href="#/http"]').click();
+  await expect(page.getByRole('grid', { name: 'HTTP messages' }).getByRole('row')).toHaveCount(4);
+
+  await page.locator('.nav a[href="#/hosts"]').click();
+  await page.getByRole('grid', { name: 'Hosts' }).getByText('10.0.0.80').click();
+  await page.getByRole('button', { name: 'Filter all views to host' }).click();
+  await expect(page.getByRole('button', { name: 'Remove host filter for 10.0.0.80' })).toBeVisible();
+  await page.locator('.nav a[href="#/http"]').click();
+  await expect(page.getByRole('button', { name: 'Remove host filter for 10.0.0.80' })).toBeVisible();
+  await page.getByRole('button', { name: 'Remove host filter for 10.0.0.80' }).click();
+  await expect(page.getByRole('button', { name: 'Remove host filter for 10.0.0.80' })).toHaveCount(0);
+});
+
 test('HTTP/2 h2c capture: table rows and request/status aggregates', async ({ page }) => {
   await page.goto('./');
   await openCapture(page, 'http2.pcap');
