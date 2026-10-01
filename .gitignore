@@ -1,0 +1,7 @@
+node_modules
+dist
+public/wiregasm
+*.tsbuildinfo
+test-results
+playwright-report
+.vite

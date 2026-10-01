@@ -1,0 +1,227 @@
+// End-to-end engine tests: real Wiregasm (Wireshark WASM) + the Lua extractor
+// + the TypeScript aggregation, run against synthetic fixtures with known contents.
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { CaptureSession, installExtractor, type WiregasmModule } from '../src/engine/session';
+import type { AnalysisModel } from '../src/engine/types';
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const require = createRequire(import.meta.url);
+const distDir = join(dirname(require.resolve('@goodtools/wiregasm/package.json')), 'dist');
+
+let lib: WiregasmModule;
+const prints: string[] = [];
+let current: CaptureSession | null = null;
+
+beforeAll(async () => {
+  const loadWiregasm = require(join(distDir, 'wiregasm.js'));
+  lib = await loadWiregasm({
+    locateFile: (p: string) => join(distDir, p),
+    print: (s: string) => { prints.push(s); current?.handlePrint(s); },
+    printErr: () => {},
+  });
+  installExtractor(lib, readFileSync(join(root, 'src/engine/extractor.lua'), 'utf8'));
+  expect(lib.init()).toBe(true);
+});
+
+async function open(name: string): Promise<{ model: AnalysisModel; session: CaptureSession }> {
+  const session = new CaptureSession(lib, 'test');
+  current = session;
+  const bytes = new Uint8Array(readFileSync(join(root, 'fixtures', name)));
+  const model = await session.open(name, bytes, () => {});
+  return { model, session };
+}
+
+describe('DNS fixture', () => {
+  let m: AnalysisModel;
+  let s: CaptureSession;
+  beforeAll(async () => ({ model: m, session: s } = await open('dns.pcap')));
+
+  it('reads capture metadata', () => {
+    expect(m.capture.packetCount).toBe(29);
+    expect(m.capture.startEpoch).toBe('1700000000.010000000');
+    expect(m.capture.timestampDigits).toBe(2);
+    expect(m.capture.duration).toBeCloseTo(1.28, 9);
+    expect(m.capture.incomplete).toBeNull();
+    expect(m.capture.warnings).toEqual([]);
+  });
+
+  it('correlates queries and responses by txid + endpoints + transport', () => {
+    const dns = m.dns.filter((d) => d.proto === 'DNS');
+    expect(dns).toHaveLength(10);
+    const byQuery = (f: number) => dns.find((d) => d.queryFrame === f)!;
+    expect(byQuery(1)).toMatchObject({ status: 'answered', responseFrame: 2, rcode: 'NoError', qname: 'example.com', qtype: 'A', txid: 0x1111, transport: 'UDP' });
+    expect(byQuery(1).answers).toEqual([{ section: 'answer', name: 'example.com', type: 'A', ttl: 300, value: '93.184.216.34' }]);
+    expect(byQuery(1).rtt).toBeCloseTo(0.01, 9);
+    expect(byQuery(3)).toMatchObject({ status: 'answered', responseFrame: 4, rcode: 'NXDomain' });
+    expect(byQuery(5)).toMatchObject({ status: 'unanswered', responseFrame: null, rcode: null });
+    expect(byQuery(13)).toMatchObject({ rcode: 'ServFail', qtype: 'MX' });
+  });
+
+  it('preserves repeated queries instead of merging them', () => {
+    const first = m.dns.find((d) => d.queryFrame === 6)!;
+    const repeat = m.dns.find((d) => d.queryFrame === 7)!;
+    expect(first).toMatchObject({ status: 'answered', responseFrame: 8 });
+    expect(repeat).toMatchObject({ status: 'retransmitted', relatedTo: first.id, responseFrame: null });
+  });
+
+  it('treats a reused transaction id as a new transaction', () => {
+    const reuse = m.dns.find((d) => d.queryFrame === 9)!;
+    expect(reuse).toMatchObject({ txid: 0x1111, qname: 'other.example', status: 'answered', responseFrame: 10 });
+    expect(m.dns.find((d) => d.queryFrame === 1)!.responseFrame).toBe(2);
+  });
+
+  it('handles IPv6, CNAME chains and DNS over TCP with reassembly provenance', () => {
+    expect(m.dns.find((d) => d.queryFrame === 11)).toMatchObject({ client: 'fd00::5', server: 'fd00::53', qtype: 'AAAA', status: 'answered' });
+    const cname = m.dns.find((d) => d.queryFrame === 15)!;
+    expect(cname.answers.map((a) => `${a.type} ${a.value}`)).toEqual(['CNAME example.com', 'A 93.184.216.34']);
+    const tcp = m.dns.find((d) => d.transport === 'TCP')!;
+    expect(tcp).toMatchObject({ qname: 'tcp.example', qtype: 'TXT', queryFrame: 21, responseFrame: 22, status: 'answered' });
+    expect(tcp.frames).toEqual([20, 21, 22]);
+    expect(tcp.answers[0].value).toBe('hello\tworld');
+  });
+
+  it('separates mDNS and NBNS from DNS', () => {
+    const mdns = m.dns.filter((d) => d.proto === 'mDNS');
+    expect(mdns.map((d) => d.status)).toEqual(['multicast query', 'multicast response']);
+    const nbns = m.dns.filter((d) => d.proto === 'NBNS');
+    expect(nbns).toHaveLength(1);
+    expect(nbns[0]).toMatchObject({ status: 'answered', queryFrame: 28, responseFrame: 29, server: '10.0.0.20', qname: 'FILESERVER<00>' });
+  });
+
+  it('records names with their source', () => {
+    const printer = m.hosts.find((h) => h.addr === '10.0.0.9')!;
+    expect(printer.names).toEqual([{ name: 'printer.local', source: 'mDNS', kind: 'observed', frame: 27 }]);
+    const fs = m.hosts.find((h) => h.addr === '10.0.0.20')!;
+    expect(fs.names[0]).toMatchObject({ name: 'FILESERVER<00>', source: 'NBNS' });
+  });
+
+  it('serves packet details and the packet list from the same session', () => {
+    const d = s.frame(2);
+    expect(d.epoch).toBe('1700000000.020000000');
+    expect(d.tree.map((n) => n.filter)).toContain('dns');
+    expect(d.sources[0].bytes.length).toBe(98);
+    const page = s.packetList('dns.flags.rcode == 3', 0, 10);
+    expect(page.matched).toBe(1);
+    expect(page.rows[0].number).toBe(4);
+    expect(page.columns).toContain('Info');
+  });
+});
+
+describe('HTTP fixture', () => {
+  let m: AnalysisModel;
+  beforeAll(async () => ({ model: m } = await open('http.pcap')));
+
+  it('pairs requests and responses per TCP session', () => {
+    expect(m.http.map((h) => [h.method, h.uri, h.status, h.state])).toEqual([
+      ['GET', '/index.html', 200, 'complete'],
+      ['POST', '/api/login', 401, 'complete'],
+      ['GET', '/missing', 404, 'complete'],
+      ['GET', '/again', 304, 'complete'],
+      ['GET', '/v6', null, 'no response seen'],
+    ]);
+    const first = m.http[0];
+    expect(first.host).toBe('www.example.test');
+    expect(first.requestHeaders).toContain('User-Agent: fixture-agent/1.0');
+    expect(first.frames).toEqual([4, 5, 6]);
+    expect(m.http[4]).toMatchObject({ client: 'fd00::5', server: 'fd00::80', serverPort: 8080 });
+  });
+
+  it('keeps a reused 4-tuple as distinct TCP sessions', () => {
+    const tcp = m.conversations.filter((c) => c.transport === 'TCP');
+    expect(tcp).toHaveLength(4);
+    const same = tcp.filter((c) => c.a === '10.0.0.5' && c.aPort === 40000 && c.bPort === 80);
+    expect(same).toHaveLength(2);
+    expect(same[0].stream).not.toBe(same[1].stream);
+    expect(same.every((c) => c.initiator === 'SYN' && c.tcp!.synAckSeen)).toBe(true);
+  });
+
+  it('reports observed service ports and inferred names honestly', () => {
+    const server = m.hosts.find((h) => h.addr === '10.0.0.80')!;
+    expect(server.servicePorts).toEqual([{ transport: 'TCP', port: 80, evidence: 'handshake completed', conversations: 3, peers: 1 }]);
+    expect(server.names.map((n) => [n.name, n.source, n.kind])).toEqual([
+      ['www.example.test', 'HTTP Host header', 'inferred'],
+      ['static.example.test', 'HTTP Host header', 'inferred'],
+    ]);
+    expect(server.macs[0].mac).toBe('02:00:00:00:00:80');
+  });
+});
+
+describe('TLS fixture', () => {
+  let m: AnalysisModel;
+  beforeAll(async () => ({ model: m } = await open('tls.pcap')));
+
+  it('separates advertised from negotiated parameters', () => {
+    expect(m.tls).toHaveLength(3);
+    const [t12, t13, noReply] = m.tls;
+    expect(t12.sni).toBe('www.example.com');
+    expect(t12.offered!.alpn).toEqual(['h2', 'http/1.1']);
+    expect(t12.offered!.cipherSuites).toHaveLength(3);
+    expect(t12.negotiated).toEqual({
+      version: 'TLS 1.2 (0x0303)', versionSource: 'ServerHello version field', alpn: 'h2',
+      cipherSuite: 'TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 (0xc02f)',
+    });
+    expect(t13.offered!.supportedVersions).toEqual(['TLS 1.3 (0x0304)', 'TLS 1.2 (0x0303)']);
+    expect(t13.negotiated).toMatchObject({ version: 'TLS 1.3 (0x0304)', versionSource: 'supported_versions extension' });
+    expect(t13.certificateStatus).toBe('encrypted (TLS 1.3)');
+    expect(t13.client).toBe('fd00::5');
+    expect(noReply).toMatchObject({ sni: 'noreply.example.org', negotiated: null, serverHelloFrame: null, certificateStatus: 'not observed' });
+  });
+
+  it('decodes certificates only when present', () => {
+    const [cert] = m.tls[0].certificates;
+    expect(cert).toMatchObject({
+      commonName: 'www.example.com', subject: 'CN=www.example.com, O=Fixture Org', issuer: 'CN=Fixture Test CA',
+      serial: '1234abcd', notBefore: '2023-01-01 00:00:00 UTC', notAfter: '2024-01-01 00:00:00 UTC',
+      san: ['www.example.com', 'example.com'], publicKeyAlgorithm: 'EC', signatureAlgorithm: 'ecdsa-with-SHA256', error: null,
+    });
+    expect(cert.sha256).toMatch(/^([0-9a-f]{2}:){31}[0-9a-f]{2}$/);
+    expect(m.tls[0].certificateStatus).toBe('decoded');
+  });
+
+  it('learns SNI names as inferred', () => {
+    const h = m.hosts.find((x) => x.addr === '198.51.100.10')!;
+    expect(h.names).toEqual([{ name: 'www.example.com', source: 'TLS SNI', kind: 'inferred', frame: 4 }]);
+    expect(m.unsupported.encryptedConversations).toBe(3);
+  });
+});
+
+describe('edge cases', () => {
+  it('flags malformed, fragmented and truncated packets', async () => {
+    const { model: m } = await open('edge.pcap');
+    expect(m.capture.packetCount).toBe(4);
+    expect(m.capture.malformedPackets).toBe(1);
+    expect(m.capture.fragmentPackets).toBe(2);
+    expect(m.capture.truncatedPackets).toBe(1);
+    expect(m.capture.wireBytes - m.capture.capturedBytes).toBe(442 - 60);
+    const frag = m.dns.find((d) => d.qname === 'frag.example')!;
+    expect(frag).toMatchObject({ status: 'response without query', responseFrame: 3 });
+    expect(frag.frames).toEqual([2, 3]);
+    expect(frag.answers).toHaveLength(2);
+    expect(m.dns.find((d) => d.queryFrame === 1)!.malformed).toBe(true);
+  });
+
+  it('analyses the readable part of a cut-short file and says so', async () => {
+    const { model: m } = await open('cut.pcap');
+    expect(m.capture.packetCount).toBe(3);
+    expect(m.capture.incomplete).toMatch(/cut short/);
+  });
+
+  it('rejects files that are not captures', async () => {
+    await expect(open('not-a-capture.pcap')).rejects.toThrow(/could not be opened as a packet capture/);
+  });
+
+  it('handles pcapng with mixed link types and timestamp resolutions', async () => {
+    const { model: m } = await open('multi-iface.pcapng');
+    expect(m.capture.interfaces).toEqual([
+      { id: 0, linkType: 'Ethernet (1)', name: 'eth0', packets: 1 },
+      { id: 1, linkType: 'Raw IP (7)', name: 'tun0', packets: 1 },
+    ]);
+    expect(m.capture.timestampDigits).toBe(9);
+    expect(m.capture.duration).toBeCloseTo(0.000000789, 12);
+    expect(m.dns.map((d) => d.qname)).toEqual(['ng.example', 'tun.example']);
+  });
+});
