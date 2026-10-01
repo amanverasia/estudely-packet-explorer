@@ -10,11 +10,12 @@ Open a `.pcap` or `.pcapng` file and explore it through protocol dashboards: **O
 npm install
 npm run dev        # http://localhost:5173
 npm test           # engine tests: real Wiregasm against fixtures/
+npm run e2e        # build, serve from a subdirectory, run browser tests (Playwright)
 npm run build      # static site in dist/
 npm run preview    # serve dist/ locally
 ```
 
-Requires Node 20+ (developed on Node 26). `npm run prepare-wasm` (run automatically by dev/build/test) copies the engine from `node_modules/@goodtools/wiregasm` into `public/wiregasm/`.
+Requires Node 20+ (developed on Node 26). Browser tests need Chromium once: `npx playwright install chromium`. `npm run prepare-wasm` (run automatically by dev/build/test) copies the engine from `node_modules/@goodtools/wiregasm` into `public/wiregasm/`.
 
 To regenerate the test captures: `python3 fixtures/generate.py` (needs `scapy` and `cryptography`).
 
