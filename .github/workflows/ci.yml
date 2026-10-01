@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 26
+          cache: npm
+      - run: npm ci
+      - run: npm run prepare-wasm
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Engine tests
+        run: npm test
+      - name: Install Chromium for Playwright
+        run: npx playwright install --with-deps chromium
+      - name: Browser tests
+        run: npm run e2e
+      - name: Upload Playwright results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: test-results/
+          retention-days: 7
