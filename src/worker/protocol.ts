@@ -26,7 +26,7 @@ export interface WorkerResponses {
 
 export type FromWorker =
   | { type: 'progress'; progress: Progress }
-  | { type: 'engine-ready'; wasmModule: WebAssembly.Module; data: ArrayBuffer; versions: { wireshark: string; wiregasm: string } }
+  | { type: 'engine-ready'; wasmModule: WebAssembly.Module | null; data: ArrayBuffer; versions: { wireshark: string; wiregasm: string } }
   | { type: 'ready'; model: AnalysisModel }
   | { type: 'error'; message: string; stage: 'engine' | 'open' }
   | { type: 'response'; id: number; ok: true; data: unknown }

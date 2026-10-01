@@ -14,7 +14,7 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -27,9 +27,9 @@ jobs:
         run: npm run typecheck
       - name: Engine tests
         run: npm test
-      - name: Install Chromium for Playwright
-        run: npx playwright install --with-deps chromium
-      - name: Browser tests
+      - name: Install browsers for Playwright
+        run: npx playwright install --with-deps chromium firefox webkit
+      - name: Browser tests (Chromium, Firefox, WebKit)
         run: npm run e2e
       - name: Upload Playwright results
         if: failure()

@@ -25,7 +25,7 @@ Wiregasm compiles Wireshark's `epan` dissectors and `libwiretap` file readers to
 |---|---|
 | API | A small sharkd-like subset: `DissectSession.load()`, `getFrames(filter, skip, limit)`, `getFrame(n)` (protocol tree as labels + filter strings), `follow`, `tap` (conv/endpoint/export-object), `iograph`, `checkFilter`. No API returns typed field values for all packets. |
 | Formats | Everything libwiretap 4.4.5 reads: pcap, pcapng (multi-interface, per-interface link types and timestamp resolutions), gzip-compressed captures and other Wireshark formats. Verified: pcap, pcapng with Ethernet + raw-IP interfaces, cut-short files, non-capture files. |
-| Browser | Emscripten build without pthreads, so no COOP/COEP headers are needed. Memory growth enabled; the wasm32 ceiling is 2 GiB. Works in a module worker. |
+| Browser | Emscripten build without pthreads, so no COOP/COEP headers are needed. Memory growth enabled; the wasm32 ceiling is 2 GiB. Works in a module worker in Chromium, Firefox and WebKit (see BROWSERS.md). |
 | Size | `wiregasm.wasm` is 69 MB (19 MB gzipped) plus a 2.7 MB data package (0.45 MB gzipped). |
 | Licence | GPL-2.0 (Wireshark derivative). See LICENSES.md. |
 | Extensibility | Lua plugins can be written into the virtual FS before `init()`. This is what makes efficient extraction possible. |
@@ -77,7 +77,7 @@ Times are stored relative to the first packet so that nanosecond precision survi
 ## Security and privacy
 
 - Captured strings are rendered only as React text nodes. Nothing is rendered as HTML; bodies are never rendered; CSV exports neutralise spreadsheet formulas.
-- The production page ships a Content-Security-Policy with `connect-src 'self'`; the only network requests are same-origin GETs for the app and engine files (verified in Chromium with request logging — no request has a body).
+- The production page ships a Content-Security-Policy with `connect-src 'self'`; the only network requests are same-origin GETs for the app and engine files (verified in Chromium, Firefox and WebKit with request logging — no request has a body).
 - Theme preference is the only thing written to `localStorage`. Captures are never persisted.
 - The service worker (`src/pwa/sw.js`, built to `dist/sw.js`) caches only the files listed in its precache list, which the build generates from `dist/`. It never stores runtime responses; captures and key files are read with the File API and never pass through it. A browser test checks the Cache Storage contents after opening a capture.
 
