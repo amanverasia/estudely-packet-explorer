@@ -97,6 +97,39 @@ export interface RawDhcp {
   hostname: string | null;
   yourIp: string | null;
   requestedIp: string | null;
+  xid: number | null;
+  serverId: string | null;
+  leaseTime: number | null;
+  subnetMask: string | null;
+  routers: string[];
+  dnsServers: string[];
+}
+
+export interface RawIcmp {
+  frame: number;
+  version: 4 | 6;
+  type: number;
+  code: number | null;
+  typeName: string | null;
+  codeName: string | null;
+  ident: number | null;
+  seq: number | null;
+  /** The packet quoted by an error message (from its inner IP header), when present. */
+  quoted: { protocol: string | null; src: string; dst: string; srcPort: number | null; dstPort: number | null } | null;
+}
+
+export interface RawSsh {
+  frame: number;
+  version: string;
+  /** From Wireshark's ssh.direction; null when it was not determined. */
+  fromClient: boolean | null;
+}
+
+export interface RawQuic {
+  frame: number;
+  versions: string[];
+  /** Versions listed by a Version Negotiation packet. */
+  supported: string[];
 }
 
 export interface RawIface {
@@ -114,6 +147,9 @@ export interface RawRecords {
   tls: RawTls[];
   arp: RawArp[];
   dhcp: RawDhcp[];
+  icmp: RawIcmp[];
+  ssh: RawSsh[];
+  quic: RawQuic[];
   ifaces: RawIface[];
   /** Source MAC -> registered vendor (Wireshark's OUI table) and locally-administered bit. */
   macVendors: Map<string, { vendor: string | null; locallyAdministered: boolean }>;
@@ -180,7 +216,7 @@ export function forEachLine(buf: Uint8Array, fn: (line: string) => void, onProgr
 
 export function parseRecords(buf: Uint8Array, onProgress?: (fraction: number) => void): RawRecords {
   const out: RawRecords = {
-    packets: [], segments: new Map(), dns: [], nbns: [], http: [], tls: [], arp: [], dhcp: [], ifaces: [],
+    packets: [], segments: new Map(), dns: [], nbns: [], http: [], tls: [], arp: [], dhcp: [], icmp: [], ssh: [], quic: [], ifaces: [],
     macVendors: new Map(), warnings: [], startEpoch: null, timestampDigits: 0,
   };
   let baseSec = 0;
@@ -281,7 +317,23 @@ export function parseRecords(buf: Uint8Array, onProgress?: (fraction: number) =>
         out.arp.push({ frame: Number(c[1]), opcode: int(c[2]), srcMac: c[3] ?? '', srcIp: c[4] ?? '', dstMac: c[5] ?? '', dstIp: c[6] ?? '' });
         break;
       case 'C':
-        out.dhcp.push({ frame: Number(c[1]), msgType: int(c[2]), mac: c[3] ?? '', hostname: str(c[4]), yourIp: str(c[5]), requestedIp: str(c[6]) });
+        out.dhcp.push({
+          frame: Number(c[1]), msgType: int(c[2]), mac: c[3] ?? '', hostname: str(c[4]), yourIp: str(c[5]), requestedIp: str(c[6]),
+          xid: int(c[7]), serverId: str(c[8]), leaseTime: int(c[9]), subnetMask: str(c[10]), routers: list(c[11]), dnsServers: list(c[12]),
+        });
+        break;
+      case 'K':
+        out.icmp.push({
+          frame: Number(c[1]), version: c[2] === '6' ? 6 : 4, type: Number(c[3]), code: int(c[4]), typeName: str(c[5]),
+          codeName: str(c[6]), ident: int(c[7]), seq: int(c[8]),
+          quoted: c[10] ? { protocol: str(c[9]), src: unescapeField(c[10]), dst: unescapeField(c[11] ?? ''), srcPort: int(c[12]), dstPort: int(c[13]) } : null,
+        });
+        break;
+      case 'X':
+        out.ssh.push({ frame: Number(c[1]), version: unescapeField(c[2] ?? ''), fromClient: c[3] === '0' ? true : c[3] === '1' ? false : null });
+        break;
+      case 'Q':
+        out.quic.push({ frame: Number(c[1]), versions: list(c[2]), supported: list(c[3]) });
         break;
       case 'I':
         out.ifaces.push({ id: int(c[1]), linkType: str(c[2]) ?? 'unknown', name: str(c[3]) ?? '' });
