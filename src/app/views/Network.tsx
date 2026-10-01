@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Legend, colorMap } from '../components/charts';
 import { Panel, ViewHead } from '../components/bits';
 import { useApp } from '../context';
+import { placeLabels, type LabelPlacement } from '../labels';
 import { bytes, num, plural } from '../format';
 
 interface GNode extends SimulationNodeDatum { id: string; bytes: number; packets: number; other: number; scope: string }
@@ -110,6 +111,16 @@ export function Network() {
   }, [layout]);
 
   const maxB = Math.max(1, ...graph.nodes.map((n) => n.bytes));
+  const labelOf = (n: GNode) => (n.id === OTHER_NODE ? `${OTHER_NODE} (${n.other})` : nameOf(n.id) ?? n.id);
+  const shortLabel = (l: string) => (l.length > 28 ? l.slice(0, 27) + '…' : l);
+  const labels = useMemo(() => {
+    if (!layout) return new Map<string, LabelPlacement>();
+    const lmax = Math.max(1, ...layout.nodes.map((n) => n.bytes));
+    return placeLabels(
+      layout.nodes.map((n) => ({ id: n.id, x: n.x ?? 0, y: n.y ?? 0, r: radius(n.bytes, lmax), label: shortLabel(labelOf(n)) })),
+      layout.edges.map((e) => { const s = e.source as GNode, t = e.target as GNode; return { x1: s.x ?? 0, y1: s.y ?? 0, x2: t.x ?? 0, y2: t.y ?? 0 }; }),
+    );
+  }, [layout]); // eslint-disable-line react-hooks/exhaustive-deps
   const maxE = Math.max(1, ...graph.edges.map((e) => e.bytes));
   const hosts = useMemo(() => [...model.hosts].sort((a, b) => a.addr.localeCompare(b.addr, undefined, { numeric: true })), [model.hosts]);
   const selNode = sel?.kind === 'node' ? graph.nodes.find((n) => n.id === sel.id) : null;
@@ -165,7 +176,8 @@ export function Network() {
                   const r = radius(n.bytes, maxB);
                   const dim = neighbours ? !neighbours.has(n.id) : false;
                   const isSel = selNode?.id === n.id;
-                  const label = n.id === OTHER_NODE ? `${OTHER_NODE} (${n.other})` : nameOf(n.id) ?? n.id;
+                  const label = labelOf(n);
+                  const at = labels.get(n.id) ?? { x: r + 4, y: 0, anchor: 'start' };
                   return (
                     <g key={n.id} className="graph-node" transform={`translate(${n.x},${n.y})`} opacity={dim ? 0.25 : 1}
                       onClick={(ev) => { ev.stopPropagation(); setSel({ kind: 'node', id: n.id }); }} style={{ cursor: 'pointer' }}
@@ -174,7 +186,7 @@ export function Network() {
                       <circle r={r} fill={n.id === OTHER_NODE ? 'var(--s-other)' : n.scope === 'multicast' || n.scope === 'broadcast' ? 'var(--panel)' : 'var(--accent)'}
                         stroke={isSel ? 'var(--ink)' : n.scope === 'multicast' || n.scope === 'broadcast' ? 'var(--ink-3)' : 'var(--panel)'} strokeWidth={isSel ? 2.5 : 2}
                         strokeDasharray={n.scope === 'multicast' || n.scope === 'broadcast' ? '3 2' : undefined} />
-                      <text x={r + 4} dy="0.32em">{label.length > 28 ? label.slice(0, 27) + '…' : label}</text>
+                      <text x={at.x} y={at.y} dy="0.32em" textAnchor={at.anchor}>{shortLabel(label)}</text>
                     </g>
                   );
                 })}

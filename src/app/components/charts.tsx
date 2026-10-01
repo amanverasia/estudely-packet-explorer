@@ -144,13 +144,17 @@ export function Strip({ timeline }: { timeline: Timeline }) {
   const max = Math.max(1, ...total);
   const h = 34;
   const bw = width / Math.max(1, total.length);
+  // Short captures have few bins; cap the bar width so they stay bars, not blocks.
+  const barW = Math.min(8, Math.max(0.6, bw - (bw > 4 ? 1 : 0)));
   return (
     <div ref={ref} className="strip" aria-hidden="true">
       {width > 0 && (
         <svg width={width} height={h}>
+          {/* Baseline across the whole capture, so quiet stretches read as "no traffic" rather than missing chart. */}
+          <line x1={0} x2={width} y1={h - 0.5} y2={h - 0.5} stroke="var(--rule-strong)" />
           {total.map((v, i) => {
             const bh = v ? Math.max(1.5, (v / max) * (h - 4)) : 0;
-            return <rect key={i} x={i * bw} y={h - bh} width={Math.max(0.6, bw - (bw > 4 ? 1 : 0))} height={bh} rx={bw > 4 ? 1 : 0} fill="var(--accent)" opacity={0.75} />;
+            return <rect key={i} x={i * bw + (bw - barW) / 2} y={h - bh} width={barW} height={bh} rx={barW > 4 ? 1 : 0} fill="var(--accent)" opacity={0.75} />;
           })}
         </svg>
       )}
