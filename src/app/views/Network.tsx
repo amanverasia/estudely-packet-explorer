@@ -101,7 +101,7 @@ export function Network() {
     const xs = layout.nodes.map((n) => n.x ?? 0), ys = layout.nodes.map((n) => n.y ?? 0);
     if (xs.length) {
       const minX = Math.min(...xs) - 40, maxX = Math.max(...xs) + 40, minY = Math.min(...ys) - 40, maxY = Math.max(...ys) + 40;
-      const k = Math.min(2, 0.95 / Math.max((maxX - minX) / layout.w, (maxY - minY) / layout.h));
+      const k = Math.min(1.2, 0.95 / Math.max((maxX - minX) / layout.w, (maxY - minY) / layout.h));
       svg.call(z.transform, zoomIdentity.translate(layout.w / 2 - k * (minX + maxX) / 2, layout.h / 2 - k * (minY + maxY) / 2).scale(k));
     }
     return () => { svg.on('.zoom', null); };

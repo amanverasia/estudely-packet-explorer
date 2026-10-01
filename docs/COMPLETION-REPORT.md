@@ -19,14 +19,9 @@
 - **Browser end-to-end** (Chromium via Playwright, production build served from a subdirectory `/tools/packet-explorer/` by a plain static server, with the CSP active): opened `dns.pcap` through the file input; the Overview, the DNS view and the packet drawer showed the expected numbers. The analysis took under 1 s. **Every network request was a same-origin GET for app or engine files; none had a body.**
 - **Performance**: measured at 100k packets / 88 MB (≈15 s) and 400k / 351 MB (≈52 s, 334 MB WASM heap). Limits are set from these numbers.
 
-## Implemented but not yet verified
+## Views checked in the browser
 
-These views typecheck and are in a production build that succeeds, but **nobody has opened them in a browser yet**:
-
-- Views: HTTP, TLS, Hosts, Connections (with drill-down), Network graph, Packet list.
-- `public/ABOUT.html`.
-
-The engine data these views read *is* covered by the tests above. What has not been checked is how they render and behave. Next step: open `fixtures/http.pcap`, `fixtures/tls.pcap` and `fixtures/edge.pcap` in `npm run dev` and go through each view.
+All views typecheck and build. They were also checked in Chromium against the production build served from a subdirectory: HTTP, Hosts, Connections, Network and the packet list with `http.pcap`, TLS with `tls.pcap`, and Network with `dns.pcap`. Each view showed the expected fixture data, with no console errors and no request other than same-origin GETs. The check was a screenshot script outside the repo; it is not yet a committed test.
 
 ## Not done / incomplete
 
