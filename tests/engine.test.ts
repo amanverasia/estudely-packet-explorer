@@ -326,3 +326,23 @@ describe('protocols fixture (DHCP, ARP, ICMP, SSH, QUIC)', () => {
     ]);
   });
 });
+
+describe('protocols edge fixture (DHCP outcome order, tunnelled ICMP)', () => {
+  let m: AnalysisModel;
+  beforeAll(async () => ({ model: m } = await open('protocols-edge.pcap')));
+
+  it('takes the DHCP outcome from the last message that decides it', () => {
+    expect(m.capture.packetCount).toBe(12);
+    expect(m.dhcp.map((d) => [d.xid, d.messages.map((x) => x.type), d.outcome, d.assignedIp])).toEqual([
+      // The client declined the address the server ACKed, so the exchange ends declined.
+      [0x4004, ['Discover', 'Offer', 'Request', 'ACK', 'Decline'], 'declined', '10.0.2.60'],
+      [0x5005, ['Request', 'NAK', 'Request', 'ACK'], 'acknowledged', '10.0.2.61'],
+    ]);
+  });
+
+  it('reads the quoted packet after the ICMP header, not a tunnel header', () => {
+    expect(m.icmp.map((i) => [i.frame, i.type, i.kind])).toEqual([[11, 3, 'error'], [12, 8, 'echo request']]);
+    expect(m.icmp[0].quoted).toMatchObject({ protocol: 'UDP', src: '10.0.2.50', srcPort: 51000, dst: '198.51.100.9', dstPort: 33434 });
+    expect(m.icmp[1].quoted).toBeNull();
+  });
+});

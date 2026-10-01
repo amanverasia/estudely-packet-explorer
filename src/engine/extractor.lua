@@ -347,9 +347,17 @@ local function emit_icmp(w, num, v6)
   local t = first(ty)
   if not t then return end
   local c = first(co)
-  local qs, qd, qp = all(src)[2], all(dst)[2], all(proto)[2]
-  local sport, dport = first(f.tcpsport), first(f.tcpdport)
-  if not sport then sport, dport = first(f.udpsport), first(f.udpdport) end
+  -- The quoted packet is whatever IP and TCP/UDP header follows the ICMP
+  -- header; tunnels (VXLAN, GRE, IP-in-IP) put more IP headers before it.
+  local function after(field)
+    for _, fi in ipairs(all(field)) do
+      if fi.offset > t.offset then return fi end
+    end
+    return nil
+  end
+  local qs, qd, qp = after(src), after(dst), after(proto)
+  local sport, dport = after(f.tcpsport), after(f.tcpdport)
+  if not sport then sport, dport = after(f.udpsport), after(f.udpdport) end
   local inner = qs ~= nil
   w:write(table.concat({ "K", num, v6 and "6" or "4", tostring(t.value), c and tostring(c.value) or "", code_name(t), code_name(c),
     val(id), val(sq), (inner and qp) and code_name(qp) or "", inner and esc(qs.value) or "", (inner and qd) and esc(qd.value) or "",

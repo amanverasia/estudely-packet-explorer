@@ -424,7 +424,8 @@ def protocols_fixture():
                   [("s", b"SSH-2.0-OpenSSH_9.6\r\n", None), ("c", b"SSH-2.0-fixture_client_1.0\r\n", None)])
 
     # 32 QUIC v1 client Initial carrying a ClientHello (SNI quic.example.net, ALPN h3)
-    ch = TLSClientHello(version=0x0303, ciphers=[0x1301, 0x1302],
+    # Random fields pinned so regenerating gives the same bytes.
+    ch = TLSClientHello(version=0x0303, gmt_unix_time=0, random_bytes=b"\x00" * 28, sid=b"", ciphers=[0x1301, 0x1302],
                         ext=[TLS_Ext_ServerName(servernames=[ServerName(servername=b"quic.example.net")]),
                              TLS_Ext_SupportedVersion_CH(versions=[0x0304]),
                              TLS_Ext_ALPN(protocols=[ProtocolName(protocol=b"h3")])])
@@ -438,9 +439,49 @@ def protocols_fixture():
     wrpcap(os.path.join(HERE, "protocols.pcap"), stamp(P))
 
 
+def protocols_edge_fixture():
+    # Cases kept out of protocols.pcap so its frame numbers stay put.
+    from scapy.layers.dhcp import BOOTP, DHCP
+    from scapy.layers.inet import ICMP
+    from scapy.layers.vxlan import VXLAN
+    c = Clock()
+    P = []
+    gw_mac, b1, b2, a1 = "02:00:00:00:00:01", "02:00:00:00:00:b1", "02:00:00:00:00:b2", "02:00:00:00:00:a1"
+    bcast = "ff:ff:ff:ff:ff:ff"
+
+    def dhcp(src_mac, dst_mac, src, dst, op, chaddr, xid, opts, yiaddr="0.0.0.0"):
+        return (eth(src_mac, dst_mac) / IP(src=src, dst=dst) / UDP(sport=67 if op == 2 else 68, dport=68 if op == 2 else 67)
+                / BOOTP(op=op, chaddr=bytes.fromhex(chaddr.replace(":", "")) + b"\x00" * 10, xid=xid, yiaddr=yiaddr)
+                / DHCP(options=opts + ["end"]), c.tick())
+
+    server = [("server_id", "10.0.2.1"), ("lease_time", 3600)]
+    # 1-5 DORA, then the client declines the address under the same xid (it found it in use)
+    P += [dhcp(b1, bcast, "0.0.0.0", "255.255.255.255", 1, b1, 0x4004, [("message-type", "discover")]),
+          dhcp(gw_mac, b1, "10.0.2.1", "10.0.2.60", 2, b1, 0x4004, [("message-type", "offer")] + server, yiaddr="10.0.2.60"),
+          dhcp(b1, bcast, "0.0.0.0", "255.255.255.255", 1, b1, 0x4004, [("message-type", "request"), ("requested_addr", "10.0.2.60")]),
+          dhcp(gw_mac, b1, "10.0.2.1", "10.0.2.60", 2, b1, 0x4004, [("message-type", "ack")] + server, yiaddr="10.0.2.60"),
+          dhcp(b1, bcast, "0.0.0.0", "255.255.255.255", 1, b1, 0x4004, [("message-type", "decline"), ("requested_addr", "10.0.2.60"), ("server_id", "10.0.2.1")])]
+    # 6-9 a request refused with a NAK, then a request ACKed, all under one xid
+    P += [dhcp(b2, bcast, "0.0.0.0", "255.255.255.255", 1, b2, 0x5005, [("message-type", "request"), ("requested_addr", "10.0.2.99")]),
+          dhcp(gw_mac, bcast, "10.0.2.1", "255.255.255.255", 2, b2, 0x5005, [("message-type", "nak"), ("server_id", "10.0.2.1")]),
+          dhcp(b2, bcast, "0.0.0.0", "255.255.255.255", 1, b2, 0x5005, [("message-type", "request"), ("requested_addr", "10.0.2.61")]),
+          dhcp(gw_mac, b2, "10.0.2.1", "10.0.2.61", 2, b2, 0x5005, [("message-type", "ack")] + server, yiaddr="10.0.2.61")]
+
+    # 10-11 a UDP probe and the port unreachable quoting it, both carried in VXLAN between 172.16.0.1 and 172.16.0.2
+    def vxlan(inner):
+        return (eth(gw_mac, a1) / IP(src="172.16.0.1", dst="172.16.0.2") / UDP(sport=40000, dport=4789) / VXLAN(vni=42) / inner, c.tick())
+    probe = IP(src="10.0.2.50", dst="198.51.100.9") / UDP(sport=51000, dport=33434) / Raw(b"probe")
+    P += [vxlan(eth(a1, gw_mac) / probe),
+          vxlan(eth(gw_mac, a1) / IP(src="198.51.100.9", dst="10.0.2.50") / ICMP(type=3, code=3) / bytes(probe)[:28])]
+    # 12 an echo request in the tunnel: two IP headers, neither of them quoted
+    P += [vxlan(eth(a1, gw_mac) / IP(src="10.0.2.50", dst="192.0.2.1") / ICMP(type=8, id=9, seq=1) / Raw(b"ping"))]
+    wrpcap(os.path.join(HERE, "protocols-edge.pcap"), stamp(P))
+
+
 FIXTURES = {
     "dns": dns_fixture, "http": http_fixture, "tls": tls_fixture, "edge": edge_fixture,
     "pcapng": pcapng_fixture, "vendors": vendors_fixture, "protocols": protocols_fixture,
+    "protocols-edge": protocols_edge_fixture,
 }
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@
 // model records. Called from analyze(); pure TypeScript like the rest of it.
 // Every record states what the capture showed and where; nothing is judged.
 import type {
-  ArpBinding, ArpRecord, Conversation, DhcpExchange, IcmpMessage, QuicConnection, SshSession, TlsSession,
+  ArpBinding, ArpRecord, Conversation, DhcpExchange, DhcpOutcome, IcmpMessage, QuicConnection, SshSession, TlsSession,
 } from './types';
 import type { RawArp, RawDhcp, RawIcmp, RawPacket, RawQuic, RawSsh } from './records';
 
@@ -22,11 +22,13 @@ const sorted = (frames: number[]) => [...new Set(frames)].sort((a, b) => a - b);
 // -------------------------------------------------------------------- DHCP
 const DHCP_TYPES = ['', 'Discover', 'Offer', 'Request', 'Decline', 'ACK', 'NAK', 'Release', 'Inform'];
 const SERVER_TYPES = new Set([2, 5, 6]);
+const DHCP_OUTCOME: Record<string, DhcpOutcome> = {
+  ACK: 'acknowledged', BOOTP: 'acknowledged', NAK: 'refused (NAK)', Offer: 'offered, no ACK seen', Release: 'released', Decline: 'declined',
+};
 
 export function buildDhcp(raw: RawDhcp[], ctx: ProtoCtx): DhcpExchange[] {
   const out: DhcpExchange[] = [];
   const byKey = new Map<string, DhcpExchange>();
-  const types = new Map<DhcpExchange, Set<string>>();
   for (const d of raw) {
     const p = ctx.pkt(d.frame);
     if (!p) continue;
@@ -43,11 +45,9 @@ export function buildDhcp(raw: RawDhcp[], ctx: ProtoCtx): DhcpExchange[] {
       };
       out.push(ex);
       byKey.set(key, ex);
-      types.set(ex, new Set());
     }
     ex.messages.push({ frame: d.frame, t: p.t, type, src: p.src, dst: p.dst });
     ex.frames.push(d.frame);
-    types.get(ex)!.add(type);
     if (!fromServer) {
       ex.hostname = d.hostname ?? ex.hostname;
       ex.requestedIp = d.requestedIp ?? ex.requestedIp;
@@ -64,13 +64,13 @@ export function buildDhcp(raw: RawDhcp[], ctx: ProtoCtx): DhcpExchange[] {
     if (type === 'ACK' || !ex.dnsServers.length) ex.dnsServers = d.dnsServers.length ? d.dnsServers : ex.dnsServers;
   }
   for (const ex of out) {
-    const t = types.get(ex)!;
-    ex.outcome = t.has('ACK') || (t.has('BOOTP') && ex.server !== null) ? 'acknowledged'
-      : t.has('NAK') ? 'refused (NAK)'
-        : t.has('Offer') ? 'offered, no ACK seen'
-          : t.has('Release') ? 'released'
-            : t.has('Decline') ? 'declined'
-              : 'no server reply seen';
+    // The last message that settles the exchange decides it: a DECLINE after
+    // an ACK (address found in use) or an ACK after a NAK, under one xid.
+    ex.outcome = 'no server reply seen';
+    for (let i = ex.messages.length - 1; i >= 0; i--) {
+      const o = DHCP_OUTCOME[ex.messages[i].type];
+      if (o && (ex.messages[i].type !== 'BOOTP' || ex.server !== null)) { ex.outcome = o; break; }
+    }
     ex.frames = sorted(ex.frames);
   }
   return out;
