@@ -68,7 +68,10 @@ function pwaPlugin(): Plugin {
       const group = (prefix: string, list: string[]) => {
         const h = createHash('sha256');
         for (const f of list) h.update(f).update('\0').update(readFileSync(join(outDir, f)));
-        return { name: `epx-${prefix}-${h.digest('hex').slice(0, 16)}`, files: list };
+        // The page is cached under its directory URL: hosts such as Cloudflare
+        // redirect an explicit index.html there, and a navigation must not be
+        // answered with a redirected response.
+        return { name: `epx-${prefix}-${h.digest('hex').slice(0, 16)}`, files: list.map((f) => (f === 'index.html' ? './' : f)) };
       };
       const precache = {
         shell: group('shell', files.filter((f) => !f.startsWith('wiregasm/'))),

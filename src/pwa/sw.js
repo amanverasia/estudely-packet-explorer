@@ -20,8 +20,6 @@ const CACHES = [PRECACHE.shell, PRECACHE.engine];
 // Paths resolve against this script's directory, so the app works at a
 // domain root or in any subdirectory.
 const url = (path) => new URL(path, self.location.href).href;
-const INDEX = url('index.html');
-const SCOPE_ROOT = url('./');
 const KNOWN = new Set(CACHES.flatMap((c) => c.files.map(url)));
 
 self.addEventListener('install', (event) => {
@@ -35,8 +33,11 @@ self.addEventListener('install', (event) => {
         if (await cache.match(url(path))) continue;
         // 'no-cache' revalidates with the server, so an HTTP-cached copy of a
         // file from an older deploy cannot end up in a new version's cache.
-        const res = await fetch(new Request(url(path), { cache: 'no-cache' }));
+        let res = await fetch(new Request(url(path), { cache: 'no-cache' }));
         if (!res.ok) throw new Error(`precache failed: ${res.status} ${path}`);
+        // A redirected response cannot answer a navigation (the browser turns
+        // it into a network error), so store a plain copy of it.
+        if (res.redirected) res = new Response(await res.blob(), { status: res.status, statusText: res.statusText, headers: res.headers });
         await cache.put(url(path), res);
       }
     }
@@ -64,8 +65,7 @@ self.addEventListener('fetch', (event) => {
   const u = new URL(req.url);
   u.search = '';
   u.hash = '';
-  let key = u.href;
-  if (req.mode === 'navigate' && key === SCOPE_ROOT) key = INDEX;
+  const key = u.href;
   // Anything not in the precache list goes to the network untouched.
   if (!KNOWN.has(key)) return;
   event.respondWith((async () => {

@@ -60,8 +60,10 @@ export function registerServiceWorker(): void {
   navigator.serviceWorker.register(script, { scope: './' }).then((reg) => {
     registration = reg;
     if (reg.waiting && navigator.serviceWorker.controller) set({ updateWaiting: true });
+    // An active worker means the offline copy is ready, even while an update
+    // installs alongside it.
+    if (reg.active) void markReady();
     if (reg.installing) watchInstalling(reg.installing);
-    else if (reg.active) void markReady();
     reg.addEventListener('updatefound', () => { if (reg.installing) watchInstalling(reg.installing); });
     // Look for a new deploy whenever the tab comes back into view.
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });

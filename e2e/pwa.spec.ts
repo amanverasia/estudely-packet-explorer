@@ -69,7 +69,7 @@ test('only app files are cached; captures never are', async ({ page }) => {
   });
   expect(cached.some((u) => u.endsWith('/wiregasm/wiregasm.wasm.gz'))).toBe(true);
   expect(cached.some((u) => u.endsWith('/wiregasm/wiregasm.data.gz'))).toBe(true);
-  expect(cached.some((u) => u.endsWith('/index.html'))).toBe(true);
+  expect(cached.some((u) => u.endsWith('/packet-explorer/'))).toBe(true);
   for (const u of cached) {
     expect(u).toMatch(/^epx-(shell|engine)-[0-9a-f]+ http:\/\/localhost:\d+\/tools\/packet-explorer\//);
     expect(u).not.toMatch(/\.pcap|\.map$|blob:/);
@@ -81,6 +81,18 @@ test('only app files are cached; captures never are', async ({ page }) => {
 test('offers to reload when a new version is deployed', async ({ page, context, baseURL }) => {
   await page.goto('./');
   await waitForOffline(page);
+  const before = await page.evaluate(() => caches.keys());
+  // Tag the cached engine so a second download (which would replace the entry)
+  // shows: a deploy that leaves the engine unchanged must reuse it.
+  await page.evaluate(async () => {
+    const name = (await caches.keys()).find((n) => n.startsWith('epx-engine-'))!;
+    const cache = await caches.open(name);
+    const key = new URL('wiregasm/wiregasm.wasm.gz', document.baseURI).href;
+    const old = (await cache.match(key))!;
+    const headers = new Headers(old.headers);
+    headers.set('x-epx-test', 'kept');
+    await cache.put(key, new Response(await old.blob(), { status: old.status, headers }));
+  });
   // A new deploy changes sw.js (its precache list carries content hashes).
   // The test server serves a changed sw.js to a context with this cookie.
   await context.addCookies([{ name: 'epx-test-deploy', value: '2', url: baseURL! }]);
@@ -94,4 +106,18 @@ test('offers to reload when a new version is deployed', async ({ page, context, 
   await expect(page.getByText('A new version is available')).toHaveCount(0);
   const waiting = await page.evaluate(async () => !!(await navigator.serviceWorker.ready).waiting);
   expect(waiting).toBe(false);
+  // The old shell cache is gone, the engine cache is the same one, untouched.
+  const after = await page.evaluate(() => caches.keys());
+  const engine = before.filter((n) => n.startsWith('epx-engine-'));
+  expect(engine).toHaveLength(1);
+  expect(after.filter((n) => n.startsWith('epx-engine-'))).toEqual(engine);
+  const shell = after.filter((n) => n.startsWith('epx-shell-'));
+  expect(shell).toHaveLength(1);
+  expect(before).not.toContain(shell[0]);
+  expect(after).toHaveLength(2);
+  const tag = await page.evaluate(async (name) => {
+    const res = await (await caches.open(name)).match(new URL('wiregasm/wiregasm.wasm.gz', document.baseURI).href);
+    return res?.headers.get('x-epx-test');
+  }, engine[0]);
+  expect(tag).toBe('kept');
 });

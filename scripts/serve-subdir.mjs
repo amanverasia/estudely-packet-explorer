@@ -52,14 +52,21 @@ createServer((req, res) => {
   const url = new URL(req.url ?? '/', 'http://x');
   if (!url.pathname.startsWith(base)) { res.writeHead(404).end('not found'); return; }
   let rel = decodeURIComponent(url.pathname.slice(base.length));
+  // Cloudflare's static assets redirect an explicit index.html to its
+  // directory (307), so the service worker must never depend on that URL.
+  if (rel === 'index.html' || rel.endsWith('/index.html')) {
+    res.writeHead(307, { Location: base + rel.slice(0, -'index.html'.length) }).end();
+    return;
+  }
   if (rel === '' || rel.endsWith('/')) rel += 'index.html';
   rel = normalize(rel).replace(/^(\.\.[/\\])+/, '');
   const file = join(root, rel);
   // Test hook for the service worker update flow: a browser context with this
-  // cookie sees sw.js as if a new version had been deployed.
-  const deploy = /(?:^|;\s*)epx-test-deploy=(\w+)/.exec(req.headers.cookie ?? '')?.[1];
+  // cookie sees sw.js as if a new version had been deployed, with a changed
+  // app shell (new shell cache name) and an unchanged engine.
+  const deploy = /(?:^|;\s*)epx-test-deploy=([0-9a-f]+)/.exec(req.headers.cookie ?? '')?.[1];
   if (rel === 'sw.js' && deploy && existsSync(file)) {
-    const body = `${readFileSync(file, 'utf8')}\n// test deploy ${deploy}\n`;
+    const body = readFileSync(file, 'utf8').replace(/"(epx-shell-[0-9a-f]+)"/, `"$1${deploy}"`);
     res.writeHead(200, { ...headersFor('/sw.js'), 'Content-Type': types['.js'], 'Content-Length': Buffer.byteLength(body) });
     res.end(body);
     return;
