@@ -112,6 +112,21 @@ test('offers to reload when a new version is deployed', async ({ page, context, 
   const banner = page.getByRole('status').filter({ hasText: 'A new version is available' });
   await expect(banner).toBeVisible();
   expect(await page.evaluate(async () => !!(await navigator.serviceWorker.ready).waiting)).toBe(true);
+  // The fixed update notice must not block controls behind its text. Keep
+  // only its explicit Reload button interactive while the user decides.
+  const point = await banner.evaluate((el) => {
+    const probe = document.createElement('button');
+    probe.id = 'update-banner-underlay';
+    probe.setAttribute('aria-label', 'Underlying control');
+    probe.style.cssText = 'position:fixed;inset:0;z-index:29;opacity:0';
+    probe.addEventListener('click', () => { probe.dataset.clicked = 'true'; });
+    document.body.append(probe);
+    const text = el.firstElementChild!.getBoundingClientRect();
+    return { x: text.left + text.width / 2, y: text.top + text.height / 2 };
+  });
+  await page.mouse.click(point.x, point.y);
+  await expect(page.locator('#update-banner-underlay')).toHaveAttribute('data-clicked', 'true');
+  await page.locator('#update-banner-underlay').evaluate((el) => el.remove());
   await banner.getByRole('button', { name: 'Reload to update' }).click();
   await page.waitForEvent('load');
   await expect(page.getByRole('button', { name: 'Choose capture file' })).toBeVisible();

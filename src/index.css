@@ -217,9 +217,9 @@ p { margin: 0; }
 .note b { font-weight: 600; }
 .update-banner {
   position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 30; width: max-content; max-width: calc(100vw - 32px);
-  align-items: center; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  align-items: center; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15); pointer-events: none;
 }
-.update-banner .btn { flex: none; }
+.update-banner .btn { flex: none; pointer-events: auto; }
 .notes { display: grid; gap: 8px; }
 
 .tag {
