@@ -19,6 +19,52 @@ async function auditA11y(page: Page, label: string) {
   expect(violations, JSON.stringify(violations, null, 2)).toEqual([]);
 }
 
+async function contrastFailures(page: Page) {
+  return page.evaluate(() => {
+    const styles = getComputedStyle(document.documentElement);
+    const color = (name: string) => {
+      const value = styles.getPropertyValue(`--${name}`).trim();
+      const short = value.match(/^#([\da-f]{3})$/i)?.[1];
+      const raw = short ? [...short].map((channel) => channel + channel).join('') : value.match(/^#([\da-f]{6})$/i)?.[1];
+      if (!raw) throw new Error(`Expected --${name} to be a three- or six-digit hex color, got ${value}`);
+      return [0, 2, 4].map((i) => Number.parseInt(raw.slice(i, i + 2), 16) / 255);
+    };
+    const luminance = (name: string) => {
+      const [r, g, b] = color(name).map((value) => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const ratio = (foreground: string, background: string) => {
+      const values = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
+      return (values[0] + 0.05) / (values[1] + 0.05);
+    };
+    const failures: string[] = [];
+    const check = (foreground: string, background: string, minimum: number, kind: string) => {
+      const value = ratio(foreground, background);
+      if (value < minimum) failures.push(`${kind} --${foreground} on --${background}: ${value.toFixed(2)}:1 (needs ${minimum}:1)`);
+    };
+
+    // Small text uses 4.5:1; focus indicators are non-text and use 3:1.
+    for (const foreground of ['ink', 'ink-2', 'ink-3', 'accent']) {
+      for (const background of ['bg', 'panel', 'panel-2']) check(foreground, background, 4.5, 'text');
+    }
+    check('ink', 'hover', 4.5, 'hover text');
+    check('ink', 'select', 4.5, 'selected text');
+    check('ink', 'accent-soft', 4.5, 'accent surface text');
+    for (const background of ['bg', 'panel', 'panel-2', 'hover', 'select', 'accent-soft']) check('focus', background, 3, 'focus indicator');
+    for (const background of ['panel', 'panel-2']) check('good', background, 4.5, 'status text');
+    check('accent-ink', 'accent', 4.5, 'button text');
+    check('warn-ink', 'warn-bg', 4.5, 'warning text');
+    check('crit', 'crit-bg', 4.5, 'error text');
+    check('info-ink', 'info-bg', 4.5, 'info text');
+
+    // Protocol colors are graphical distinctions; require 3:1 against chart surfaces.
+    for (const foreground of ['s1', 's2', 's3', 's4', 's5', 's6', 's7', 's8', 's-other']) {
+      for (const background of ['bg', 'panel', 'panel-2']) check(foreground, background, 3, 'chart color');
+    }
+    return failures;
+  });
+}
+
 /** Records every request so tests can assert nothing leaves the origin. */
 function watchRequests(page: Page) {
   const all: Request[] = [];
@@ -75,13 +121,37 @@ test('axe WCAG 2.1 AA audit: start screen, every view and drawer in light and da
       await view(page, id);
       await expect(page.locator('.view-head h2').first()).toBeVisible();
       await auditA11y(page, `${id} (${theme})`);
+      if (id === 'network') {
+        const list = page.locator('.network-list');
+        await list.locator('summary').focus();
+        await page.keyboard.press('Enter');
+        await expect(list.locator('table')).toBeVisible();
+        await auditA11y(page, `network host links list (${theme})`);
+        await list.locator('summary').click();
+      }
     }
 
     await view(page, 'http');
     await page.getByRole('grid', { name: 'HTTP messages' }).getByText('/index.html').click();
     await expect(page.getByRole('dialog')).toBeVisible();
-    await auditA11y(page, `HTTP drawer (${theme})`);
+    const drawer = page.getByRole('dialog');
+    const closeDrawer = drawer.getByRole('button', { name: 'Close' });
+    await expect(closeDrawer).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    expect(await page.evaluate(() => document.activeElement?.closest('[role="dialog"]') !== null)).toBe(true);
+    await page.keyboard.press('Tab');
+    await expect(closeDrawer).toBeFocused();
+    await auditA11y(page, `packet drawer opened from an HTTP row (${theme})`);
     await page.keyboard.press('Escape');
+  }
+});
+
+test('text and chart colors meet WCAG contrast thresholds in light and dark themes', async ({ page }) => {
+  await page.goto('./');
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate((value) => { document.documentElement.dataset.theme = value; }, theme);
+    const failures = await contrastFailures(page);
+    expect(failures, `${theme} theme contrast failures:\n${failures.join('\n')}`).toEqual([]);
   }
 });
 
@@ -153,6 +223,18 @@ test('HTTP capture: requests, hosts, sessions, graph and packet list', async ({ 
 
   await view(page, 'network');
   await expect(page.locator('.graph-node')).toHaveCount(4);
+  const networkList = page.locator('.network-list');
+  const networkSummary = networkList.locator('summary');
+  await networkSummary.focus();
+  await page.keyboard.press('Enter');
+  const networkTable = page.getByRole('table', { name: 'Network graph links with endpoints, traffic totals, main protocol, and conversations' });
+  await expect(networkTable).toBeVisible();
+  await expect(networkTable.getByRole('columnheader')).toHaveText(['Hosts', 'Traffic', 'Packets', 'Main protocol', 'Conversations', 'Action']);
+  const firstLink = networkTable.getByRole('button').first();
+  await expect(firstLink).toHaveAttribute('aria-label', /^View conversations between /);
+  await firstLink.focus();
+  await page.keyboard.press('Enter');
+  await view(page, 'connections');
 
   await view(page, 'packets');
   await expect(page.getByText('31 of 31 packets')).toBeVisible();

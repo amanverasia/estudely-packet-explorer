@@ -21,7 +21,7 @@ Drop in a `.pcap` or `.pcapng` file and get organised views of its DNS lookups, 
 | **TLS** | Server names (SNI), offered and negotiated versions, cipher suites and ALPN, cleartext certificates, and per-session decryption status |
 | **Hosts** | Every IPv4 and IPv6 address with its MAC addresses and their registered vendor, traffic sent and received, peers, the ports others connected to (with the evidence seen), and names learned from the capture, each labelled with its source |
 | **Connections** | TCP and UDP sessions with traffic in each direction, timing and TCP flags, with drill-down into each session's protocol records and packets |
-| **Network** | An interactive graph of which hosts talked to which, sized by traffic and coloured by protocol |
+| **Network** | An interactive graph of which hosts talked to which, sized by traffic and coloured by protocol, with a keyboard-accessible host-link table |
 | **Packet list** | Wireshark's own packet list and display filters, with the full decode and hex bytes of any packet |
 
 Every table can be searched, sorted and exported as CSV, and the whole analysis can be saved as a JSON summary. You can also download a self-contained HTML report of whole-capture aggregates that opens offline and makes no external requests. It includes names and addresses observed in the capture, so share it carefully; packet bytes, payloads, stream contents and file inventory or contents are excluded. Exports are ordinary browser downloads. Captured files are untrusted: the Files view never previews or opens contents, and saves an object only after you select Download.
