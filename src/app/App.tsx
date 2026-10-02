@@ -9,6 +9,7 @@ import { OfflineStatus, UpdateBanner } from './components/Offline';
 import { Ctx, type AppCtx, type DrawerSpec } from './context';
 import { applySharedFilter, type SharedFilter } from './filtering';
 import { downloadBlob, safeBase, summaryJson } from './download';
+import { htmlReport } from './report';
 import { EngineClient, HARD_LIMIT_BYTES, SOFT_LIMIT_BYTES, type EngineState } from './engine';
 import { bytes, duration, num } from './format';
 import { Overview } from './views/Overview';
@@ -346,6 +347,7 @@ function Workspace(props: {
                 </div>
               </div>
               <div className="actions">
+                <button className="btn" onClick={() => downloadBlob(`${safeBase(c.fileName)}-report.html`, new Blob([htmlReport(sourceModel)], { type: 'text/html;charset=utf-8' }))}>Download HTML report</button>
                 <button className="btn" onClick={() => downloadBlob(`${safeBase(c.fileName)}-summary.json`, new Blob([summaryJson(sourceModel)], { type: 'application/json' }))}>Export JSON summary</button>
                 <OpenButton onOpen={props.onOpen} label="Open another" />
                 <button className="btn" onClick={props.onClose} title="Close this capture and free its memory">Close</button>

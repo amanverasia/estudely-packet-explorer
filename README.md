@@ -24,7 +24,7 @@ Drop in a `.pcap` or `.pcapng` file and get organised views of its DNS lookups, 
 | **Network** | An interactive graph of which hosts talked to which, sized by traffic and coloured by protocol |
 | **Packet list** | Wireshark's own packet list and display filters, with the full decode and hex bytes of any packet |
 
-Every table can be searched, sorted and exported as CSV, and the whole analysis can be saved as a JSON summary. Both are ordinary downloads. Captured files are untrusted: the Files view never previews or opens contents, and saves an object only after you select Download.
+Every table can be searched, sorted and exported as CSV, and the whole analysis can be saved as a JSON summary. You can also download a self-contained HTML report of whole-capture aggregates that opens offline and makes no external requests. It includes names and addresses observed in the capture, so share it carefully; packet bytes, payloads, stream contents and file inventory or contents are excluded. Exports are ordinary browser downloads. Captured files are untrusted: the Files view never previews or opens contents, and saves an object only after you select Download.
 
 ## Decrypting TLS locally
 
@@ -69,7 +69,7 @@ Requires Node 20 or later. Hosting notes, including the security headers to set,
 
 ## Roadmap
 
-Planned work is tracked as [GitHub issues](https://github.com/amanverasia/estudely-packet-explorer/issues). The next planned feature is a downloadable single-file HTML report.
+Planned work is tracked as [GitHub issues](https://github.com/amanverasia/estudely-packet-explorer/issues).
 
 ## Licence and credits
 

@@ -20,7 +20,7 @@
 | Packet list | Wireshark's columns for every packet, Wireshark display filters, paged | Wiregasm `getFrames` |
 | Packet drawer | For any record: its source packet numbers; for the chosen packet the exact timestamp, Wireshark's full field tree and a hex dump with field highlighting | Wiregasm `getFrame` |
 
-Exports: CSV from every table (rows as currently searched/sorted), JSON summary of the whole model. Both are browser downloads.
+Exports: CSV from every table (rows as currently searched/sorted), JSON summary of the whole model, and a self-contained HTML report of whole-capture aggregates. The HTML report opens offline and makes no external requests. It includes names and addresses observed in the capture, but excludes packet bytes, payloads, stream contents, packet-by-packet details, TLS key logs, certificate details, the Files view inventory and downloaded file contents. Reports and other exports are browser downloads.
 
 ## Shared filters
 

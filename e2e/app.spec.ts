@@ -453,6 +453,34 @@ test('exports are local downloads', async ({ page }) => {
   expect(reqs.offenders()).toEqual([]);
 });
 
+test('HTML report is a self-contained aggregate snapshot without captured payloads', async ({ page }) => {
+  const reqs = watchRequests(page);
+  await page.goto('./');
+  await openCapture(page, 'http.pcap');
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download HTML report' }).click();
+  const reportDownload = await download;
+  expect(reportDownload.suggestedFilename()).toBe('http-report.html');
+  const html = Buffer.concat(await (await reportDownload.createReadStream()).toArray()).toString('utf8');
+
+  expect(html).toContain('<!doctype html>');
+  expect(html).toContain('Whole-capture aggregates');
+  expect(html).toContain('names and network addresses');
+  expect(html).toContain('www.example.test');
+  expect(html).toContain('10.0.0.5');
+  expect(html).toContain('does not contain packet bytes, payloads');
+  expect(html).not.toContain('captured content must not run');
+  expect(html).not.toMatch(/<(?:script|link|img|iframe|source)\b[^>]*(?:src|href)\s*=/i);
+  expect(html).not.toMatch(/url\(\s*['"]?(?:https?:)?\/\//i);
+
+  // Parse the saved snapshot as a document too; any active content or external
+  // asset accidentally added to the report would execute or issue a request.
+  await page.setContent(html);
+  await expect(page).toHaveTitle(/Packet capture report/);
+  await expect(page.getByRole('heading', { name: 'Hosts' })).toBeVisible();
+  expect(reqs.offenders()).toEqual([]);
+});
+
 for (const vp of [{ name: 'tablet', width: 820, height: 1180 }, { name: 'phone', width: 390, height: 844 }]) {
   test(`${vp.name} layout has no horizontal page scroll`, async ({ page }) => {
     await page.setViewportSize({ width: vp.width, height: vp.height });
