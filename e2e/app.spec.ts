@@ -137,6 +137,9 @@ test('axe WCAG 2.1 AA audit: start screen, every view and drawer in light and da
     const drawer = page.getByRole('dialog');
     const closeDrawer = drawer.getByRole('button', { name: 'Close' });
     await expect(closeDrawer).toBeFocused();
+    // Wait until the packet decode has finished adding its field-tree buttons;
+    // otherwise WebKit can update the last tab stop between these key presses.
+    await expect(drawer.getByRole('heading', { name: 'Decoded fields' })).toBeVisible();
     await page.keyboard.press('Shift+Tab');
     expect(await page.evaluate(() => document.activeElement?.closest('[role="dialog"]') !== null)).toBe(true);
     await page.keyboard.press('Tab');
