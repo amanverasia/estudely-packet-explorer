@@ -223,7 +223,7 @@ function Landing({ state, onOpen, onCancel, theme, setTheme }: { state: EngineSt
         <div className="landing-list">
           <div><h3>Formats</h3>pcap and pcapng (including multiple interfaces), plus other formats Wireshark 4.4's file reader supports, such as gzip-compressed pcap, snoop and ERF.</div>
           <div><h3>Size</h3>Tested up to 350 MB and 400,000 packets. Files over {bytes(HARD_LIMIT_BYTES)} are refused; over {bytes(SOFT_LIMIT_BYTES)} expect slow analysis.</div>
-          <div><h3>Privacy</h3>No uploads, analytics or lookups. The capture stays in this tab's memory until you close it or the tab.</div>
+          <div><h3>Privacy</h3>No uploads or analytics. Optional DB-IP files are downloaded only when you choose and looked up locally; capture addresses are never sent. The capture stays in this tab's memory until you close it or the tab.</div>
           <OfflineStatus />
         </div>
       </div>

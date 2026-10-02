@@ -543,6 +543,18 @@ def vendors_fixture():
     wrpcap(os.path.join(HERE, "vendors.pcap"), stamp(P))
 
 
+def ip_data_fixture():
+    """Public IPv4/IPv6 and private endpoints for local DB-IP lookup UI coverage."""
+    c = Clock()
+    P = []
+    P += tcp_flow(c, MAC_CLIENT, MAC_SERVER, "8.8.8.8", "1.1.1.1", 40400, 443,
+                  [("c", b"client", None), ("s", b"server", None)])
+    P += tcp_flow(c, MAC_CLIENT, MAC_SERVER, "2001:4860::1", "2606:4700:4700::1111", 40401, 443,
+                  [("c", b"client", None), ("s", b"server", None)], ipv6=True)
+    P += [(eth(MAC_CLIENT, MAC_SERVER) / IP(src="10.0.0.5", dst="8.8.8.8") / UDP(sport=40402, dport=443) / Raw(b"private address"), c.tick())]
+    wrpcap(os.path.join(HERE, "ip-data.pcap"), stamp(P))
+
+
 # --------------------------------------------------------------- Follow stream
 def follow_fixture():
     """A TCP download larger than the follow-stream view cap, plus a short UDP exchange."""
@@ -722,7 +734,7 @@ FIXTURES = {
     "dns": dns_fixture, "http": http_fixture, "sources": source_fixture, "http-pairing": http_pairing_fixture,
     "http2": http2_fixture, "tls": tls_fixture, "tls13": tls13_fixture, "tls13-h2": tls13_http2_fixture, "edge": edge_fixture,
     "pcapng": pcapng_fixture, "vendors": vendors_fixture, "protocols": protocols_fixture,
-    "protocols-edge": protocols_edge_fixture, "follow": follow_fixture,
+    "protocols-edge": protocols_edge_fixture, "follow": follow_fixture, "ip-data": ip_data_fixture,
 }
 
 if __name__ == "__main__":

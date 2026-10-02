@@ -612,6 +612,41 @@ test('Hosts view shows registered MAC vendors and flags locally administered add
   await expect(hosts).toContainText('00:1b:21:aa:bb:cc');
 });
 
+test('Hosts can use optional DB-IP CSV indexes locally and keep them for offline use', async ({ page }) => {
+  const reqs = watchRequests(page);
+  await page.goto('./');
+  await openCapture(page, 'ip-data.pcap');
+  await view(page, 'hosts');
+  const hosts = page.getByRole('grid', { name: 'Hosts' });
+  await page.getByLabel('Import Country CSV').setInputFiles({
+    name: 'dbip-country-lite-2026-10.csv', mimeType: 'text/csv',
+    buffer: Buffer.from('1.1.1.0,1.1.1.255,AU\n8.8.8.0,8.8.8.255,US\n10.0.0.0,10.255.255.255,ZZ\n2001:4860::,2001:4860::ffff,US\n2606:4700:4700::,2606:4700:4700::ffff,US\n'),
+  });
+  const google = hosts.getByRole('row').filter({ hasText: '8.8.8.8' });
+  await expect(google).toContainText('US');
+  await page.getByLabel('Import ASN CSV').setInputFiles({
+    name: 'dbip-asn-lite-2026-10.csv', mimeType: 'text/csv',
+    buffer: Buffer.from('8.8.8.0,8.8.8.255,15169,"Google, LLC"\n10.0.0.0,10.255.255.255,64500,Private owner\n2001:4860::,2001:4860::ffff,15169,"Google, LLC"\n2606:4700:4700::,2606:4700:4700::ffff,13335,Cloudflare\n'),
+  });
+  await expect(google).toContainText('AS15169 Google, LLC');
+  await expect(hosts.getByRole('row').filter({ hasText: '2001:4860::1' })).toContainText('AS15169 Google, LLC');
+  await expect(hosts.getByRole('row').filter({ hasText: '2606:4700:4700::1111' })).toContainText('AS13335 Cloudflare');
+  const privateHost = hosts.getByRole('row').filter({ hasText: '10.0.0.5' });
+  await expect(privateHost).not.toContainText('ZZ');
+  await expect(privateHost).not.toContainText('AS64500');
+  await google.click();
+  await expect(page.getByText('Country (approx.)')).toBeVisible();
+  await expect(page.getByText('Network owner (approx.)')).toBeVisible();
+  await expect(page.getByText(/Ready offline · release 2026-10/).first()).toBeVisible();
+
+  // The imported data survives a reload and is available with the next capture.
+  await page.reload();
+  await openCapture(page, 'ip-data.pcap');
+  await view(page, 'hosts');
+  await expect(page.getByRole('grid', { name: 'Hosts' }).getByRole('row').filter({ hasText: '8.8.8.8' })).toContainText('AS15169 Google, LLC');
+  expect(reqs.offenders()).toEqual([]);
+});
+
 test('DHCP, ARP, ICMP, SSH and QUIC views', async ({ page }) => {
   const reqs = watchRequests(page);
   const errs = errors(page);

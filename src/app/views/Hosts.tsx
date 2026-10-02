@@ -1,23 +1,48 @@
 // Copyright (C) 2026 Estudely and contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type { Host } from '../../engine/types';
 import { DataTable, type Column } from '../components/DataTable';
+import { LocalIpDataPanel } from '../components/LocalIpData';
 import { Note, Panel, Seg, ViewHead } from '../components/bits';
 import { useApp } from '../context';
 import { absTime, bytes, num, plural } from '../format';
+import { lookupLocalIp, type LocalIpDataKind, type LocalIpDatabase, type LocalIpMatch } from '../localIpData';
 
 export function Hosts() {
   const { model, params, go, openDrawer, filter, setHostFilter } = useApp();
   const [family, setFamily] = useState<'all' | '4' | '6'>('all');
   const [selected, setSelected] = useState<string | null>(params.get('host'));
+  const [databases, setDatabases] = useState<Record<LocalIpDataKind, LocalIpDatabase | null>>({ country: null, asn: null });
   const rows = useMemo(() => model.hosts.filter((h) => family === 'all' || String(h.ipVersion) === family), [model.hosts, family]);
   const host = selected ? model.hosts.find((h) => h.addr === selected) ?? null : null;
   const digits = Math.min(6, model.capture.timestampDigits);
+  const onDatabaseChange = useCallback((kind: LocalIpDataKind, database: LocalIpDatabase | null) => {
+    setDatabases((current) => ({ ...current, [kind]: database }));
+  }, []);
+  const ipMatches = useMemo(() => {
+    const result = new Map<string, { country: LocalIpMatch | null; asn: LocalIpMatch | null }>();
+    for (const h of model.hosts) {
+      const publiclyRoutable = h.scope === 'public' || h.scope === 'global';
+      result.set(h.addr, {
+        country: publiclyRoutable && databases.country ? lookupLocalIp(databases.country, h.addr) : null,
+        asn: publiclyRoutable && databases.asn ? lookupLocalIp(databases.asn, h.addr) : null,
+      });
+    }
+    return result;
+  }, [model.hosts, databases]);
 
   const columns: Column<Host>[] = [
     { key: 'addr', header: 'Address', width: 'minmax(170px, 1.4fr)', value: (h) => h.addr, render: (h) => <span className="mono">{h.addr}</span> },
     { key: 'scope', header: 'Address range', width: '120px', value: (h) => h.scope },
+    { key: 'country', header: 'Approx. country', width: '140px', value: (h) => {
+      const match = ipMatches.get(h.addr)?.country;
+      return match?.kind === 'country' ? match.country : '';
+    }, title: 'Approximate country from the locally installed DB-IP Lite database' },
+    { key: 'asn', header: 'Approx. network owner', width: 'minmax(180px, 1.4fr)', value: (h) => {
+      const match = ipMatches.get(h.addr)?.asn;
+      return match?.kind === 'asn' ? `AS${match.asn} ${match.organization}` : '';
+    }, title: 'Approximate network owner from the locally installed DB-IP Lite database' },
     { key: 'names', header: 'Names seen in capture', width: 'minmax(180px, 1.6fr)', value: (h) => h.names.map((n) => n.name).join(', '),
       render: (h) => h.names.length ? <span>{h.names[0].name}{h.names.length > 1 && <span className="muted"> +{h.names.length - 1}</span>} <span className="muted">({h.names[0].source})</span></span> : '' },
     { key: 'mac', header: 'Source MAC', width: '170px', value: (h) => h.macs.map((m) => m.mac).join(' '),
@@ -39,9 +64,10 @@ export function Hosts() {
       <ViewHead title="Hosts" right={<Seg label="Address family" value={family} onChange={setFamily} options={[{ value: 'all', label: 'All' }, { value: '4', label: 'IPv4' }, { value: '6', label: 'IPv6' }]} />}>
         One row per IP address seen as a packet source or destination. Bytes are original frame lengths.
       </ViewHead>
+      <LocalIpDataPanel databases={databases} onChange={onDatabaseChange} />
       <Note>Ports listed are those observed in this capture's traffic, with the evidence seen for each. They do not show whether a port is open now, and no operating-system or device identification is attempted.</Note>
       {(filter.start !== null || filter.host) && <Note>Sent/received packet and byte totals are recalculated for the selected traffic. MAC addresses, names, ports, peers, and protocol labels remain whole-capture metadata.</Note>}
-      {host && <HostDetail host={host} onClose={() => setSelected(null)} go={go} digits={digits}
+      {host && <HostDetail host={host} ipData={ipMatches.get(host.addr) ?? { country: null, asn: null }} onClose={() => setSelected(null)} go={go} digits={digits}
         onFilter={() => setHostFilter(host.addr)} isFiltered={filter.host === host.addr}
         openFrame={(f, title) => openDrawer({ title, frames: [f] })} startEpoch={model.capture.startEpoch} />}
       <section className="panel">
@@ -53,7 +79,8 @@ export function Hosts() {
   );
 }
 
-function HostDetail({ host: h, onClose, go, onFilter, isFiltered, openFrame, startEpoch, digits }: {
+function HostDetail({ host: h, ipData, onClose, go, onFilter, isFiltered, openFrame, startEpoch, digits }: {
+  ipData: { country: LocalIpMatch | null; asn: LocalIpMatch | null };
   host: Host; onClose: () => void; go: (v: string, p?: Record<string, string>) => void;
   onFilter: () => void; isFiltered: boolean;
   openFrame: (f: number, title: string) => void; startEpoch: string | null; digits: number;
@@ -74,6 +101,8 @@ function HostDetail({ host: h, onClose, go, onFilter, isFiltered, openFrame, sta
             <dt>Peers</dt><dd>{num(h.peers)} addresses in {plural(h.conversations, 'conversation')}</dd>
             <dt>First seen</dt><dd className="mono">{absTime(startEpoch, h.firstSeen, digits)}</dd>
             <dt>Last seen</dt><dd className="mono">{absTime(startEpoch, h.lastSeen, digits)}</dd>
+            {ipData.country?.kind === 'country' && <><dt>Country (approx.)</dt><dd>{ipData.country.country} · <a href="https://db-ip.com" target="_blank" rel="noreferrer">DB-IP</a></dd></>}
+            {ipData.asn?.kind === 'asn' && <><dt>Network owner (approx.)</dt><dd>AS{ipData.asn.asn}{ipData.asn.organization ? ` · ${ipData.asn.organization}` : ''} · <a href="https://db-ip.com" target="_blank" rel="noreferrer">DB-IP</a></dd></>}
             <dt>Client ports</dt><dd>{h.clientPortCount ? `${num(h.clientPortCount)} distinct source ports used when starting conversations` : 'none observed'}</dd>
             <dt>Protocols</dt><dd>{h.protocols.join(', ') || '—'}</dd>
           </dl>
