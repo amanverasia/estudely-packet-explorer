@@ -38,8 +38,13 @@ async function storageUsage(): Promise<number | null> {
   }
 }
 
-async function markReady() {
-  set({ offline: { kind: 'ready', usage: await storageUsage() } });
+function markReady() {
+  // Service worker activation confirms the precache is installed. Report that
+  // immediately; estimating a large cache can be slow in some browsers.
+  set({ offline: { kind: 'ready', usage: null } });
+  void storageUsage().then((usage) => {
+    if (state.offline.kind === 'ready') set({ offline: { kind: 'ready', usage } });
+  });
 }
 
 function watchInstalling(sw: ServiceWorker) {

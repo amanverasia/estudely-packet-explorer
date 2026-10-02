@@ -39,6 +39,17 @@ test('has a web app manifest with icons and a service worker scoped to the app d
   expect(scope).toBe(baseURL);
 });
 
+test('offline readiness does not wait for a slow storage estimate', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'storage', {
+      configurable: true,
+      value: { estimate: () => new Promise(() => {}) },
+    });
+  });
+  await page.goto('./');
+  await waitForOffline(page);
+});
+
 /**
  * Cuts the page off from the server. In WebKit, Playwright's setOffline (and
  * routing) block requests before the service worker sees them, so even cached
