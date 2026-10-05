@@ -88,6 +88,42 @@ async function installPacketPageRetryFault(page: Page) {
     const state = { calls: [] as number[], failed: new Set<number>(), sample: null as Record<string, any> | null };
     Object.defineProperty(window, '__packetPageRetryTest', { configurable: true, value: state });
     const pending = new WeakMap<Worker, Map<number, number>>();
+    let workerPrototype: object | null = Worker.prototype;
+    let onmessageDescriptor: PropertyDescriptor | undefined;
+    while (workerPrototype && !onmessageDescriptor) {
+      onmessageDescriptor = Object.getOwnPropertyDescriptor(workerPrototype, 'onmessage');
+      workerPrototype = Object.getPrototypeOf(workerPrototype);
+    }
+    if (onmessageDescriptor?.get && onmessageDescriptor.set) {
+      Object.defineProperty(Worker.prototype, 'onmessage', {
+        configurable: true,
+        enumerable: onmessageDescriptor.enumerable,
+        get() { return onmessageDescriptor!.get!.call(this); },
+        set(handler: ((this: Worker, event: MessageEvent) => unknown) | null) {
+          if (!handler) { onmessageDescriptor!.set!.call(this, handler); return; }
+          const wrapped = function (this: Worker, event: MessageEvent) {
+            const response = event.data as { type?: string; id?: number; ok?: boolean; data?: { rows?: Record<string, any>[]; matched?: number } };
+            const requests = pending.get(this);
+            const skip = response.id === undefined ? undefined : requests?.get(response.id);
+            if (response.type === 'response' && response.ok && skip !== undefined && response.data) {
+              if (skip === 0) {
+                state.sample = response.data.rows?.[0] ?? state.sample;
+                response.data.matched = 1001;
+              } else if (skip === 500) {
+                response.data.matched = 1001;
+                if (state.sample) {
+                  const columns = [...state.sample.columns];
+                  columns[0] = '501';
+                  response.data.rows = [{ ...state.sample, number: 501, columns }];
+                }
+              }
+            }
+            return handler.call(this, event);
+          };
+          onmessageDescriptor!.set!.call(this, wrapped);
+        },
+      });
+    }
     const proto = Worker.prototype as unknown as { postMessage: (message: unknown, transfer?: Transferable[]) => void };
     const original = proto.postMessage;
     proto.postMessage = function (this: Worker, message: unknown, transfer?: Transferable[]) {
@@ -96,22 +132,6 @@ async function installPacketPageRetryFault(page: Page) {
       if (!requests) {
         requests = new Map();
         pending.set(this as unknown as Worker, requests);
-        this.addEventListener('message', (event) => {
-          const response = (event as MessageEvent).data as { type?: string; id?: number; ok?: boolean; data?: { rows?: Record<string, any>[]; matched?: number } };
-          const skip = response.id === undefined ? undefined : requests!.get(response.id);
-          if (response.type !== 'response' || !response.ok || skip === undefined || !response.data) return;
-          if (skip === 0) {
-            state.sample = response.data.rows?.[0] ?? state.sample;
-            response.data.matched = 1001;
-          } else if (skip === 500) {
-            response.data.matched = 1001;
-            if (state.sample) {
-              const columns = [...state.sample.columns];
-              columns[0] = '501';
-              response.data.rows = [{ ...state.sample, number: 501, columns }];
-            }
-          }
-        });
       }
       if (msg.type === 'request' && msg.req?.kind === 'packetList' && typeof msg.req.skip === 'number' && typeof msg.id === 'number') {
         const skip = msg.req.skip;
@@ -304,7 +324,7 @@ test('packet-list pages can be retried after a transient worker request failure'
   await expect(page.getByRole('columnheader', { name: 'No.' })).toBeVisible();
 
   const grid = page.getByRole('grid', { name: 'Packets' });
-  await grid.evaluate((element) => { element.scrollTop = 15000; element.dispatchEvent(new Event('scroll')); });
+  await grid.evaluate((element) => { element.scrollTop = 22000; element.dispatchEvent(new Event('scroll')); });
   await expect(page.getByText(/Could not load packet page 2/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Retry packet page 2' })).toBeVisible();
   await page.waitForTimeout(200);
