@@ -185,58 +185,103 @@ function Landing({ state, onOpen, onCancel, onCompare, theme, setTheme }: { stat
       onDragLeave={() => setOver(false)}
       onDrop={(e) => { e.preventDefault(); setOver(false); const f = e.dataTransfer.files?.[0]; if (f && !working) { onOpen(f, keyLog); setKeyLog(null); } }}>
       <div className="landing-card">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ flex: 1 }}>
-            <div className="brand-name" style={{ fontSize: 18 }}>Estudely Packet Explorer</div>
-            <div className="muted">Protocol dashboards for packet captures</div>
+        <header className="landing-header">
+          <div className="landing-brand">
+            <span className="landing-brand-mark" aria-hidden="true">EP</span>
+            <div>
+              <div className="brand-name">Estudely Packet Explorer</div>
+              <div className="muted">Protocol dashboards for packet captures</div>
+            </div>
           </div>
           <ThemeButton theme={theme} setTheme={setTheme} />
-        </div>
-        {working ? (
-          <section className="drop" aria-live="polite">
-            <h2 style={{ overflowWrap: 'anywhere' }}>{working.fileName}</h2>
-            <p className="muted">{bytes(working.fileSize)}, {duration((now - working.startedAt) / 1000)} elapsed</p>
-            <div className={`progress${working.progress.fraction === null ? ' indeterminate' : ''}`} role="progressbar"
-              aria-valuemin={0} aria-valuemax={100} aria-valuenow={working.progress.fraction === null ? undefined : Math.round(working.progress.fraction * 100)} aria-label="Analysis progress">
-              <div style={{ width: working.progress.fraction === null ? undefined : `${Math.round(working.progress.fraction * 100)}%` }} />
+        </header>
+        <div className="landing-hero">
+          <div className="landing-copy">
+            <p className="landing-kicker"><span aria-hidden="true" />BROWSER-BASED PACKET ANALYSIS</p>
+            <h1>Make sense of every packet.</h1>
+            <p className="landing-lede">Explore protocols, hosts, conversations and timelines in clear dashboards, powered by Wireshark and running right here in your browser.</p>
+            <div className="landing-assurance">
+              <span className="landing-assurance-icon"><ShieldIcon /></span>
+              <span><strong>Private by design</strong><br />Your capture stays on this device.</span>
             </div>
-            <p>{working.progress.message}</p>
-            <div className="steps"><ol>
-              {PHASES.map((p, i) => (
-                <li key={p.phase} data-state={i < phaseIdx ? 'done' : i === phaseIdx ? 'active' : 'todo'}>
-                  <span aria-hidden="true" style={{ width: 14 }}>{i < phaseIdx ? '✓' : i === phaseIdx ? '›' : ''}</span>{p.label}
-                </li>
-              ))}
-            </ol></div>
-            <button className="btn" onClick={onCancel}>Cancel</button>
-          </section>
-        ) : (
-          <section className={`drop${over ? ' over' : ''}`}>
-            <h2>Open a packet capture</h2>
-            <p className="ink2" style={{ maxWidth: '52ch' }}>Choose a .pcap or .pcapng file, or drop it here. Wireshark's dissectors run inside this page, so the file is opened, not uploaded.</p>
-            <OpenButton onOpen={onOpen} primary label="Choose capture file" keyLog={keyLog} onKeyLogChange={setKeyLog} />
-            <button className="btn" onClick={onCompare}>Compare two captures</button>
-            <p className="local-note" style={{ fontSize: 13 }}><ShieldIcon />{LOCAL_NOTICE}</p>
-          </section>
-        )}
-        {state.kind === 'error' && (
-          <div className="note crit" role="alert">
-            <div><b>{state.fileName ? `Could not analyse ${state.fileName}.` : 'Something went wrong.'}</b> {state.message}</div>
           </div>
-        )}
-        {working && working.fileSize > SOFT_LIMIT_BYTES && (
-          <div className="note warn">{working.fileSize > HARD_LIMIT_BYTES
-            ? <>Large capture: analysis is capped at the first {bytes(HARD_LIMIT_BYTES)} of capture data. If the cap is reached, results are marked partial.</>
-            : <>Large capture: analysis takes roughly a minute per 400,000 packets and needs several times the file size in memory. You can cancel at any time.</>}</div>
-        )}
-        <div className="landing-list">
-          <div><h3>Formats</h3>pcap and pcapng (including multiple interfaces), plus other formats Wireshark 4.4's file reader supports, such as gzip-compressed pcap, snoop and ERF.</div>
-          <div><h3>Size</h3>Tested up to 350 MB and 400,000 packets. Analysis is capped at {bytes(HARD_LIMIT_BYTES)} of capture data; reaching the cap produces clearly marked partial results. Over {bytes(SOFT_LIMIT_BYTES)} expect slow analysis.</div>
-          <div><h3>Privacy</h3>No uploads or analytics. Optional DB-IP files are downloaded only when you choose and looked up locally; capture addresses are never sent. The capture stays in this tab's memory until you close it or the tab.</div>
-          <OfflineStatus />
+          <div className="landing-action-column">
+            {working ? (
+              <section className="drop landing-drop landing-processing" aria-live="polite">
+                <p className="landing-kicker">ANALYZING CAPTURE</p>
+                <h2 style={{ overflowWrap: 'anywhere' }}>{working.fileName}</h2>
+                <p className="muted">{bytes(working.fileSize)}, {duration((now - working.startedAt) / 1000)} elapsed</p>
+                <div className={`progress${working.progress.fraction === null ? ' indeterminate' : ''}`} role="progressbar"
+                  aria-valuemin={0} aria-valuemax={100} aria-valuenow={working.progress.fraction === null ? undefined : Math.round(working.progress.fraction * 100)} aria-label="Analysis progress">
+                  <div style={{ width: working.progress.fraction === null ? undefined : `${Math.round(working.progress.fraction * 100)}%` }} />
+                </div>
+                <p>{working.progress.message}</p>
+                <div className="steps"><ol>
+                  {PHASES.map((p, i) => (
+                    <li key={p.phase} data-state={i < phaseIdx ? 'done' : i === phaseIdx ? 'active' : 'todo'}>
+                      <span aria-hidden="true" style={{ width: 14 }}>{i < phaseIdx ? '✓' : i === phaseIdx ? '›' : ''}</span>{p.label}
+                    </li>
+                  ))}
+                </ol></div>
+                <button className="btn" onClick={onCancel}>Cancel</button>
+              </section>
+            ) : (
+              <section className={`drop landing-drop${over ? ' over' : ''}`}>
+                <div className="landing-file-icon" aria-hidden="true">
+                  <svg viewBox="0 0 32 32" fill="none">
+                    <path d="M8 3.75h10l7 7V26a2.25 2.25 0 0 1-2.25 2.25h-14A2.25 2.25 0 0 1 6.5 26V6A2.25 2.25 0 0 1 8.75 3.75Z" />
+                    <path d="M18 4v7h7M16 23v-7m-3 3 3-3 3 3" />
+                  </svg>
+                </div>
+                <div>
+                  <h2>Open a packet capture</h2>
+                  <p className="ink2">Choose a .pcap or .pcapng file, or drop it here. Wireshark's dissectors run in this page, so your file is opened, not uploaded.</p>
+                </div>
+                <div className="landing-upload-controls">
+                  <OpenButton onOpen={onOpen} primary label="Choose capture file" keyLog={keyLog} onKeyLogChange={setKeyLog} />
+                  <button className="btn" onClick={onCompare}>Compare two captures</button>
+                </div>
+                <p className="local-note landing-local-note"><ShieldIcon />{LOCAL_NOTICE}</p>
+              </section>
+            )}
+            {state.kind === 'error' && (
+              <div className="note crit" role="alert">
+                <div><b>{state.fileName ? `Could not analyse ${state.fileName}.` : 'Something went wrong.'}</b> {state.message}</div>
+              </div>
+            )}
+            {working && working.fileSize > SOFT_LIMIT_BYTES && (
+              <div className="note warn">{working.fileSize > HARD_LIMIT_BYTES
+                ? <>Large capture: analysis is capped at the first {bytes(HARD_LIMIT_BYTES)} of capture data. If the cap is reached, results are marked partial.</>
+                : <>Large capture: analysis takes roughly a minute per 400,000 packets and needs several times the file size in memory. You can cancel at any time.</>}</div>
+            )}
+          </div>
         </div>
+        <section className="landing-details" aria-label="Capture support and privacy">
+          <article className="landing-detail">
+            <span className="landing-detail-label">FORMATS</span>
+            <h3>Bring your capture</h3>
+            <p>pcap and pcapng, including multiple interfaces, plus Wireshark 4.4 formats such as gzip-compressed pcap, snoop and ERF.</p>
+          </article>
+          <article className="landing-detail">
+            <span className="landing-detail-label">CAPACITY</span>
+            <h3>Large captures still open</h3>
+            <p>The first {bytes(HARD_LIMIT_BYTES)} of capture data is analyzed; if there is more, results are marked partial. Tested up to 350 MB and 400,000 packets; expect slower analysis above {bytes(SOFT_LIMIT_BYTES)}.</p>
+          </article>
+          <article className="landing-detail">
+            <span className="landing-detail-label">PRIVACY</span>
+            <h3>Capture stays local</h3>
+            <p>No uploads or analytics. Optional DB-IP files are only downloaded when you choose; capture addresses are never sent.</p>
+          </article>
+          <article className="landing-detail landing-detail-offline">
+            <span className="landing-detail-label">AVAILABILITY</span>
+            <OfflineStatus />
+          </article>
+        </section>
+        <footer className="landing-footer">
+          <span>When opened, a capture stays in this tab's memory only and is never written to storage.</span>
+          <BuildTag className="corner" />
+        </footer>
       </div>
-      <BuildTag className="corner" />
     </main>
   );
 }

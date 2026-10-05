@@ -327,6 +327,24 @@ p { margin: 0; }
 /* ---------- landing ---------- */
 .landing { min-height: 100%; display: grid; place-items: center; padding: 32px 16px; }
 .landing-card { width: min(720px, 100%); display: grid; gap: 22px; }
+.landing:not(.compare-page) { min-height: 100vh; display: block; padding: clamp(22px, 4vw, 48px) clamp(18px, 5vw, 64px) 24px; }
+.landing:not(.compare-page) > .landing-card { width: min(1120px, 100%); margin: 0 auto; gap: clamp(30px, 4vw, 48px); }
+.landing-header { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.landing-brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.landing-brand-mark { width: 38px; height: 38px; display: grid; place-items: center; flex: none; border-radius: 11px; background: var(--accent); color: var(--accent-ink); font-size: 24px; line-height: 1; font-weight: 600; letter-spacing: -0.08em; }
+.landing-brand .brand-name { font-size: 16px; }
+.landing-brand .muted { margin-top: 2px; font-size: 12px; }
+.landing-hero { display: grid; grid-template-columns: minmax(0, .92fr) minmax(0, 1.08fr); gap: clamp(32px, 5vw, 68px); align-items: center; padding: 12px 0; }
+.landing-copy { padding: 12px 0; }
+.landing-kicker { display: flex; align-items: center; gap: 9px; color: var(--ink-3); font-size: 11px; font-weight: 600; letter-spacing: .11em; line-height: 1.4; }
+.landing-kicker > span { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+.landing-copy h1 { max-width: 11ch; margin-top: 22px; font-size: clamp(40px, 5vw, 56px); line-height: 1.04; letter-spacing: -.045em; }
+.landing-lede { max-width: 47ch; margin-top: 18px; color: var(--ink-2); font-size: 16px; line-height: 1.6; }
+.landing-assurance { display: flex; align-items: center; gap: 12px; width: fit-content; max-width: 100%; margin-top: 28px; padding: 11px 14px; border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--rule)); border-radius: 9px; background: color-mix(in srgb, var(--accent-soft) 55%, var(--panel)); color: var(--ink-2); font-size: 13px; line-height: 1.45; }
+.landing-assurance strong { color: var(--ink); font-weight: 600; }
+.landing-assurance-icon { display: grid; place-items: center; width: 30px; height: 30px; flex: none; border-radius: 8px; background: var(--accent-soft); color: var(--accent); }
+.landing-assurance-icon svg { width: 16px; height: 16px; }
+.landing-action-column { display: grid; gap: 12px; min-width: 0; }
 .compare-page > .landing-card { width: min(1120px, 100%); align-self: start; margin: 16px auto; }
 .compare-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
 .compare-head h1 { font-size: 24px; margin: 6px 0; }
@@ -338,14 +356,34 @@ p { margin: 0; }
 .compare-baseline { display: grid; justify-items: start; gap: 8px; }
 .compare-progress { display: grid; gap: 10px; }
 .compare-table-panel .panel-body { padding-top: 10px; }
+.drop.landing-drop { width: 100%; justify-items: start; gap: 16px; padding: clamp(22px, 3vw, 32px); border: 1px solid var(--rule); border-radius: 13px; background: var(--panel); text-align: left; box-shadow: 0 16px 42px color-mix(in srgb, var(--ink) 8%, transparent); }
+.drop.landing-drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent-soft) 40%, var(--panel)); }
+.drop.landing-drop h2 { font-size: 21px; }
+.landing-drop p.ink2 { max-width: 48ch; color: var(--ink-2); line-height: 1.55; }
+.landing-file-icon { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 12px; background: var(--accent-soft); color: var(--accent); }
+.landing-file-icon svg { width: 30px; height: 30px; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.landing-upload-controls { display: grid; justify-items: start; gap: 10px; width: 100%; }
+.landing-upload-controls > div:first-child { width: 100%; }
+.landing-upload-controls > div:first-child > div:first-child { gap: 8px; }
+.landing-upload-controls > .btn { justify-content: center; }
+.landing-local-note { margin-top: 2px; font-size: 12px; line-height: 1.5; }
+.drop.landing-processing { align-content: start; }
+.landing-processing .landing-kicker { margin-bottom: -5px; }
+.landing-processing > p:not(.landing-kicker) { color: var(--ink-2); }
+.landing-details { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.landing-detail { min-width: 0; padding: 17px 18px; border: 1px solid var(--rule); border-radius: 10px; background: var(--panel); }
+.landing-detail-label { display: block; margin-bottom: 10px; color: var(--accent); font-size: 10px; font-weight: 600; letter-spacing: .12em; }
+.landing-detail h3 { margin-bottom: 6px; font-size: 14px; }
+.landing-detail p, .landing-detail [data-testid='offline-status'] { color: var(--ink-2); font-size: 12.5px; line-height: 1.55; }
+.landing-detail [data-testid='offline-status'] h3 { margin-bottom: 6px; color: var(--ink); font-size: 14px; }
+.landing-footer { display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; padding-top: 4px; color: var(--ink-3); font-size: 12px; }
+.landing-footer .build-tag.corner { position: static; justify-items: end; text-align: right; }
 .drop {
   border: 1.5px dashed var(--rule-strong); border-radius: 10px; background: var(--panel); padding: 38px 24px;
   display: grid; gap: 14px; justify-items: center; text-align: center;
 }
 .drop.over { border-color: var(--accent); background: var(--accent-soft); }
 .drop h2 { font-size: 22px; }
-.landing-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 12px 24px; font-size: 13px; color: var(--ink-2); }
-.landing-list h3 { font-size: 13px; color: var(--ink); margin-bottom: 4px; }
 .progress { width: 100%; height: 6px; background: var(--panel-2); border-radius: 3px; overflow: hidden; border: 1px solid var(--rule); }
 .progress > div { height: 100%; background: var(--accent); transition: width 0.2s; }
 .progress.indeterminate > div { width: 30%; animation: slide 1.2s ease-in-out infinite; }
@@ -411,11 +449,36 @@ p { margin: 0; }
 .build-tag a { color: var(--ink-2); text-decoration: none; }
 .build-tag a:hover { color: var(--ink); text-decoration: underline; }
 .build-tag > a { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }
-.landing { position: relative; padding-bottom: 72px; }
+.landing:not(.compare-page) { position: relative; }
 .build-tag.corner { position: absolute; right: 16px; bottom: 16px; justify-items: end; text-align: right; }
 .build-tag.mobile-only { display: none; padding-top: 8px; border-top: 1px solid var(--rule); }
 @media (max-width: 860px) {
+  .landing:not(.compare-page) { padding: 22px 20px 20px; }
+  .landing:not(.compare-page) > .landing-card { gap: 28px; }
+  .landing-hero { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .landing-copy { padding: 4px 0; }
+  .landing-copy h1 { max-width: 14ch; font-size: clamp(38px, 8vw, 50px); }
+  .landing-lede { margin-top: 12px; }
+  .landing-assurance { margin-top: 18px; }
+  .landing-details { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .build-tag.mobile-only { display: grid; }
+}
+@media (max-width: 520px) {
+  .landing:not(.compare-page) { padding: 18px 14px; }
+  .landing-header { align-items: flex-start; }
+  .landing-brand { gap: 9px; }
+  .landing-brand-mark { width: 34px; height: 34px; }
+  .landing-brand .brand-name { font-size: 14px; }
+  .landing-brand .muted { font-size: 11px; }
+  .landing-header > .btn { flex: none; }
+  .landing-copy h1 { font-size: clamp(36px, 10vw, 44px); }
+  .landing-drop { padding: 20px 17px; }
+  .landing-upload-controls > div:first-child > div:first-child { align-items: stretch; flex-direction: column; }
+  .landing-upload-controls .btn { justify-content: center; width: 100%; }
+  .landing-upload-controls > div:first-child > span { display: block; margin-top: 2px; }
+  .landing-details { grid-template-columns: minmax(0, 1fr); }
+  .landing-footer { align-items: flex-start; flex-direction: column; gap: 12px; }
+  .landing-footer .build-tag.corner { justify-items: start; text-align: left; }
 }
 
 /* ---------- follow stream ---------- */
