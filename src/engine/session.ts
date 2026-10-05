@@ -5,7 +5,7 @@
 // Used by the Web Worker in the browser and directly by Node tests.
 import { analyze, type PacketIndex } from './analyze';
 import { parseRecords } from './records';
-import type { AnalysisModel, FollowStream, FrameDetails, PacketListPage, PacketRow, ProtoTreeNode } from './types';
+import { PACKET_ROW_PAGE_SIZE, type AnalysisModel, type FollowStream, type FrameDetails, type PacketListPage, type PacketRow, type ProtoTreeNode } from './types';
 import { protoName, topProtocol } from './analyze';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -128,6 +128,7 @@ export class CaptureSession {
   private sess: any = null;
   private path: string;
   private index: PacketIndex | null = null;
+  private rowsConversationCache: { convId: number; packetIndices: Uint32Array } | null = null;
   private progress: ((p: Progress) => void) | null = null;
   private loadedPackets = 0;
 
@@ -154,6 +155,7 @@ export class CaptureSession {
     keyLog?: Uint8Array | null,
     inputOptions: CaptureInputOptions = {},
   ): Promise<AnalysisModel> {
+    this.rowsConversationCache = null;
     this.progress = onProgress;
     const FS = this.lib.FS;
     // Keep the optional key log only in Wiregasm's in-memory filesystem while
@@ -417,29 +419,48 @@ export class CaptureSession {
   }
 
   /** Lightweight rows from the extraction pass, for drill-downs. */
-  rows(opts: { convId?: number; frames?: number[]; limit?: number }): { rows: PacketRow[]; total: number } {
+  rows(opts: { convId?: number; frames?: number[]; skip?: number; limit?: number }): { rows: PacketRow[]; total: number } {
     const idx = this.index;
     if (!idx) return { rows: [], total: 0 };
-    const limit = opts.limit ?? 50000;
-    const out: PacketRow[] = [];
-    let total = 0;
-    const push = (i: number) => {
-      total++;
-      if (out.length >= limit) return;
+    const skip = opts.skip ?? 0;
+    const limit = opts.limit ?? PACKET_ROW_PAGE_SIZE;
+    if (!Number.isSafeInteger(skip) || skip < 0) throw new Error('Packet row offset must be a nonnegative integer.');
+    if (!Number.isSafeInteger(limit) || limit < 0 || limit > PACKET_ROW_PAGE_SIZE) {
+      throw new Error(`Packet row page size must be an integer from 0 to ${PACKET_ROW_PAGE_SIZE}.`);
+    }
+    const makeRow = (i: number): PacketRow => {
       const p = idx.packets[i];
-      out.push({
+      return {
         frame: p.frame, t: p.t, len: p.len, caplen: p.caplen, src: p.src || p.ethSrc, dst: p.dst || p.ethDst,
         sport: p.sport, dport: p.dport, protocol: protoName(topProtocol(p.protos)), flags: p.flags, iface: p.iface,
         decrypted: p.decrypted,
-      });
+      };
     };
     if (opts.convId !== undefined) {
-      for (let i = 0; i < idx.packets.length; i++) if (idx.convOf[i] === opts.convId) push(i);
+      if (this.rowsConversationCache?.convId !== opts.convId) {
+        let count = 0;
+        for (let i = 0; i < idx.packets.length; i++) if (idx.convOf[i] === opts.convId) count++;
+        const packetIndices = new Uint32Array(count);
+        let cursor = 0;
+        for (let i = 0; i < idx.packets.length; i++) if (idx.convOf[i] === opts.convId) packetIndices[cursor++] = i;
+        this.rowsConversationCache = { convId: opts.convId, packetIndices };
+      }
+      const packetIndices = this.rowsConversationCache.packetIndices;
+      const start = Math.min(skip, packetIndices.length);
+      const end = Math.min(packetIndices.length, start + limit);
+      return { rows: Array.from(packetIndices.subarray(start, end), makeRow), total: packetIndices.length };
     } else if (opts.frames) {
       const want = new Set(opts.frames);
-      for (let i = 0; i < idx.packets.length; i++) if (want.has(idx.packets[i].frame)) push(i);
+      const out: PacketRow[] = [];
+      let total = 0;
+      for (let i = 0; i < idx.packets.length; i++) {
+        if (!want.has(idx.packets[i].frame)) continue;
+        if (total >= skip && out.length < limit) out.push(makeRow(i));
+        total++;
+      }
+      return { rows: out, total };
     }
-    return { rows: out, total };
+    return { rows: [], total: 0 };
   }
 
   close(): void {
@@ -450,5 +471,6 @@ export class CaptureSession {
     try { this.lib.FS.unlink(this.path); } catch { /* ignore */ }
     try { this.lib.FS.unlink(TLS_KEYLOG_PATH); } catch { /* ignore */ }
     this.index = null;
+    this.rowsConversationCache = null;
   }
 }

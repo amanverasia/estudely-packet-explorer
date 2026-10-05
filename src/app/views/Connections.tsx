@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Estudely and contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
 import { useEffect, useMemo, useState } from 'react';
-import type { Conversation, PacketRow, Transport } from '../../engine/types';
+import { PACKET_ROW_PAGE_SIZE, type Conversation, type PacketRow, type Transport } from '../../engine/types';
 import { DataTable, type Column } from '../components/DataTable';
 import { flagText } from '../components/Drawer';
 import { Addr, Note, Panel, Seg, ViewHead } from '../components/bits';
@@ -117,18 +117,28 @@ export function Connections() {
 
 function ConversationDetail({ c, onClose }: { c: Conversation; onClose: () => void }) {
   const { model, engine, openDrawer } = useApp();
-  const [packets, setPackets] = useState<{ rows: PacketRow[]; total: number } | null>(null);
+  const [packets, setPackets] = useState<{ rows: PacketRow[]; total: number; page: number } | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+  const [pageEntry, setPageEntry] = useState('1');
+  const [retry, setRetry] = useState(0);
   const [follow, setFollow] = useState(false);
   const canFollow = (c.transport === 'TCP' || c.transport === 'UDP') && c.stream !== null;
   useEffect(() => {
     setPackets(null);
-    engine.request({ kind: 'rows', convId: c.id, limit: 20000 }).then(setPackets).catch((e: Error) => setErr(e.message));
-  }, [engine, c.id]);
+    setErr(null);
+    setPageEntry(String(page + 1));
+    let live = true;
+    engine.request({ kind: 'rows', convId: c.id, skip: page * PACKET_ROW_PAGE_SIZE, limit: PACKET_ROW_PAGE_SIZE })
+      .then((result) => { if (live) setPackets({ ...result, page }); })
+      .catch((error: unknown) => { if (live) setErr(error instanceof Error ? error.message : String(error)); });
+    return () => { live = false; };
+  }, [engine, c.id, page, retry]);
   const dns = model.dns.filter((d) => d.convId === c.id);
   const http = model.http.filter((h) => h.convId === c.id);
   const tls = model.tls.filter((t) => t.convId === c.id);
   const digits = Math.min(9, model.capture.timestampDigits);
+  const visiblePackets = packets?.page === page ? packets : null;
   const t = c.tcp;
 
   const pcols: Column<PacketRow>[] = [
@@ -197,11 +207,32 @@ function ConversationDetail({ c, onClose }: { c: Conversation; onClose: () => vo
         )}
         <div>
           <h3 style={{ marginBottom: 6 }}>Packets</h3>
-          {err && <div className="note crit">{err}</div>}
-          {!packets ? <p className="muted">Loading packets…</p> : (
+          {err && <div className="note crit" role="alert">{err} <button className="btn small" onClick={() => setRetry((value) => value + 1)}>Retry page</button></div>}
+          {!packets && !err ? <p className="muted" role="status">Loading packet page {num(page + 1)}…</p> : null}
+          {visiblePackets && (
             <div className="panel" style={{ borderRadius: 6 }}>
-              {packets.total > packets.rows.length && <p className="muted" style={{ padding: '8px 16px 0' }}>Showing the first {num(packets.rows.length)} of {num(packets.total)} packets.</p>}
-              <DataTable label="Conversation packets" exportName={`conversation-${c.id}-packets`} rows={packets.rows} columns={pcols} rowKey={(p) => p.frame}
+              <p className="muted" style={{ padding: '8px 16px 0' }}>
+                Showing {visiblePackets.total === 0 ? '0' : `${num(page * PACKET_ROW_PAGE_SIZE + 1)}–${num(page * PACKET_ROW_PAGE_SIZE + visiblePackets.rows.length)}`} of {num(visiblePackets.total)} packets in this conversation, including packets outside active shared filters. Search, sort and CSV export apply to this page.
+              </p>
+              <div className="connection-filters" role="group" aria-label="Conversation packet pages" style={{ padding: '8px 16px', alignItems: 'center' }}>
+                <button className="btn small" onClick={() => setPage(0)} disabled={page === 0}>First</button>
+                <button className="btn small" onClick={() => setPage((value) => Math.max(0, value - 1))} disabled={page === 0}>Previous</button>
+                <span className="muted" aria-live="polite">Page {num(page + 1)} of {num(Math.max(1, Math.ceil(visiblePackets.total / PACKET_ROW_PAGE_SIZE)))}</span>
+                <label className="muted" htmlFor={`conversation-page-${c.id}`}>Go to page</label>
+                <input id={`conversation-page-${c.id}`} className="input" type="number" min={1}
+                  max={Math.max(1, Math.ceil(visiblePackets.total / PACKET_ROW_PAGE_SIZE))} step={1} value={pageEntry}
+                  onChange={(event) => setPageEntry(event.target.value)} style={{ width: 88 }} />
+                <button className="btn small" onClick={() => {
+                  const requested = Number(pageEntry);
+                  const pageCount = Math.max(1, Math.ceil(visiblePackets.total / PACKET_ROW_PAGE_SIZE));
+                  if (Number.isSafeInteger(requested) && requested >= 1 && requested <= pageCount) setPage(requested - 1);
+                }} disabled={!Number.isSafeInteger(Number(pageEntry)) || Number(pageEntry) < 1 || Number(pageEntry) > Math.max(1, Math.ceil(visiblePackets.total / PACKET_ROW_PAGE_SIZE))}>Go</button>
+                <button className="btn small" onClick={() => setPage((value) => Math.min(Math.ceil(visiblePackets.total / PACKET_ROW_PAGE_SIZE) - 1, value + 1))}
+                  disabled={(page + 1) * PACKET_ROW_PAGE_SIZE >= visiblePackets.total}>Next</button>
+                <button className="btn small" onClick={() => setPage(Math.max(0, Math.ceil(visiblePackets.total / PACKET_ROW_PAGE_SIZE) - 1))}
+                  disabled={(page + 1) * PACKET_ROW_PAGE_SIZE >= visiblePackets.total}>Last</button>
+              </div>
+              <DataTable label="Conversation packets" exportName={`conversation-${c.id}-packets-page-${page + 1}`} rows={visiblePackets.rows} columns={pcols} rowKey={(p) => p.frame}
                 onRowClick={(p) => openDrawer({ title: `Packet #${p.frame}`, frames: [p.frame] })} height={360} />
             </div>
           )}

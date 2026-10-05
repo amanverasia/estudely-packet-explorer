@@ -488,6 +488,8 @@ export interface AnalysisModel {
 }
 
 /** Packet row kept in the worker; sent on demand for drill-downs. */
+export const PACKET_ROW_PAGE_SIZE = 500;
+
 export interface PacketRow {
   frame: number;
   t: number;

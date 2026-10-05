@@ -4,12 +4,14 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboa
 import type { FrameDetails, PacketRow, ProtoTreeNode } from '../../engine/types';
 import { useApp, type DrawerSpec } from '../context';
 import { absTime, bytes, endpoint, epochText, num, rel } from '../format';
+import { SOURCE_PACKET_PAGE_SIZE, sourceFramePage } from '../sourceFrames';
 
 export function Drawer({ spec, onClose }: { spec: DrawerSpec; onClose: () => void }) {
   const { engine, model, filter, go } = useApp();
   const frames = useMemo(() => [...new Set(spec.frames)].sort((a, b) => a - b), [spec.frames]);
-  const [current, setCurrent] = useState<number>(spec.focus ?? frames[0]);
-  const [rows, setRows] = useState<Map<number, PacketRow>>(new Map());
+  const initialFrame = spec.focus !== undefined && frames.includes(spec.focus) ? spec.focus : frames[0];
+  const [current, setCurrent] = useState<number | undefined>(initialFrame);
+  const [row, setRow] = useState<PacketRow | null>(null);
   const [details, setDetails] = useState<FrameDetails | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sel, setSel] = useState<ProtoTreeNode | null>(null);
@@ -17,6 +19,11 @@ export function Drawer({ spec, onClose }: { spec: DrawerSpec; onClose: () => voi
   const [copyFallback, setCopyFallback] = useState<{ description: string; text: string } | null>(null);
   const [showingMatches, setShowingMatches] = useState(false);
   const [activeTreePath, setActiveTreePath] = useState('');
+  const [frameSearch, setFrameSearch] = useState('');
+  const [framePage, setFramePage] = useState(() => {
+    const index = initialFrame === undefined ? -1 : frames.indexOf(initialFrame);
+    return index < 0 ? 0 : Math.floor(index / SOURCE_PACKET_PAGE_SIZE);
+  });
   const closeRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
   const onCloseRef = useRef(onClose);
@@ -34,7 +41,11 @@ export function Drawer({ spec, onClose }: { spec: DrawerSpec; onClose: () => voi
   useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
   useEffect(() => {
     actionTokenRef.current++;
-    setCurrent(spec.focus ?? frames[0]);
+    const focused = spec.focus !== undefined && frames.includes(spec.focus) ? spec.focus : frames[0];
+    const index = focused === undefined ? -1 : frames.indexOf(focused);
+    setCurrent(focused);
+    setFrameSearch('');
+    setFramePage(index < 0 ? 0 : Math.floor(index / SOURCE_PACKET_PAGE_SIZE));
     setActionFeedback(null);
     setCopyFallback(null);
     setShowingMatches(false);
@@ -74,13 +85,15 @@ export function Drawer({ spec, onClose }: { spec: DrawerSpec; onClose: () => voi
     };
   }, []);
   useEffect(() => {
-    engine.request({ kind: 'rows', frames: frames.slice(0, 500) }).then((r) => setRows(new Map(r.rows.map((x) => [x.frame, x])))).catch(() => {});
-  }, [engine, frames]);
-  useEffect(() => {
-    if (current === undefined) return;
+    if (current === undefined) {
+      setDetails(null);
+      setRow(null);
+      return;
+    }
     actionTokenRef.current++;
     let live = true;
     setDetails(null);
+    setRow(null);
     setSel(null);
     setActionFeedback(null);
     setCopyFallback(null);
@@ -90,6 +103,9 @@ export function Drawer({ spec, onClose }: { spec: DrawerSpec; onClose: () => voi
     engine.request({ kind: 'frame', number: current })
       .then((d) => { if (live) setDetails(d); })
       .catch((e: Error) => { if (live) setError(e.message); });
+    engine.request({ kind: 'rows', frames: [current], limit: 1 })
+      .then((result) => { if (live) setRow(result.rows.find((packet) => packet.frame === current) ?? null); })
+      .catch(() => { if (live) setRow(null); });
     return () => { live = false; };
   }, [engine, current]);
 
@@ -150,8 +166,23 @@ export function Drawer({ spec, onClose }: { spec: DrawerSpec; onClose: () => voi
     }
   };
 
-  const row = rows.get(current);
+  const sourcePage = useMemo(() => sourceFramePage(frames, frameSearch, framePage), [frameSearch, framePage, frames]);
+  const { frames: pageFrames, page: visiblePage, pageCount, total: matchingFrameCount, firstShown, lastShown } = sourcePage;
   const digits = model.capture.timestampDigits;
+  const selectSourceFrame = (frame: number) => {
+    actionTokenRef.current++;
+    setActionFeedback(null);
+    setCopyFallback(null);
+    setShowingMatches(false);
+    setCurrent(frame);
+  };
+  const jumpToEdgeFrame = (last: boolean) => {
+    const frame = last ? frames.at(-1) : frames[0];
+    if (frame === undefined) return;
+    setFrameSearch('');
+    setFramePage(last ? Math.floor((frames.length - 1) / SOURCE_PACKET_PAGE_SIZE) : 0);
+    selectSourceFrame(frame);
+  };
   return (
     <>
       <div className="drawer-backdrop" onClick={onClose} />
@@ -169,11 +200,47 @@ export function Drawer({ spec, onClose }: { spec: DrawerSpec; onClose: () => voi
           {spec.summary}
           <section>
             <h3 style={{ marginBottom: 8 }}>Packets ({num(frames.length)})</h3>
+            <label className="muted" style={{ display: 'block', fontSize: 12, marginBottom: 6 }}>
+              Search source packets by frame number
+              <input className="input mono" type="search" maxLength={20} value={frameSearch}
+                onChange={(event) => { setFrameSearch(event.currentTarget.value); setFramePage(0); }}
+                aria-label="Search source packets by frame number"
+                style={{ display: 'block', width: '100%', marginTop: 4 }} />
+            </label>
+            <div className="actions" role="group" aria-label="Source packet pages" style={{ marginBottom: 8 }}>
+              <button className="btn small" type="button" aria-label="First source packet page" disabled={visiblePage === 0} onClick={() => setFramePage(0)}>First</button>
+              <button className="btn small" type="button" aria-label="Previous source packet page" disabled={visiblePage === 0} onClick={() => setFramePage((page) => Math.max(0, page - 1))}>Previous</button>
+              <button className="btn small" type="button" aria-label="Next source packet page" disabled={visiblePage >= pageCount - 1} onClick={() => setFramePage((page) => Math.min(pageCount - 1, page + 1))}>Next</button>
+              <button className="btn small" type="button" aria-label="Last source packet page" disabled={pageCount === 0 || visiblePage >= pageCount - 1} onClick={() => setFramePage(Math.max(0, pageCount - 1))}>Last</button>
+              <span className="muted" role="status" aria-live="polite">
+                {matchingFrameCount
+                  ? `Showing ${num(firstShown)}–${num(lastShown)} of ${num(matchingFrameCount)}${frameSearch.trim() ? ' matching' : ''} packets${pageCount > 1 ? ` (page ${num(visiblePage + 1)} of ${num(pageCount)})` : ''}.`
+                  : 'No source packets match this search.'}
+              </span>
+            </div>
+            <p className="muted" role="status" aria-live="polite" style={{ fontSize: 12, margin: '0 0 8px' }}>
+              Decoded packet: {current === undefined ? 'none' : `#${num(current)}`}. Browsing pages or search results keeps this packet selected.
+            </p>
+            {current !== undefined && !pageFrames.includes(current) && (
+              <button className="btn small" type="button" style={{ marginBottom: 8 }} onClick={() => {
+                const query = frameSearch.trim();
+                const matchingIndex = (query ? frames.filter((frame) => String(frame).includes(query)) : frames).indexOf(current);
+                if (matchingIndex >= 0) setFramePage(Math.floor(matchingIndex / SOURCE_PACKET_PAGE_SIZE));
+                else {
+                  const allFramesIndex = frames.indexOf(current);
+                  setFrameSearch('');
+                  setFramePage(Math.floor(Math.max(0, allFramesIndex) / SOURCE_PACKET_PAGE_SIZE));
+                }
+              }}>Show decoded packet in list</button>
+            )}
+            <div className="actions" role="group" aria-label="Jump to first or last source packet" style={{ marginBottom: 8 }}>
+              <button className="btn small" type="button" disabled={!frames.length} onClick={() => jumpToEdgeFrame(false)}>Decode first source packet</button>
+              <button className="btn small" type="button" disabled={!frames.length} onClick={() => jumpToEdgeFrame(true)}>Decode last source packet</button>
+            </div>
             <div className="frames-pick" role="group" aria-label="Choose a source packet">
-              {frames.slice(0, 200).map((f) => (
-                <button key={f} aria-pressed={f === current} onClick={() => { actionTokenRef.current++; setActionFeedback(null); setCopyFallback(null); setShowingMatches(false); setCurrent(f); }}>#{f}</button>
+              {pageFrames.map((f) => (
+                <button key={f} type="button" aria-label={`Decode source packet ${f}`} aria-pressed={f === current} onClick={() => selectSourceFrame(f)}>#{f}</button>
               ))}
-              {frames.length > 200 && <span className="muted">+{num(frames.length - 200)} more</span>}
             </div>
           </section>
           {current !== undefined && (

@@ -12,7 +12,7 @@
    │                                         3. parseRecords  TSV → typed raw records
    │                                         4. analyze       raw → AnalysisModel
  Views  ◀────────── AnalysisModel ────────   keeps packet index + session
- Drawer / packet list ── requests ──▶      getFrame(n) / getFrames(filter, skip, limit)
+ Drawer / packet list / conversation detail ──▶ getFrame(n) / getFrames(filter, skip, limit) / rows(convId, skip, limit)
 ```
 
 All views read one shared `AnalysisModel` (`src/engine/types.ts`). The file is decoded once; tabs never re-parse it. The model carries a compact, columnar packet filter index (times, lengths, endpoint/stream IDs and top protocol IDs), not packet payloads. The UI uses it to recalculate time/host-filtered packet, host and conversation totals. Protocol hierarchy and non-traffic host metadata remain capture-wide.
@@ -81,7 +81,7 @@ Times are stored relative to the first packet so that nanosecond precision survi
 
 - `EngineClient` (`src/app/engine.ts`) creates a **new worker per capture**. Cancel, Close and Open-another call `worker.terminate()`, which discards the whole WASM heap and the capture bytes. Stale messages from an old worker are ignored.
 - The compiled `WebAssembly.Module` and the data package are posted back to the UI thread and handed to the next worker, so the 19 MB download and compile happen once per page load.
-- The capture is written into the Emscripten FS with `canOwn` so it is not copied again. Per-packet data kept in the worker is ~17 fields per packet (interned strings), never full trees. Packet trees are produced only on demand for the drawer (capped at 20,000 nodes); packet lists are paged 500 rows at a time.
+- The capture is written into the Emscripten FS with `canOwn` so it is not copied again. Per-packet data kept in the worker is ~17 fields per packet (interned strings), never full trees. Packet trees are produced only on demand for the drawer (capped at 20,000 nodes); packet lists request 500-row pages, and conversation packet requests enforce a 500-row page cap. Conversation details keep one compact matching packet-index list in the worker for the active conversation and reset it when a session opens or closes; packet rows themselves remain page-local in the UI. The drawer asks for metadata only for the selected frame.
 - Tables are virtualised (`@tanstack/react-virtual`).
 
 ## Security and privacy

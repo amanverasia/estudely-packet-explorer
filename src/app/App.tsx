@@ -358,6 +358,7 @@ function Workspace(props: {
               </div>
               <div className="actions">
                 <button className="btn" onClick={() => downloadBlob(`${safeBase(c.fileName)}-report.html`, new Blob([htmlReport(sourceModel)], { type: 'text/html;charset=utf-8' }))}>Download HTML report</button>
+                <button className="btn" disabled={filter.start === null && !filter.host} title={filter.start === null && !filter.host ? 'Apply a time or host shared filter to create this report' : undefined} onClick={() => downloadBlob(`${safeBase(c.fileName)}-filtered-report.html`, new Blob([htmlReport(model, { filter, stats })], { type: 'text/html;charset=utf-8' }))}>Download filtered HTML report</button>
                 <JsonExport model={sourceModel} />
                 <button className="btn" onClick={props.onCompare}>Compare captures</button>
                 <OpenButton onOpen={props.onOpen} label="Open another" />

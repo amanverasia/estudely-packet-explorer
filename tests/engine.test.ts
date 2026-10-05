@@ -165,6 +165,24 @@ describe('HTTP fixture', () => {
     expect(m.http[4]).toMatchObject({ client: 'fd00::5', server: 'fd00::80', serverPort: 8080 });
   });
 
+  it('pages conversation packet rows without gaps and keeps the full match count', () => {
+    const convId = m.http[0].convId!;
+    const complete = s.rows({ convId });
+    expect(complete.total).toBe(complete.rows.length);
+
+    const paged = [] as typeof complete.rows;
+    for (let skip = 0; skip < complete.total; skip += 2) {
+      const result = s.rows({ convId, skip, limit: 2 });
+      expect(result.total).toBe(complete.total);
+      paged.push(...result.rows);
+    }
+    expect(paged).toEqual(complete.rows);
+    expect(s.rows({ convId, skip: complete.total, limit: 2 })).toEqual({ rows: [], total: complete.total });
+    expect(() => s.rows({ convId, skip: -1 })).toThrow('nonnegative integer');
+    expect(() => s.rows({ convId, skip: 0.5 })).toThrow('nonnegative integer');
+    expect(() => s.rows({ convId, limit: 501 })).toThrow('page size');
+  });
+
   it('keeps a reused 4-tuple as distinct TCP sessions', () => {
     const tcp = m.conversations.filter((c) => c.transport === 'TCP');
     expect(tcp).toHaveLength(4);

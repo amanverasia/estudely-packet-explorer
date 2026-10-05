@@ -151,6 +151,62 @@ async function installPacketPageRetryFault(page: Page) {
   });
 }
 
+async function installConversationPageFixture(page: Page) {
+  await page.addInitScript(() => {
+    const state = { calls: [] as number[], sample: null as Record<string, any> | null };
+    Object.defineProperty(window, '__conversationPageTest', { configurable: true, value: state });
+    const pending = new WeakMap<Worker, Map<number, number>>();
+    let workerPrototype: object | null = Worker.prototype;
+    let onmessageDescriptor: PropertyDescriptor | undefined;
+    while (workerPrototype && !onmessageDescriptor) {
+      onmessageDescriptor = Object.getOwnPropertyDescriptor(workerPrototype, 'onmessage');
+      workerPrototype = Object.getPrototypeOf(workerPrototype);
+    }
+    if (onmessageDescriptor?.get && onmessageDescriptor.set) {
+      Object.defineProperty(Worker.prototype, 'onmessage', {
+        configurable: true,
+        enumerable: onmessageDescriptor.enumerable,
+        get() { return onmessageDescriptor!.get!.call(this); },
+        set(handler: ((this: Worker, event: MessageEvent) => unknown) | null) {
+          if (!handler) { onmessageDescriptor!.set!.call(this, handler); return; }
+          const wrapped = function (this: Worker, event: MessageEvent) {
+            const response = event.data as { type?: string; id?: number; ok?: boolean; data?: { rows?: Record<string, any>[]; total?: number } };
+            const requests = pending.get(this);
+            const skip = response.id === undefined ? undefined : requests?.get(response.id);
+            if (response.type === 'response' && response.ok && skip !== undefined && response.data) {
+              const count = skip >= 1000 ? 1 : 500;
+              if (!state.sample && response.data.rows?.[0]) state.sample = response.data.rows[0];
+              if (state.sample) {
+                response.data.total = 1001;
+                response.data.rows = Array.from({ length: count }, (_, index) => ({ ...state.sample, frame: skip + index + 1 }));
+              }
+            }
+            return handler.call(this, event);
+          };
+          onmessageDescriptor!.set!.call(this, wrapped);
+        },
+      });
+    }
+    const proto = Worker.prototype as unknown as { postMessage: (message: unknown, transfer?: Transferable[]) => void };
+    const original = proto.postMessage;
+    proto.postMessage = function (this: Worker, message: unknown, transfer?: Transferable[]) {
+      const msg = message as { type?: string; id?: number; req?: { kind?: string; convId?: number; skip?: number } };
+      let requests = pending.get(this as unknown as Worker);
+      if (!requests) {
+        requests = new Map();
+        pending.set(this as unknown as Worker, requests);
+      }
+      if (msg.type === 'request' && msg.req?.kind === 'rows' && msg.req.convId !== undefined && typeof msg.id === 'number') {
+        const skip = msg.req.skip ?? 0;
+        state.calls.push(skip);
+        requests.set(msg.id, skip);
+      }
+      if (transfer) original.call(this, message, transfer);
+      else original.call(this, message);
+    };
+  });
+}
+
 async function view(page: Page, id: string) {
   await page.evaluate((v) => { location.hash = '#/' + v; }, id);
   await expect(page.locator('.nav a[aria-current=page]').first()).toBeVisible();
@@ -359,6 +415,11 @@ test('packet drawer copies Wireshark fields and opens matching packets with shar
   await page.getByRole('grid', { name: 'HTTP messages' }).getByText('/index.html').click();
   const drawer = page.getByRole('dialog');
   await expect(drawer.getByRole('heading', { name: 'Decoded fields' })).toBeVisible();
+  await expect(drawer.getByRole('button', { name: 'Decode first source packet' })).toBeEnabled();
+  await drawer.getByRole('button', { name: 'Decode last source packet' }).click();
+  await expect(drawer.getByText('Decoded packet: #6')).toBeVisible();
+  await drawer.getByRole('button', { name: 'Decode first source packet' }).click();
+  await expect(drawer.getByText('Decoded packet: #4')).toBeVisible();
   const tree = drawer.getByRole('tree', { name: 'Decoded fields' });
   const first = tree.getByRole('treeitem').first();
   await first.focus();
@@ -391,6 +452,32 @@ test('packet drawer copies Wireshark fields and opens matching packets with shar
   expect(route.view).toBe('#/packets');
   expect(route.host).toBe('10.0.0.5');
   expect(route.filter).toBe(copiedFilter);
+});
+
+test('conversation packet details page through the full conversation with bounded page exports', async ({ page }) => {
+  await installConversationPageFixture(page);
+  await page.goto('./');
+  await openCapture(page, 'http.pcap');
+  await view(page, 'connections');
+  const conversations = page.getByRole('grid', { name: 'Conversations' });
+  await conversations.getByRole('row').filter({ hasText: '10.0.0.5:40001' }).click();
+  const packets = page.getByRole('grid', { name: 'Conversation packets' });
+  const pageControls = page.getByRole('group', { name: 'Conversation packet pages' });
+  await expect(pageControls).toContainText('Page 1 of 3');
+  await expect(page.getByText('Showing 1–500 of 1,001 packets in this conversation')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Export CSV' }).last()).toHaveAttribute('title', 'Save the rows shown (search and sort applied) as CSV');
+
+  await pageControls.getByLabel('Go to page').fill('2');
+  await pageControls.getByRole('button', { name: 'Go', exact: true }).click();
+  await expect(pageControls).toContainText('Page 2 of 3');
+  await expect(packets.getByRole('row').filter({ hasText: '501' }).first()).toBeVisible();
+
+  await pageControls.getByRole('button', { name: 'Last' }).click();
+  await expect(pageControls).toContainText('Page 3 of 3');
+  await expect(page.getByText('Showing 1,001–1,001 of 1,001 packets in this conversation')).toBeVisible();
+  await expect(packets.getByRole('row').filter({ hasText: '1001' })).toBeVisible();
+  const skips = await page.evaluate(() => (window as unknown as { __conversationPageTest: { calls: number[] } }).__conversationPageTest.calls);
+  expect(skips).toEqual([0, 500, 1000]);
 });
 
 test('JSON export offers an aggregate allowlist and redacted or unredacted detailed choices', async ({ page }) => {
@@ -819,6 +906,7 @@ test('HTML report is a self-contained aggregate snapshot without captured payloa
   const reqs = watchRequests(page);
   await page.goto('./');
   await openCapture(page, 'http.pcap');
+  await expect(page.getByRole('button', { name: 'Download filtered HTML report' })).toBeDisabled();
   const download = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Download HTML report' }).click();
   const reportDownload = await download;
@@ -840,6 +928,45 @@ test('HTML report is a self-contained aggregate snapshot without captured payloa
   await page.setContent(html);
   await expect(page).toHaveTitle(/Packet capture report/);
   await expect(page.getByRole('heading', { name: 'Hosts' })).toBeVisible();
+  expect(reqs.offenders()).toEqual([]);
+});
+
+test('filtered HTML report uses shared time and host filters and handles zero matches', async ({ page }) => {
+  const reqs = watchRequests(page);
+  await page.goto('./');
+  await openCapture(page, 'http.pcap');
+  await page.evaluate(() => { location.hash = '#/overview?hf=10.0.0.80&t0=0.001&t1=0.05'; });
+  const filteredButton = page.getByRole('button', { name: 'Download filtered HTML report' });
+  await expect(filteredButton).toBeEnabled();
+  const download = page.waitForEvent('download');
+  await filteredButton.click();
+  const reportDownload = await download;
+  expect(reportDownload.suggestedFilename()).toBe('http-filtered-report.html');
+  const html = Buffer.concat(await (await reportDownload.createReadStream()).toArray()).toString('utf8');
+  expect(html).toContain('Active shared-filter aggregates');
+  expect(html).toContain('Report scope');
+  expect(html).toContain('0.001000–0.050000 s relative to the first packet');
+  expect(html).toContain('10.0.0.80');
+  expect(html).toContain('Matching packets');
+  expect(html).toContain('Matching bytes on wire');
+  expect(html).toContain('Whole-capture metadata');
+  expect(html).toContain('Capture interfaces');
+  expect(html).not.toContain('Protocol hierarchy');
+  expect(html).not.toContain('v6.example.test');
+  expect(html).not.toMatch(/<(?:script|link|img|iframe|source)\b[^>]*(?:src|href)\s*=/i);
+  expect(html).not.toMatch(/url\(\s*['"]?(?:https?:)?\/\//i);
+
+  await page.evaluate(() => { location.hash = '#/overview?t0=0.001&t1=0.005'; });
+  await expect(page.getByRole('button', { name: 'Download filtered HTML report' })).toBeEnabled();
+  const noMatchDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download filtered HTML report' }).click();
+  const zeroReport = await noMatchDownload;
+  const zeroHtml = Buffer.concat(await (await zeroReport.createReadStream()).toArray()).toString('utf8');
+  expect(zeroHtml).toContain('<strong>No packets matched the active time and host filters.</strong>');
+  expect(zeroHtml).toContain('<td>Matching packets</td><td>0</td>');
+  expect(zeroHtml).toContain('<td>Matching bytes on wire</td><td>0 B</td>');
+  expect(zeroHtml).toContain('No records matched the active time and host filters.');
+  expect(zeroHtml).not.toContain('www.example.test');
   expect(reqs.offenders()).toEqual([]);
 });
 
