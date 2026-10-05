@@ -529,7 +529,7 @@ test('edge cases: truncated/malformed notes, incomplete file, non-capture file',
   await expect(conversations.getByRole('row')).toHaveCount(2);
   await expect(conversations.getByRole('row').filter({ hasText: '10.0.0.5:50102' })).toHaveCount(1);
   await quality.getByRole('button', { name: 'RST seen (0)' }).click();
-  await expect(conversations).toContainText('No matching conversations.');
+  await expect(page.getByText('No matching conversations.')).toBeVisible();
   await page.getByRole('button', { name: 'Clear quality filter' }).click();
   await expect(conversations.getByRole('row')).toHaveCount(4);
 
@@ -636,11 +636,17 @@ test('exports are local downloads', async ({ page }) => {
   const reqs = watchRequests(page);
   await page.goto('./');
   await openCapture(page, 'dns.pcap');
-  const json = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Export JSON summary' }).click();
-  const jd = await json;
-  expect(jd.suggestedFilename()).toBe('dns-summary.json');
-  const summary = JSON.parse(await (await jd.createReadStream()).toArray().then((c) => Buffer.concat(c).toString('utf8')));
+  const menu = page.locator('.json-export-menu');
+  await menu.locator('summary').click();
+  const [jd] = await Promise.all([
+    page.waitForEvent('download'),
+    menu.getByRole('button', { name: 'Download aggregate JSON' }).click(),
+  ]);
+  expect(jd.suggestedFilename()).toBe('capture-summary.json');
+  const jsonPath = await jd.path();
+  if (!jsonPath) throw new Error('Browser did not provide the JSON download path');
+  const summary = JSON.parse(readFileSync(jsonPath, 'utf8'));
+  expect(summary.export.mode).toBe('aggregate');
   expect(summary.capture.packetCount).toBe(29);
 
   await view(page, 'dns');
