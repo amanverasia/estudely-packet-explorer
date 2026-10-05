@@ -536,6 +536,7 @@ test('edge cases: truncated/malformed notes, incomplete file, non-capture file',
   await page.locator('input[type=file]').first().setInputFiles(fixture('cut.pcap'));
   await expect(page.locator('.cap-title h1')).toHaveText('cut.pcap');
   await expect(page.getByText('incomplete file')).toBeVisible();
+  await view(page, 'overview');
   await expect(page.getByText(/cut short/)).toBeVisible();
 
   await page.locator('input[type=file]').first().setInputFiles(fixture('not-a-capture.pcap'));
