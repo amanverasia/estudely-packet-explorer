@@ -155,17 +155,38 @@ local function vals(fis, display)
   return table.concat(out, "\31")
 end
 
--- Assign field instances to the message (anchor) whose byte range contains them.
--- Offsets are local to a Tvb, so only compare them when both fields came from
--- the same data source. A nil source has no identity to compare, so retain the
--- offset fallback in that case.
-local function anchors_from(list)
-  table.sort(list, function(a, b) return a.offset < b.offset end)
-  return list
+-- Offsets are local to a Tvb, so only compare them when both items came from
+-- the same data source. Keep the offset fallback only when neither source is
+-- available; if exactly one is missing, there is no safe identity comparison.
+local function same_source(anchor, fi)
+  if anchor.source == nil and fi.source == nil then return true end
+  return anchor.source ~= nil and fi.source ~= nil and anchor.source == fi.source
 end
 
-local function same_source(anchor, fi)
-  return anchor.source == nil or fi.source == nil or anchor.source == fi.source
+local function anchors_from(list)
+  local groups = {}
+  local groupCount = 0
+  for i, anchor in ipairs(list) do
+    anchor.order = i
+    local group
+    for _, candidate in ipairs(groups) do
+      if same_source(candidate, anchor) then group = candidate break end
+    end
+    if not group then
+      groupCount = groupCount + 1
+      group = { source = anchor.source, order = groupCount }
+      groups[#groups + 1] = group
+    end
+    anchor.sourceOrder = group.order
+  end
+  -- Order sources by their first occurrence, and compare offsets only inside
+  -- each source group. Different reassembly buffers have no shared byte order.
+  table.sort(list, function(a, b)
+    if a.sourceOrder ~= b.sourceOrder then return a.sourceOrder < b.sourceOrder end
+    if a.offset == b.offset then return a.order < b.order end
+    return a.offset < b.offset
+  end)
+  return list
 end
 
 local function bucket(anchors, fis, by_start, include_generated)
@@ -337,7 +358,7 @@ local function emit_http2(w, num)
     local out = {}
     for _, fi in ipairs(all(field)) do
       for _, source in ipairs(sources) do
-        if source == nil or fi.source == nil or fi.source == source then
+        if same_source({ source = source }, fi) then
           out[#out + 1] = fi
           break
         end

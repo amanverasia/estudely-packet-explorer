@@ -54,7 +54,7 @@ Because this is Wireshark's second pass, reassembled PDUs (DNS over TCP, HTTP he
 Outside the armed pass (packet details, filtered packet lists) the extractor returns immediately. Progress is printed to stdout (`@@ESTX load|extract N`), which the worker forwards to the UI.
 
 Notable details handled in the extractor:
-- Multiple DNS/HTTP messages in one packet are separated by the byte range of each protocol item; TLS handshake messages by the offset of each `tls.handshake.type`. When both fields have a `FieldInfo.source`, offsets are compared only if those Tvbs match, since offsets in separate reassembly buffers are independent.
+- Multiple DNS/HTTP messages in one packet are separated by the byte range of each protocol item; TLS handshake messages by the offset of each `tls.handshake.type`. Offsets are compared only when both fields have the same `FieldInfo.source`, or when neither exposes a source. If only one source is available, the extractor leaves the field unassigned instead of guessing across reassembly buffers.
 - HTTP/2 frame IDs live in the packet Tvb, while HPACK-decoded fields live in generated header Tvbs. Those fields are grouped by source and collected across HEADERS/CONTINUATION fragments through END_HEADERS; their offsets are never compared with packet offsets.
 - Wireshark flags some real fields as *generated* (e.g. `dns.id` on unanswered queries); only zero-length generated items are skipped.
 - ICMP error payloads quote other packets; protocol records are not taken from quoted headers.
