@@ -83,6 +83,54 @@ async function openCapture(page: Page, name: string) {
   await expect(page.locator('.cap-title h1')).toHaveText(name);
 }
 
+async function installPacketPageRetryFault(page: Page) {
+  await page.addInitScript(() => {
+    const state = { calls: [] as number[], failed: new Set<number>(), sample: null as Record<string, any> | null };
+    Object.defineProperty(window, '__packetPageRetryTest', { configurable: true, value: state });
+    const pending = new WeakMap<Worker, Map<number, number>>();
+    const proto = Worker.prototype as unknown as { postMessage: (message: unknown, transfer?: Transferable[]) => void };
+    const original = proto.postMessage;
+    proto.postMessage = function (this: Worker, message: unknown, transfer?: Transferable[]) {
+      const msg = message as { type?: string; id?: number; req?: { kind?: string; skip?: number } };
+      let requests = pending.get(this as unknown as Worker);
+      if (!requests) {
+        requests = new Map();
+        pending.set(this as unknown as Worker, requests);
+        this.addEventListener('message', (event) => {
+          const response = (event as MessageEvent).data as { type?: string; id?: number; ok?: boolean; data?: { rows?: Record<string, any>[]; matched?: number } };
+          const skip = response.id === undefined ? undefined : requests!.get(response.id);
+          if (response.type !== 'response' || !response.ok || skip === undefined || !response.data) return;
+          if (skip === 0) {
+            state.sample = response.data.rows?.[0] ?? state.sample;
+            response.data.matched = 1001;
+          } else if (skip === 500) {
+            response.data.matched = 1001;
+            if (state.sample) {
+              const columns = [...state.sample.columns];
+              columns[0] = '501';
+              response.data.rows = [{ ...state.sample, number: 501, columns }];
+            }
+          }
+        });
+      }
+      if (msg.type === 'request' && msg.req?.kind === 'packetList' && typeof msg.req.skip === 'number' && typeof msg.id === 'number') {
+        const skip = msg.req.skip;
+        state.calls.push(skip);
+        requests.set(msg.id, skip);
+        if ((skip === 0 || skip === 500) && !state.failed.has(skip)) {
+          state.failed.add(skip);
+          setTimeout(() => this.dispatchEvent(new MessageEvent('message', {
+            data: { type: 'response', id: msg.id, ok: false, error: `Injected transient failure at offset ${skip}` },
+          })), 0);
+          return;
+        }
+      }
+      if (transfer) original.call(this, message, transfer);
+      else original.call(this, message);
+    };
+  });
+}
+
 async function view(page: Page, id: string) {
   await page.evaluate((v) => { location.hash = '#/' + v; }, id);
   await expect(page.locator('.nav a[aria-current=page]').first()).toBeVisible();
@@ -236,6 +284,93 @@ test('DNS capture: overview, DNS dashboard and packet drawer, with no uploads', 
   expect(reqs.offenders()).toEqual([]);
   expect(reqs.all.some((r) => r.url().endsWith('wiregasm/wiregasm.wasm.gz'))).toBe(true);
   expect(errs).toEqual([]);
+});
+
+test('packet-list pages can be retried after a transient worker request failure', async ({ page }) => {
+  await installPacketPageRetryFault(page);
+  await page.goto('./');
+  await openCapture(page, 'http.pcap');
+  await view(page, 'packets');
+
+  await expect(page.getByText(/Could not load packet page 1/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Retry packet page 1' })).toBeVisible();
+  await expect(page.getByText('Loading packet columns…')).toHaveCount(0);
+  await page.waitForTimeout(200);
+  const firstPageCalls = await page.evaluate(() => (window as unknown as { __packetPageRetryTest: { calls: number[] } }).__packetPageRetryTest.calls.filter((skip) => skip === 0).length);
+  expect(firstPageCalls).toBe(1);
+
+  await page.getByRole('button', { name: 'Retry packet page 1' }).click();
+  await expect(page.getByRole('button', { name: 'Retry packet page 1' })).toHaveCount(0);
+  await expect(page.getByRole('columnheader', { name: 'No.' })).toBeVisible();
+
+  const grid = page.getByRole('grid', { name: 'Packets' });
+  await grid.evaluate((element) => { element.scrollTop = 15000; element.dispatchEvent(new Event('scroll')); });
+  await expect(page.getByText(/Could not load packet page 2/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Retry packet page 2' })).toBeVisible();
+  await page.waitForTimeout(200);
+  const secondPageCalls = await page.evaluate(() => (window as unknown as { __packetPageRetryTest: { calls: number[] } }).__packetPageRetryTest.calls.filter((skip) => skip === 500).length);
+  expect(secondPageCalls).toBe(1);
+
+  await page.getByRole('button', { name: 'Retry packet page 2' }).click();
+  await expect(page.getByRole('button', { name: 'Retry packet page 2' })).toHaveCount(0);
+  await expect(grid.getByRole('row').filter({ hasText: '501' })).toBeVisible();
+  const finalCalls = await page.evaluate(() => (window as unknown as { __packetPageRetryTest: { calls: number[] } }).__packetPageRetryTest.calls);
+  expect(finalCalls.filter((skip) => skip === 0)).toHaveLength(2);
+  expect(finalCalls.filter((skip) => skip === 500)).toHaveLength(2);
+});
+
+test('packet drawer copies Wireshark fields and opens matching packets with shared filters', async ({ page }) => {
+  await page.addInitScript(() => {
+    const harness = { copied: '', deny: false };
+    Object.defineProperty(window, '__clipboardHarness', { configurable: true, value: harness });
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: async (text: string) => {
+        if (harness.deny) { harness.deny = false; throw new Error('Clipboard denied for test'); }
+        harness.copied = text;
+      } },
+    });
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: () => false });
+  });
+  await page.goto('./');
+  await openCapture(page, 'http.pcap');
+  await page.evaluate(() => { location.hash = '#/http?hf=10.0.0.5'; });
+  await expect(page.getByRole('button', { name: 'Remove host filter for 10.0.0.5' })).toBeVisible();
+  await page.getByRole('grid', { name: 'HTTP messages' }).getByText('/index.html').click();
+  const drawer = page.getByRole('dialog');
+  await expect(drawer.getByRole('heading', { name: 'Decoded fields' })).toBeVisible();
+  const tree = drawer.getByRole('tree', { name: 'Decoded fields' });
+  const first = tree.getByRole('treeitem').first();
+  await first.focus();
+  await page.keyboard.press('ArrowRight');
+  const field = tree.getByRole('treeitem').nth(1);
+  await field.focus();
+  await page.keyboard.press('Space');
+
+  await expect(drawer.getByRole('group', { name: 'Selected field actions' })).toBeVisible();
+  await expect(drawer.getByRole('button', { name: 'Copy field value' })).toBeDisabled();
+  await expect(drawer.getByRole('note')).toContainText('Typed field values are not exposed separately');
+  await drawer.getByRole('button', { name: 'Copy field label' }).click();
+  const copiedLabel = await page.evaluate(() => (window as unknown as { __clipboardHarness: { copied: string } }).__clipboardHarness.copied);
+  expect(copiedLabel.trim()).not.toBe('');
+  await drawer.getByRole('button', { name: 'Copy display filter' }).click();
+  const copiedFilter = await page.evaluate(() => (window as unknown as { __clipboardHarness: { copied: string } }).__clipboardHarness.copied);
+  expect(copiedFilter.trim()).not.toBe('');
+  await page.evaluate(() => { (window as unknown as { __clipboardHarness: { deny: boolean } }).__clipboardHarness.deny = true; });
+  await drawer.getByRole('button', { name: 'Copy display filter' }).click();
+  await expect(drawer.getByRole('alert')).toContainText(/Could not copy/);
+  await expect(drawer.getByLabel('Text to copy manually')).toHaveValue(copiedFilter);
+
+  await drawer.getByRole('button', { name: 'Show matching packets' }).click();
+  await expect(page.getByLabel('Wireshark display filter')).toHaveValue(copiedFilter);
+  const route = await page.evaluate(() => {
+    const query = location.hash.split('?')[1] ?? '';
+    const params = new URLSearchParams(query);
+    return { view: location.hash.split('?')[0], host: params.get('hf'), filter: params.get('filter') };
+  });
+  expect(route.view).toBe('#/packets');
+  expect(route.host).toBe('10.0.0.5');
+  expect(route.filter).toBe(copiedFilter);
 });
 
 test('JSON export offers an aggregate allowlist and redacted or unredacted detailed choices', async ({ page }) => {

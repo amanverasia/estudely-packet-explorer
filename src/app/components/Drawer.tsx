@@ -6,21 +6,39 @@ import { useApp, type DrawerSpec } from '../context';
 import { absTime, bytes, endpoint, epochText, num, rel } from '../format';
 
 export function Drawer({ spec, onClose }: { spec: DrawerSpec; onClose: () => void }) {
-  const { engine, model } = useApp();
+  const { engine, model, filter, go } = useApp();
   const frames = useMemo(() => [...new Set(spec.frames)].sort((a, b) => a - b), [spec.frames]);
   const [current, setCurrent] = useState<number>(spec.focus ?? frames[0]);
   const [rows, setRows] = useState<Map<number, PacketRow>>(new Map());
   const [details, setDetails] = useState<FrameDetails | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sel, setSel] = useState<ProtoTreeNode | null>(null);
+  const [actionFeedback, setActionFeedback] = useState<{ kind: 'status' | 'error'; message: string } | null>(null);
+  const [copyFallback, setCopyFallback] = useState<{ description: string; text: string } | null>(null);
+  const [showingMatches, setShowingMatches] = useState(false);
   const [activeTreePath, setActiveTreePath] = useState('');
   const closeRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
   const onCloseRef = useRef(onClose);
+  const actionTokenRef = useRef(0);
   const returnFocusRef = useRef<HTMLElement | null>(document.activeElement instanceof HTMLElement ? document.activeElement : null);
+  const sharedDisplay = useMemo(() => {
+    const terms: string[] = [];
+    if (filter.start !== null && filter.end !== null) {
+      terms.push(`(frame.time_relative_capture_start >= ${filter.start.toPrecision(12)} && frame.time_relative_capture_start <= ${filter.end.toPrecision(12)})`);
+    }
+    if (filter.host) terms.push(`(${filter.host.includes(':') ? 'ipv6.addr' : 'ip.addr'} == ${filter.host})`);
+    return terms.join(' && ');
+  }, [filter.start, filter.end, filter.host]);
 
   useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
-  useEffect(() => { setCurrent(spec.focus ?? frames[0]); }, [spec, frames]);
+  useEffect(() => {
+    actionTokenRef.current++;
+    setCurrent(spec.focus ?? frames[0]);
+    setActionFeedback(null);
+    setCopyFallback(null);
+    setShowingMatches(false);
+  }, [spec, frames]);
   useEffect(() => {
     closeRef.current?.focus();
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCloseRef.current(); };
@@ -60,9 +78,13 @@ export function Drawer({ spec, onClose }: { spec: DrawerSpec; onClose: () => voi
   }, [engine, frames]);
   useEffect(() => {
     if (current === undefined) return;
+    actionTokenRef.current++;
     let live = true;
     setDetails(null);
     setSel(null);
+    setActionFeedback(null);
+    setCopyFallback(null);
+    setShowingMatches(false);
     setActiveTreePath('');
     setError(null);
     engine.request({ kind: 'frame', number: current })
@@ -70,6 +92,63 @@ export function Drawer({ spec, onClose }: { spec: DrawerSpec; onClose: () => voi
       .catch((e: Error) => { if (live) setError(e.message); });
     return () => { live = false; };
   }, [engine, current]);
+
+  const selectNode = (node: ProtoTreeNode) => {
+    actionTokenRef.current++;
+    setSel(node);
+    setActionFeedback(null);
+    setCopyFallback(null);
+    setShowingMatches(false);
+  };
+
+  const copyFieldText = async (kind: 'label' | 'filter') => {
+    if (!sel) return;
+    const text = kind === 'label' ? sel.label : sel.filter;
+    const description = kind === 'label' ? 'field label' : 'display filter';
+    setCopyFallback(null);
+    if (!text.trim()) {
+      setActionFeedback({ kind: 'error', message: `No ${description} is available for this field.` });
+      return;
+    }
+    const actionToken = ++actionTokenRef.current;
+    if (await copyText(text)) {
+      if (actionToken === actionTokenRef.current) {
+        setCopyFallback(null);
+        setActionFeedback({ kind: 'status', message: `${kind === 'label' ? 'Field label' : 'Display filter'} copied.` });
+      }
+    } else {
+      if (actionToken === actionTokenRef.current) {
+        setCopyFallback({ description, text });
+        setActionFeedback({ kind: 'error', message: `Could not copy the ${description}. Select the text below and copy it manually.` });
+      }
+    }
+  };
+
+  const showMatchingPackets = async () => {
+    if (!sel?.filter.trim()) {
+      setActionFeedback({ kind: 'error', message: 'This field does not provide a display filter.' });
+      return;
+    }
+    const fieldFilter = sel.filter;
+    const composed = [`(${fieldFilter.trim()})`, sharedDisplay].filter(Boolean).join(' && ');
+    const actionToken = ++actionTokenRef.current;
+    setShowingMatches(true);
+    setActionFeedback({ kind: 'status', message: 'Checking the field filter…' });
+    try {
+      const result = await engine.request({ kind: 'checkFilter', filter: composed });
+      if (actionToken !== actionTokenRef.current) return;
+      if (!result.ok) {
+        setActionFeedback({ kind: 'error', message: `Invalid display filter: ${result.error}` });
+        return;
+      }
+      go('packets', { filter: fieldFilter });
+      onClose();
+    } catch (e) {
+      if (actionToken === actionTokenRef.current) setActionFeedback({ kind: 'error', message: `Could not validate the display filter: ${e instanceof Error ? e.message : String(e)}` });
+    } finally {
+      if (actionToken === actionTokenRef.current) setShowingMatches(false);
+    }
+  };
 
   const row = rows.get(current);
   const digits = model.capture.timestampDigits;
@@ -92,7 +171,7 @@ export function Drawer({ spec, onClose }: { spec: DrawerSpec; onClose: () => voi
             <h3 style={{ marginBottom: 8 }}>Packets ({num(frames.length)})</h3>
             <div className="frames-pick" role="group" aria-label="Choose a source packet">
               {frames.slice(0, 200).map((f) => (
-                <button key={f} aria-pressed={f === current} onClick={() => setCurrent(f)}>#{f}</button>
+                <button key={f} aria-pressed={f === current} onClick={() => { actionTokenRef.current++; setActionFeedback(null); setCopyFallback(null); setShowingMatches(false); setCurrent(f); }}>#{f}</button>
               ))}
               {frames.length > 200 && <span className="muted">+{num(frames.length - 200)} more</span>}
             </div>
@@ -117,8 +196,34 @@ export function Drawer({ spec, onClose }: { spec: DrawerSpec; onClose: () => voi
               <section className="tree" aria-label="Decoded fields">
                 <h3 id="decoded-fields-title" style={{ marginBottom: 6 }}>Decoded fields</h3>
                 <ul role="tree" aria-labelledby="decoded-fields-title" onKeyDown={moveTreeFocus}>
-                  {details.tree.map((n, i) => <TreeNode key={i} node={n} path={String(i)} depth={0} sel={sel} onSel={setSel} activePath={activeTreePath} onActive={setActiveTreePath} />)}
+                  {details.tree.map((n, i) => <TreeNode key={i} node={n} path={String(i)} depth={0} sel={sel} onSel={selectNode} activePath={activeTreePath} onActive={setActiveTreePath} />)}
                 </ul>
+                {sel && (
+                  <div className="panel" role="group" aria-label="Selected field actions" style={{ marginTop: 10, padding: 12 }}>
+                    <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+                      Selected field: <span className="mono">{sel.label || 'label unavailable'}</span>
+                    </div>
+                    <div className="actions">
+                      <button className="btn small" type="button" disabled={!sel.label} onClick={() => void copyFieldText('label')}>Copy field label</button>
+                      <button className="btn small" type="button" disabled={!sel.filter.trim()} onClick={() => void copyFieldText('filter')}>Copy display filter</button>
+                      <button className="btn small" type="button" disabled={!sel.filter.trim() || showingMatches} onClick={() => void showMatchingPackets()}>
+                        {showingMatches ? 'Checking filter…' : 'Show matching packets'}
+                      </button>
+                    </div>
+                    <div id="field-value-unavailable" className="muted" role="note" style={{ fontSize: 12, margin: '8px 0 0' }}>
+                      Typed field values are not exposed separately by this decoder tree. Copying the field label copies only the displayed label; no value is inferred.
+                    </div>
+                    <button className="btn small" type="button" disabled aria-describedby="field-value-unavailable" style={{ marginTop: 8 }}>Copy field value</button>
+                    {!sel.filter.trim() && <p className="muted" style={{ fontSize: 12, margin: '6px 0 0' }}>No display filter is available for this field.</p>}
+                    {actionFeedback && <p className={actionFeedback.kind === 'error' ? 'note crit' : 'note info'} role={actionFeedback.kind === 'error' ? 'alert' : 'status'} aria-live={actionFeedback.kind === 'error' ? 'assertive' : 'polite'} style={{ margin: '8px 0 0' }}>{actionFeedback.message}</p>}
+                    {copyFallback && <label className="muted" style={{ display: 'block', fontSize: 12, marginTop: 8 }}>
+                      Copy the {copyFallback.description} manually
+                      <textarea className="input mono" aria-label="Text to copy manually" readOnly rows={3} value={copyFallback.text}
+                        onFocus={(event) => event.currentTarget.select()}
+                        style={{ display: 'block', width: '100%', height: 'auto', minHeight: 56, marginTop: 4, padding: 6, resize: 'vertical' }} />
+                    </label>}
+                  </div>
+                )}
                 {details.truncatedTree && <p className="muted">The field tree was cut off at 20,000 entries.</p>}
               </section>
               {details.sources.map((s, i) => (
@@ -141,6 +246,35 @@ export function flagText(f: string): string {
     D: 'duplicate ACK', Z: 'zero window', F: 'IP fragment', f: 'reassembled from fragments', M: 'malformed', E: 'expert error',
   };
   return [...new Set(f.split(''))].map((c) => names[c] ?? c).join(', ');
+}
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch { /* Try the document copy fallback below. */ }
+
+  const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.setAttribute('aria-hidden', 'true');
+  textarea.tabIndex = -1;
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  textarea.style.pointerEvents = 'none';
+  try {
+    document.body.appendChild(textarea);
+    textarea.select();
+    return document.execCommand('copy');
+  } catch {
+    return false;
+  } finally {
+    textarea.remove();
+    previous?.focus();
+  }
 }
 
 function moveTreeFocus(event: ReactKeyboardEvent<HTMLUListElement>) {

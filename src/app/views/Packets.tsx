@@ -14,11 +14,13 @@ export function Packets() {
   const [draft, setDraft] = useState(params.get('filter') ?? '');
   const [filter, setFilter] = useState(params.get('filter') ?? '');
   const [error, setError] = useState<string | null>(null);
+  const [pageErrors, setPageErrors] = useState<Map<number, string>>(() => new Map());
   const [busy, setBusy] = useState(false);
   const [matched, setMatched] = useState<number | null>(null);
   const [columns, setColumns] = useState<string[]>([]);
   const pages = useRef(new Map<number, { number: number; columns: string[] }[]>());
-  const inflight = useRef(new Set<number>());
+  const pageErrorsRef = useRef(pageErrors);
+  const inflight = useRef(new Map<number, number>());
   const [, force] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const gen = useRef(0);
@@ -32,35 +34,64 @@ export function Packets() {
   }, [sharedFilter.start, sharedFilter.end, sharedFilter.host]);
   const queryFilter = useMemo(() => [filter.trim() ? `(${filter.trim()})` : '', sharedDisplay].filter(Boolean).join(' && '), [filter, sharedDisplay]);
 
-  const loadPage = useCallback((p: number, g: number) => {
+  const setPageError = useCallback((p: number, message: string | null) => {
+    const next = new Map(pageErrorsRef.current);
+    if (message === null) next.delete(p);
+    else next.set(p, message);
+    pageErrorsRef.current = next;
+    setPageErrors(next);
+  }, []);
+
+  const fetchPage = useCallback((p: number, g: number) => {
     if (pages.current.has(p) || inflight.current.has(p)) return;
-    inflight.current.add(p);
-    engine.request({ kind: 'packetList', filter: queryFilter, skip: p * PAGE, limit: PAGE }).then((res) => {
+    inflight.current.set(p, g);
+    void engine.request({ kind: 'packetList', filter: queryFilter, skip: p * PAGE, limit: PAGE }).then((res) => {
       if (g !== gen.current) return;
       pages.current.set(p, res.rows);
-      inflight.current.delete(p);
+      setPageError(p, null);
       setColumns(res.columns);
       setMatched(res.matched);
+      if (p === 0) setBusy(false);
       force((x) => x + 1);
-    }).catch((e: Error) => { if (g === gen.current) setError(e.message); });
-  }, [engine, queryFilter]);
+    }).catch((e: unknown) => {
+      if (g !== gen.current) return;
+      setPageError(p, e instanceof Error ? e.message : String(e));
+      if (p === 0) setBusy(false);
+    }).finally(() => {
+      // An older request must not clear a newer request for the same page.
+      if (inflight.current.get(p) === g) inflight.current.delete(p);
+    });
+  }, [engine, queryFilter, setPageError]);
+
+  const loadPage = useCallback((p: number, g: number) => {
+    // A failed page remains dormant until the user explicitly retries it. Later
+    // pages also wait for page 0 to establish the row count and columns.
+    if (pageErrorsRef.current.has(p) || (p > 0 && !pages.current.has(0))) return;
+    fetchPage(p, g);
+  }, [fetchPage]);
+
+  const retryPage = useCallback((p: number) => {
+    const g = gen.current;
+    setPageError(p, null);
+    if (p === 0) setBusy(true);
+    fetchPage(p, g);
+  }, [fetchPage, setPageError]);
 
   useEffect(() => {
-    gen.current++;
+    const g = ++gen.current;
     pages.current = new Map();
-    inflight.current = new Set();
+    inflight.current = new Map();
+    pageErrorsRef.current = new Map();
+    setPageErrors(pageErrorsRef.current);
     setMatched(null);
     setError(null);
     setBusy(true);
-    const g = gen.current;
-    engine.request({ kind: 'packetList', filter: queryFilter, skip: 0, limit: PAGE }).then((res) => {
-      if (g !== gen.current) return;
-      pages.current.set(0, res.rows);
-      setColumns(res.columns);
-      setMatched(res.matched);
-      setBusy(false);
-    }).catch((e: Error) => { if (g === gen.current) { setError(e.message); setBusy(false); } });
-  }, [engine, queryFilter]);
+    fetchPage(0, g);
+    return () => {
+      // Invalidate outstanding requests on query changes and unmount.
+      if (gen.current === g) gen.current++;
+    };
+  }, [fetchPage]);
 
   const apply = async () => {
     const f = draft.trim();
@@ -84,6 +115,7 @@ export function Packets() {
   const widths: Record<string, string> = { 'No.': '80px', Time: '120px', Source: 'minmax(150px, 1fr)', Destination: 'minmax(150px, 1fr)', Protocol: '90px', Length: '76px', Info: 'minmax(320px, 4fr)' };
   const template = columns.map((c) => widths[c] ?? 'minmax(100px, 1fr)').join(' ');
   const rowAt = (i: number) => pages.current.get(Math.floor(i / PAGE))?.[i % PAGE];
+  const orderedPageErrors = [...pageErrors.entries()].sort(([a], [b]) => a - b);
 
   return (
     <>
@@ -97,13 +129,19 @@ export function Packets() {
           <span className="dt-count">{busy ? 'Filtering…' : matched === null ? '' : `${num(matched)} of ${num(model.capture.packetCount)} packets`}</span>
         </form>
         {error && <div style={{ padding: '10px 16px' }}><Note kind="crit">{error}</Note></div>}
-        <div className="dt-scroll" ref={scrollRef} style={{ maxHeight: '70vh' }} role="grid" tabIndex={0} aria-label="Packets" aria-busy={busy || columns.length === 0} aria-rowcount={matched === null ? -1 : matched + 1}>
+        {orderedPageErrors.length > 0 && <div style={{ padding: '10px 16px', display: 'grid', gap: 8 }}>
+          {orderedPageErrors.map(([p, message]) => <div key={p} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <Note kind="crit">Could not load packet page {p + 1}: {message}</Note>
+            <button className="btn small" type="button" onClick={() => retryPage(p)} aria-label={`Retry packet page ${p + 1}`}>Retry page {p + 1}</button>
+          </div>)}
+        </div>}
+        <div className="dt-scroll" ref={scrollRef} style={{ maxHeight: '70vh' }} role="grid" tabIndex={0} aria-label="Packets" aria-busy={busy} aria-rowcount={matched === null ? -1 : matched + 1}>
           <div className="dt-grid" role="presentation">
             {columns.length > 0 && <div className="dt-row dt-head" role="row" style={{ gridTemplateColumns: template }}>
               {columns.map((c) => <div key={c} role="columnheader" className={c === 'No.' || c === 'Length' ? 'r' : undefined}>{c}</div>)}
             </div>}
             <div className="dt-body" role="rowgroup" style={{ height: virt.getTotalSize(), position: 'relative' }}>
-              {columns.length === 0 && <div className="dt-row" role="row" style={{ gridTemplateColumns: '1fr' }}><div className="muted" role="gridcell">Loading packet columns…</div></div>}
+              {columns.length === 0 && !pageErrors.has(0) && <div className="dt-row" role="row" style={{ gridTemplateColumns: '1fr' }}><div className="muted" role="gridcell">Loading packet columns…</div></div>}
               {matched === 0 && <div className="dt-row" role="row" style={{ gridTemplateColumns: '1fr' }}><div className="empty" role="gridcell">No packets match this filter.</div></div>}
               {items.map((vi) => {
                 const r = rowAt(vi.index);
