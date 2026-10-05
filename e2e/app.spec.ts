@@ -238,6 +238,63 @@ test('DNS capture: overview, DNS dashboard and packet drawer, with no uploads', 
   expect(errs).toEqual([]);
 });
 
+test('JSON export offers an aggregate allowlist and redacted or unredacted detailed choices', async ({ page }) => {
+  const reqs = watchRequests(page);
+  await page.route('**/axe-for-test.js', (route) => route.fulfill({
+    contentType: 'application/javascript',
+    body: readFileSync(axeScript, 'utf8'),
+  }));
+  await page.goto('./');
+  await page.addScriptTag({ url: './axe-for-test.js' });
+  await openCapture(page, 'http.pcap');
+
+  const menu = page.locator('.json-export-menu');
+  await menu.locator('summary').click();
+  await expect(page.getByRole('heading', { name: 'Choose JSON export detail' })).toBeVisible();
+  await expect(menu).toContainText('HTTP paths and headers');
+  await auditA11y(page, 'JSON export menu');
+  const redaction = menu.getByRole('checkbox', { name: 'Redact known identifying and content-like values' });
+  await expect(redaction).toBeChecked();
+
+  const readDownloadedJson = async (buttonName: string) => {
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      menu.getByRole('button', { name: buttonName }).click(),
+    ]);
+    const path = await download.path();
+    if (!path) throw new Error('Browser did not provide the JSON download path');
+    return { name: download.suggestedFilename(), json: readFileSync(path, 'utf8') };
+  };
+
+  const aggregateDownload = await readDownloadedJson('Download aggregate JSON');
+  const aggregate = JSON.parse(aggregateDownload.json);
+  expect(aggregateDownload.name).toBe('capture-summary.json');
+  expect(aggregate.export.mode).toBe('aggregate');
+  expect(aggregate).not.toHaveProperty('hosts');
+  expect(aggregateDownload.json).not.toContain('10.0.0.5');
+  expect(aggregateDownload.json).not.toContain('/index.html');
+  expect(aggregateDownload.json).not.toContain('captured content');
+
+  await menu.locator('summary').click();
+  const redactedDownload = await readDownloadedJson('Download detailed JSON');
+  const redacted = JSON.parse(redactedDownload.json);
+  expect(redacted.export.redaction).toBe('known sensitive fields replaced with [REDACTED]');
+  expect(redactedDownload.json).not.toContain('10.0.0.5');
+  expect(redactedDownload.json).not.toContain('fixture-agent/1.0');
+  expect(redactedDownload.json).toContain('[REDACTED]');
+
+  await menu.locator('summary').click();
+  await redaction.uncheck();
+  const detailedDownload = await readDownloadedJson('Download detailed JSON');
+  const detailed = JSON.parse(detailedDownload.json);
+  expect(detailed.export.redaction).toBe('not applied');
+  expect(detailed.hosts.some((host: { addr: string }) => host.addr === '10.0.0.5')).toBe(true);
+  expect(detailedDownload.json).toContain('fixture-agent/1.0');
+  expect(detailedDownload.json).not.toContain('captured content');
+  expect(detailed.export.neverIncluded).toContain('Reassembled TCP/UDP stream payloads');
+  expect(reqs.offenders()).toEqual([]);
+});
+
 test('HTTP capture: requests, hosts, sessions, graph and packet list', async ({ page }) => {
   const reqs = watchRequests(page);
   const errs = errors(page);
@@ -460,6 +517,21 @@ test('edge cases: truncated/malformed notes, incomplete file, non-capture file',
   await openCapture(page, 'edge.pcap');
   await expect(page.getByText(/1 packet truncated/)).toBeVisible();
   await expect(page.getByText(/1 packet malformed/)).toBeVisible();
+
+  await view(page, 'connections');
+  const conversations = page.getByRole('grid', { name: 'Conversations' });
+  const quality = page.getByRole('group', { name: 'Filter by connection quality observation' });
+  await quality.getByRole('button', { name: 'Malformed (1)' }).click();
+  await expect(quality.getByRole('button', { name: 'Malformed (1)' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(conversations.getByRole('row')).toHaveCount(2);
+  await expect(conversations.getByRole('row').filter({ hasText: '10.0.0.5:50100' })).toHaveCount(1);
+  await quality.getByRole('button', { name: 'Truncated (1)' }).click();
+  await expect(conversations.getByRole('row')).toHaveCount(2);
+  await expect(conversations.getByRole('row').filter({ hasText: '10.0.0.5:50102' })).toHaveCount(1);
+  await quality.getByRole('button', { name: 'RST seen (0)' }).click();
+  await expect(conversations).toContainText('No matching conversations.');
+  await page.getByRole('button', { name: 'Clear quality filter' }).click();
+  await expect(conversations.getByRole('row')).toHaveCount(4);
 
   await page.locator('input[type=file]').first().setInputFiles(fixture('cut.pcap'));
   await expect(page.locator('.cap-title h1')).toHaveText('cut.pcap');

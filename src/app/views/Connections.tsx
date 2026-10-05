@@ -8,6 +8,12 @@ import { Addr, Note, Panel, Seg, ViewHead } from '../components/bits';
 import { FollowStream } from '../components/FollowStream';
 import { useApp } from '../context';
 import { bytes, duration, endpoint, num, plural, rel } from '../format';
+import {
+  connectionQualityFilters,
+  countConnectionQuality,
+  filterConnectionsByQuality,
+  type ConnectionQualityFilter,
+} from '../connectionQuality';
 
 export function tcpState(c: Conversation): string {
   if (!c.tcp) return '';
@@ -22,9 +28,10 @@ export function tcpState(c: Conversation): string {
 }
 
 export function Connections() {
-  const { model, params, go, filter } = useApp();
+  const { model, params, go } = useApp();
   const [transport, setTransport] = useState<'all' | Transport>('all');
   const [app, setApp] = useState('all');
+  const [qualityFilter, setQualityFilter] = useState<ConnectionQualityFilter>('all');
   const hostFilter = params.get('host');
   const [selected, setSelected] = useState<number | null>(params.get('conv') !== null ? Number(params.get('conv')) : null);
   const apps = useMemo(() => {
@@ -32,9 +39,11 @@ export function Connections() {
     for (const c of model.conversations) m.set(c.appProtocol, (m.get(c.appProtocol) ?? 0) + 1);
     return [...m.entries()].sort((a, b) => b[1] - a[1]);
   }, [model.conversations]);
-  const rows = useMemo(() => model.conversations.filter((c) =>
+  const unfilteredRows = useMemo(() => model.conversations.filter((c) =>
     (transport === 'all' || c.transport === transport) && (app === 'all' || c.appProtocol === app)
     && (!hostFilter || c.a === hostFilter || c.b === hostFilter)), [model.conversations, transport, app, hostFilter]);
+  const rows = useMemo(() => filterConnectionsByQuality(unfilteredRows, qualityFilter), [unfilteredRows, qualityFilter]);
+  const qualityCounts = useMemo(() => countConnectionQuality(unfilteredRows), [unfilteredRows]);
   const conv = selected !== null ? model.conversations.find((c) => c.id === selected) ?? null : null;
   const counts = useMemo(() => {
     const m: Record<string, number> = { TCP: 0, UDP: 0, IP: 0, 'Non-IP': 0 };
@@ -68,18 +77,39 @@ export function Connections() {
       {hostFilter && (
         <Note>Showing conversations involving <span className="mono">{hostFilter}</span>. <button className="btn small" onClick={() => go('connections')}>Show all</button></Note>
       )}
-      {(filter.start !== null || filter.host) && <Note>Conversation rows include matching packets; directional packet/byte totals and times reflect the selected traffic. TCP flags and analysis counters describe the full conversation.</Note>}
+      <Note>Counts are conversations with at least one recorded Wireshark indicator. They describe observations in this capture, not a diagnosed cause. TCP indicators use full-conversation counts; shared packet filters affect the displayed packet totals, bytes, and times.</Note>
       {conv && <ConversationDetail key={conv.id} c={conv} onClose={() => setSelected(null)} />}
       <section className="panel">
         <DataTable label="Conversations" exportName="conversations" rows={rows} columns={columns} rowKey={(c) => c.id} selectedKey={selected}
           onRowClick={(c) => setSelected(c.id)} initialSort={{ key: 'start', dir: 'asc' }} searchPlaceholder="Search addresses, ports, protocols"
           toolbar={
-            <select className="select" value={app} onChange={(e) => setApp(e.target.value)} aria-label="Filter by protocol">
-              <option value="all">All protocols</option>
-              {apps.map(([a, n]) => <option key={a} value={a}>{a} ({num(n)})</option>)}
-            </select>
+            <div className="connection-filters">
+              <select className="select" value={app} onChange={(e) => setApp(e.target.value)} aria-label="Filter by protocol">
+                <option value="all">All protocols</option>
+                {apps.map(([a, n]) => <option key={a} value={a}>{a} ({num(n)})</option>)}
+              </select>
+              <div className="connection-quality-group" role="group" aria-label="Filter by connection quality observation">
+                <span className="connection-quality-label">Capture observations</span>
+                <div className="connection-quality-options">
+                  <button className="btn small quality-filter" aria-pressed={qualityFilter === 'all'}
+                    title={`${num(qualityCounts.all)} conversations`} onClick={() => setQualityFilter('all')}>
+                    All ({num(qualityCounts.all)})
+                  </button>
+                  {connectionQualityFilters.map(({ value, label, description }) => (
+                    <button key={value} className="btn small quality-filter" aria-pressed={qualityFilter === value}
+                      title={`${num(qualityCounts[value])} conversations where ${description}`}
+                      onClick={() => setQualityFilter(value)}>
+                      {label} ({num(qualityCounts[value])})
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
           }
-          empty={<><strong>No conversations.</strong>No packets could be grouped into conversations.</>} />
+          empty={unfilteredRows.length === 0 ? <><strong>No conversations.</strong>No packets could be grouped into conversations with the current filters.</> : <>
+            <strong>No matching conversations.</strong>No conversations in this view show {connectionQualityFilters.find((item) => item.value === qualityFilter)?.description ?? 'this observation'}.
+            <button className="btn small" style={{ marginTop: 8 }} onClick={() => setQualityFilter('all')}>Clear quality filter</button>
+          </>} />
       </section>
     </>
   );

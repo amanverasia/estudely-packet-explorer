@@ -158,6 +158,23 @@ p { margin: 0; }
 .cap-facts { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 4px; color: var(--ink-2); font-size: 13px; }
 .cap-facts b { font-weight: 500; color: var(--ink); font-variant-numeric: tabular-nums; }
 .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.json-export-menu { position: relative; }
+.json-export-menu > summary { list-style: none; }
+.json-export-menu > summary::-webkit-details-marker { display: none; }
+.json-export-panel {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 12; width: min(540px, calc(100vw - 32px));
+  max-height: min(75vh, 680px); overflow: auto; padding: 16px; display: grid; gap: 12px;
+  color: var(--ink); background: var(--panel); border: 1px solid var(--rule-strong); border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.2); white-space: normal;
+}
+.json-export-panel h2 { font-size: 15px; margin: 0; }
+.json-export-choice { display: grid; justify-items: start; gap: 8px; padding: 12px; background: var(--panel-2); border-radius: 6px; }
+.json-export-choice h3 { font-size: 13px; margin: 0; }
+.json-export-choice p, .json-export-exclusions { font-size: 12px; line-height: 1.5; margin: 0; }
+.json-export-redaction { display: flex; align-items: flex-start; gap: 8px; color: var(--ink-2); font-size: 12px; }
+.json-export-redaction input { margin: 2px 0 0; }
+.json-export-panel .muted { font-size: 11px; }
+.json-export-exclusions { color: var(--ink-2); }
 .strip { margin-top: 10px; height: 34px; display: block; width: 100%; }
 .strip svg { display: block; width: 100%; }
 .filter-chips { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 6px 0 8px; }
@@ -238,6 +255,12 @@ p { margin: 0; }
 .dt { display: flex; flex-direction: column; min-width: 0; }
 .dt-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--rule); }
 .dt-tools .input { flex: 1 1 220px; max-width: 360px; }
+.connection-filters { flex: 1 1 100%; display: grid; gap: 10px; min-width: 0; }
+.connection-filters > .select { justify-self: start; max-width: 100%; }
+.connection-quality-group { display: grid; gap: 6px; min-width: 0; }
+.connection-quality-label { color: var(--ink-3); font-size: 12px; }
+.connection-quality-options { display: flex; flex-wrap: wrap; gap: 6px; }
+.quality-filter[aria-pressed='true'] { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); }
 .dt-count { color: var(--ink-3); font-size: 12px; margin-left: auto; white-space: nowrap; }
 .dt-scroll { overflow: auto; position: relative; }
 .dt-grid { min-width: max-content; }

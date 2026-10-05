@@ -23,10 +23,9 @@ export function Hosts() {
   const ipMatches = useMemo(() => {
     const result = new Map<string, { country: LocalIpMatch | null; asn: LocalIpMatch | null }>();
     for (const h of model.hosts) {
-      const publiclyRoutable = h.scope === 'public' || h.scope === 'global';
       result.set(h.addr, {
-        country: publiclyRoutable && databases.country ? lookupLocalIp(databases.country, h.addr) : null,
-        asn: publiclyRoutable && databases.asn ? lookupLocalIp(databases.asn, h.addr) : null,
+        country: h.globallyReachable && databases.country ? lookupLocalIp(databases.country, h.addr) : null,
+        asn: h.globallyReachable && databases.asn ? lookupLocalIp(databases.asn, h.addr) : null,
       });
     }
     return result;
@@ -65,6 +64,7 @@ export function Hosts() {
         One row per IP address seen as a packet source or destination. Bytes are original frame lengths.
       </ViewHead>
       <LocalIpDataPanel databases={databases} onChange={onDatabaseChange} />
+      <Note>Address range labels use reviewed IANA registry snapshots (special-purpose 2025-10-09; IPv6 address space 2025-10-23; IPv4 multicast 2026-08-20). Optional country and network-owner data is matched only for globally reachable addresses; special-purpose prefixes not marked globally reachable are excluded. A subnet broadcast is labelled when the capture shows an IPv4 packet sent to the Ethernet broadcast address.</Note>
       <Note>Ports listed are those observed in this capture's traffic, with the evidence seen for each. They do not show whether a port is open now, and no operating-system or device identification is attempted.</Note>
       {(filter.start !== null || filter.host) && <Note>Sent/received packet and byte totals are recalculated for the selected traffic. MAC addresses, names, ports, peers, and protocol labels remain whole-capture metadata.</Note>}
       {host && <HostDetail host={host} ipData={ipMatches.get(host.addr) ?? { country: null, asn: null }} onClose={() => setSelected(null)} go={go} digits={digits}
@@ -119,7 +119,7 @@ function HostDetail({ host: h, ipData, onClose, go, onFilter, isFiltered, openFr
               </dl>
             ) : <p className="muted">No Ethernet source address observed (for example raw-IP or tunnelled captures).</p>}
             {h.arpMacs.length > 0 && <p style={{ marginTop: 6 }}>ARP announced this address at <span className="mono">{h.arpMacs.join(', ')}</span>.</p>}
-            {h.macs.length > 0 && h.scope !== 'private' && h.scope !== 'link-local' && h.scope !== 'unique local' && (
+            {h.macs.length > 0 && h.globallyReachable && (
               <p className="muted" style={{ marginTop: 6, fontSize: 12 }}>For addresses outside the local network the source MAC is usually a router, not this host.</p>
             )}
             {h.macs.length > 0 && (
