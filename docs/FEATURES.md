@@ -40,7 +40,7 @@ Supported: anything Wireshark 4.4.5's libwiretap reads — pcap (µs and ns), pc
 
 Link types: any link type Wireshark dissects is decoded. Address-based features (Hosts, Connections, Network) need IPv4/IPv6; frames without IP (ARP, LLDP…) appear as Non-IP conversations and in the protocol charts. Link types Wireshark cannot dissect show as undecoded frames.
 
-Not supported: live capture, files over 1 GiB (refused), files Wireshark cannot open (the error says so).
+Not supported: live capture and files Wireshark cannot open (the error says so). For inputs whose analyzed data exceeds 1 GiB, only the first 1 GiB is analyzed; the app marks the capture and reports as partial.
 
 ## Correctness choices
 

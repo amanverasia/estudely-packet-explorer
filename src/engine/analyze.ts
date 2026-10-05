@@ -13,6 +13,8 @@ import { fingerprint, hexToBytes, parseCertificate } from './x509';
 export interface CaptureMeta {
   fileName: string;
   fileSize: number;
+  analyzedBytes?: number;
+  partial?: boolean;
   fileType: string;
   linkType: string;
   incomplete: string | null;
@@ -670,7 +672,8 @@ export async function analyze(raw: RawRecords, meta: CaptureMeta, onProgress?: (
 
   const ifaceInfo = raw.ifaces.map((f) => ({ id: f.id, linkType: f.linkType, name: f.name, packets: ifaceCount.get(f.id) ?? 0 }));
   const capture: CaptureInfo = {
-    fileName: meta.fileName, fileSize: meta.fileSize, fileType: meta.fileType, linkType: meta.linkType,
+    fileName: meta.fileName, fileSize: meta.fileSize, analyzedBytes: meta.analyzedBytes ?? meta.fileSize,
+    partial: meta.partial ?? false, fileType: meta.fileType, linkType: meta.linkType,
     packetCount: packets.length, startEpoch: raw.startEpoch, duration, timestampDigits: raw.timestampDigits, nonMonotonicTimestamps: backwards,
     interfaces: ifaceInfo, wireBytes: wire, capturedBytes: captured, truncatedPackets: truncated,
     malformedPackets: malformed, expertErrorPackets: expert, fragmentPackets: frags, retransmissions: retrans,

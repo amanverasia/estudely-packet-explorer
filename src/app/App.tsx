@@ -67,10 +67,6 @@ export function App() {
   useEffect(() => () => engine.close(), [engine]);
 
   const openFile = useCallback((file: File, keyLog?: File | null) => {
-    if (file.size > HARD_LIMIT_BYTES) {
-      setState({ kind: 'error', fileName: file.name, message: `This file is ${bytes(file.size)}. The limit is ${bytes(HARD_LIMIT_BYTES)}: the WebAssembly engine has a 2 GiB memory ceiling and needs room for decoding state. Split the capture (for example with editcap -c) and open the parts.` });
-      return;
-    }
     setDrawer(null);
     engine.open(file, keyLog);
   }, [engine]);
@@ -218,11 +214,13 @@ function Landing({ state, onOpen, onCancel, theme, setTheme }: { state: EngineSt
           </div>
         )}
         {working && working.fileSize > SOFT_LIMIT_BYTES && (
-          <div className="note warn">Large capture: analysis takes roughly a minute per 400,000 packets and needs several times the file size in memory. You can cancel at any time.</div>
+          <div className="note warn">{working.fileSize > HARD_LIMIT_BYTES
+            ? <>Large capture: analysis is capped at the first {bytes(HARD_LIMIT_BYTES)} of capture data. If the cap is reached, results are marked partial.</>
+            : <>Large capture: analysis takes roughly a minute per 400,000 packets and needs several times the file size in memory. You can cancel at any time.</>}</div>
         )}
         <div className="landing-list">
           <div><h3>Formats</h3>pcap and pcapng (including multiple interfaces), plus other formats Wireshark 4.4's file reader supports, such as gzip-compressed pcap, snoop and ERF.</div>
-          <div><h3>Size</h3>Tested up to 350 MB and 400,000 packets. Files over {bytes(HARD_LIMIT_BYTES)} are refused; over {bytes(SOFT_LIMIT_BYTES)} expect slow analysis.</div>
+          <div><h3>Size</h3>Tested up to 350 MB and 400,000 packets. Analysis is capped at {bytes(HARD_LIMIT_BYTES)} of capture data; reaching the cap produces clearly marked partial results. Over {bytes(SOFT_LIMIT_BYTES)} expect slow analysis.</div>
           <div><h3>Privacy</h3>No uploads or analytics. Optional DB-IP files are downloaded only when you choose and looked up locally; capture addresses are never sent. The capture stays in this tab's memory until you close it or the tab.</div>
           <OfflineStatus />
         </div>
@@ -343,6 +341,7 @@ function Workspace(props: {
                   <span><b>{duration(filter.start !== null && filter.end !== null ? filter.end - filter.start : stats.end !== null && stats.start !== null ? Math.max(0, stats.end - stats.start) : c.duration)}</b>{filter.start !== null || filter.host ? ' selected' : ''}</span>
                   <span><b>{bytes(stats.wireBytes)}</b> on wire{stats.wireBytes !== c.wireBytes ? ` / ${bytes(c.wireBytes)}` : ''}</span>
                   <span><b>{num(model.hosts.length)}</b>{stats.allHosts !== model.hosts.length ? ` / ${num(stats.allHosts)}` : ''} hosts</span>
+                  {c.partial && <span className="tag warn">partial analysis</span>}
                   {c.incomplete && <span className="tag bad">incomplete file</span>}
                 </div>
               </div>
@@ -364,6 +363,9 @@ function Workspace(props: {
           </header>
           <main className="content" id="content">
             {model.tls.length > 0 && <TlsStatusBanner sessions={model.tls} />}
+            {c.partial && <div className="note warn" role="status" style={{ marginBottom: 14 }}>
+              <b>Partial analysis.</b> Only the first {bytes(c.analyzedBytes)} of capture data was analyzed. Packets after this prefix are omitted from every view and export.
+            </div>}
             {(filter.start !== null || filter.host) && <div className="note info" role="status">
               Shared filter: {num(stats.packets)} of {num(c.packetCount)} packets, {num(model.dns.length)} of {num(sourceModel.dns.length)} DNS records, {num(model.http.length)} of {num(sourceModel.http.length)} HTTP records, {num(model.tls.length)} of {num(sourceModel.tls.length)} TLS sessions, {num(model.hosts.length)} of {num(sourceModel.hosts.length)} hosts, and {num(model.conversations.length)} of {num(sourceModel.conversations.length)} conversations. A correlated exchange appears when any source packet meets the filter; its details can include packets outside the time window.
             </div>}

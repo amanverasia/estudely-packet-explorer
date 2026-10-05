@@ -50,6 +50,15 @@ export interface Progress {
   message: string;
 }
 
+export interface CaptureInputOptions {
+  /** Size of the user's original file, before any prefix limit or decompression. */
+  fileSize?: number;
+  /** Maximum uncompressed capture bytes to keep in the in-memory filesystem. */
+  maxBytes?: number;
+  /** The caller already knows that the supplied stream is only a prefix. */
+  partial?: boolean;
+}
+
 const ESTX_DIR = '/estx';
 const OUT_PATH = '/estx/out.tsv';
 const ARM_PATH = '/estx/arm';
@@ -138,7 +147,13 @@ export class CaptureSession {
     }
   }
 
-  async open(fileName: string, bytes: Uint8Array, onProgress: (p: Progress) => void, keyLog?: Uint8Array | null): Promise<AnalysisModel> {
+  async open(
+    fileName: string,
+    input: Uint8Array | ReadableStream<Uint8Array>,
+    onProgress: (p: Progress) => void,
+    keyLog?: Uint8Array | null,
+    inputOptions: CaptureInputOptions = {},
+  ): Promise<AnalysisModel> {
     this.progress = onProgress;
     const FS = this.lib.FS;
     // Keep the optional key log only in Wiregasm's in-memory filesystem while
@@ -155,10 +170,44 @@ export class CaptureSession {
       try { FS.unlink(TLS_KEYLOG_PATH); } catch { /* no key log file */ }
       throw error;
     }
-    // Hand the buffer to the in-memory FS without an extra copy (canOwn).
+    // Stream capture bytes directly into Wiregasm's in-memory filesystem. The
+    // browser worker bounds this to a prefix, so a huge File is never first
+    // materialized as one large ArrayBuffer in JavaScript memory.
     const stream = FS.open(this.path, 'w+');
-    FS.write(stream, bytes, 0, bytes.length, 0, true);
-    FS.close(stream);
+    const maxBytes = inputOptions.maxBytes ?? Number.POSITIVE_INFINITY;
+    let analyzedBytes = 0;
+    let partial = inputOptions.partial ?? false;
+    try {
+      if (input instanceof Uint8Array) {
+        const length = Math.min(input.byteLength, maxBytes);
+        if (length > 0) FS.write(stream, input, 0, length, 0, length === input.byteLength);
+        analyzedBytes = length;
+        if (length < input.byteLength) partial = true;
+      } else {
+        const reader = input.getReader();
+        let reachedEnd = false;
+        try {
+          while (analyzedBytes < maxBytes) {
+            const { done, value } = await reader.read();
+            if (done) { reachedEnd = true; break; }
+            const length = Math.min(value.byteLength, maxBytes - analyzedBytes);
+            if (length > 0) FS.write(stream, value, 0, length, analyzedBytes, false);
+            analyzedBytes += length;
+            if (length < value.byteLength) { partial = true; break; }
+          }
+          if (!reachedEnd && analyzedBytes >= maxBytes) {
+            // Read only enough to tell whether the cap excluded more data.
+            try { partial ||= !(await reader.read()).done; }
+            catch { partial = true; }
+          }
+        } finally {
+          if (!reachedEnd) await reader.cancel().catch(() => {});
+          reader.releaseLock();
+        }
+      }
+    } finally {
+      FS.close(stream);
+    }
 
     onProgress({ phase: 'load', fraction: null, message: 'Indexing packets…' });
     this.sess = new this.lib.DissectSession(this.path);
@@ -166,9 +215,12 @@ export class CaptureSession {
     const summary = res.summary;
     let incomplete: string | null = null;
     if (res.code !== 0) {
-      const msg = describeLoadError(res.code, res.error);
-      if (res.code > 0 || !summary || summary.packet_count === 0) throw new Error(msg);
-      incomplete = `${msg} Packets read before the problem (${summary.packet_count.toLocaleString()}) were analysed.`;
+      const expectedPrefixEnd = partial && res.code === -12 && !!summary && summary.packet_count > 0;
+      if (!expectedPrefixEnd) {
+        const msg = describeLoadError(res.code, res.error);
+        if (res.code > 0 || !summary || summary.packet_count === 0) throw new Error(msg);
+        incomplete = `${msg} Packets read before the problem (${summary.packet_count.toLocaleString()}) were analysed.`;
+      }
     }
     const count: number = summary.packet_count;
     this.loadedPackets = count;
@@ -196,7 +248,11 @@ export class CaptureSession {
     out = new Uint8Array(0);
     onProgress({ phase: 'analyze', fraction: null, message: 'Aggregating…' });
     const { model, index } = await analyze(raw, {
-      fileName, fileSize: bytes.length, fileType: summary.file_type, linkType: summary.file_encap_type, incomplete,
+      fileName,
+      fileSize: inputOptions.fileSize ?? (input instanceof Uint8Array ? input.byteLength : analyzedBytes),
+      analyzedBytes,
+      partial,
+      fileType: summary.file_type, linkType: summary.file_encap_type, incomplete,
       engine: { wireshark: this.lib.wiresharkVersion(), wiregasm: this.wiregasmVersion }, warnings,
     }, (m) => onProgress({ phase: 'analyze', fraction: null, message: m }));
     this.index = index;

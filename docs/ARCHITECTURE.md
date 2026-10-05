@@ -104,4 +104,4 @@ Times are stored relative to the first packet so that nanosecond precision survi
 | 100k packets, 88 MB | 3.4 s | 11.4 s | 161 MB | — |
 | 400k packets, 351 MB | 12.6 s | 39.5 s | 334 MB | 930 MB |
 
-Hence the limits in `src/app/engine.ts`: a warning above 250 MB and a hard refusal above 1 GiB. Browser times are similar to Node; expect a few seconds of engine start-up on first use.
+Hence the limits in `src/engine/limits.ts`: a warning above 250 MB and a 1 GiB cap on bytes streamed into the in-memory capture. Larger inputs are read as a bounded prefix, never materialized as one large JavaScript `ArrayBuffer`, and are marked partial throughout the UI and exported summaries. Gzip data is bounded after decompression. Browser times are similar to Node; expect a few seconds of engine start-up on first use.

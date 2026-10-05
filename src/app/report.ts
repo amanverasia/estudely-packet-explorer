@@ -60,6 +60,7 @@ export function htmlReport(model: AnalysisModel): string {
     ['Capture file', c.fileName],
     ['Format', `${c.fileType} · ${c.linkType}`],
     ['File size', bytes(c.fileSize)],
+    ['Analysis coverage', c.partial ? `Partial — first ${bytes(c.analyzedBytes)} analyzed` : `Complete — ${bytes(c.analyzedBytes)} analyzed`],
     ['Capture start (UTC)', start],
     ['Duration', `${c.duration.toFixed(3)} s`],
     ['Interfaces', c.interfaces.length],

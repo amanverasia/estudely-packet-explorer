@@ -10,9 +10,10 @@ import type { Progress } from '../engine/session';
 import type { FromWorker, ToWorker, WorkerRequest, WorkerResponses } from '../worker/protocol';
 import { postWithModule } from '../worker/compat';
 import { missingFeatures, SUPPORTED_BROWSERS } from './support';
+import { LARGE_CAPTURE_WARNING_BYTES, MAX_ANALYSIS_BYTES } from '../engine/limits';
 
-export const SOFT_LIMIT_BYTES = 250 * 1024 * 1024;
-export const HARD_LIMIT_BYTES = 1024 * 1024 * 1024;
+export const SOFT_LIMIT_BYTES = LARGE_CAPTURE_WARNING_BYTES;
+export const HARD_LIMIT_BYTES = MAX_ANALYSIS_BYTES;
 
 export type EngineState =
   | { kind: 'idle' }

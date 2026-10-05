@@ -36,7 +36,7 @@ No engine needed a fallback for any of these. In WebKit the offline test makes t
 - **No `DecompressionStream`, `WebAssembly` or `Worker`:** checked before a worker is started (`src/app/support.ts`). The page names the missing feature and the browsers that work, and nothing is downloaded. The worker repeats the `DecompressionStream` check on its own.
 - **Module workers not supported:** older browsers throw when the worker is created. The page catches it and shows the same kind of explanation instead of failing silently.
 - **The browser refuses to post the compiled module** (`DataCloneError`; allowed by the spec, not seen in any current engine): the message is sent without the module (`src/worker/compat.ts`) and the next worker downloads (from the service worker or HTTP cache) and compiles its own copy. The capture still opens.
-- **Out of memory:** each capture runs in its own worker, which is terminated on close, so a failed capture frees everything and the next one starts clean. Files over 1 GiB are refused before reading.
+- **Out of memory:** each capture runs in its own worker, which is terminated on close, so a failed capture frees everything and the next one starts clean. At most 1 GiB of uncompressed capture data is streamed into Wiregasm; larger inputs are analyzed as a clearly marked prefix.
 
 No current engine lacks these features, so the browser tests force each fallback by removing or wrapping the browser API in an init script.
 

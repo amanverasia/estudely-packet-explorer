@@ -7,6 +7,7 @@
 // on close/cancel, which releases all WASM memory.
 import extractorSource from '../engine/extractor.lua?raw';
 import { CaptureSession, installExtractor, type WiregasmModule } from '../engine/session';
+import { MAX_ANALYSIS_BYTES } from '../engine/limits';
 import type { FromWorker, ToWorker, WorkerRequest } from './protocol';
 import { postWithModule } from './compat';
 
@@ -45,6 +46,16 @@ async function fetchBytes(url: string, label: string): Promise<ArrayBuffer> {
     return await new Response(stream).arrayBuffer();
   }
   return buf.buffer;
+}
+
+async function captureStream(file: File): Promise<{ stream: ReadableStream<Uint8Array>; partial: boolean }> {
+  const magic = new Uint8Array(await file.slice(0, 2).arrayBuffer());
+  const gzip = magic[0] === 0x1f && magic[1] === 0x8b;
+  if (gzip && typeof DecompressionStream !== 'undefined') {
+    // Bound the decompressed capture, not the compressed input size.
+    return { stream: file.stream().pipeThrough(new DecompressionStream('gzip')), partial: false };
+  }
+  return { stream: file.stream(), partial: file.size > MAX_ANALYSIS_BYTES };
 }
 
 async function initEngine(base: string, cachedModule: WebAssembly.Module | null, cachedData: ArrayBuffer | null): Promise<void> {
@@ -109,10 +120,12 @@ self.onmessage = async (ev: MessageEvent<ToWorker>) => {
     }
     try {
       post({ type: 'progress', progress: { phase: 'read', fraction: null, message: 'Reading file from your device…' } });
-      const bytes = new Uint8Array(await msg.file.arrayBuffer());
+      const input = await captureStream(msg.file);
       const keyLog = msg.keyLog ? new Uint8Array(await msg.keyLog.arrayBuffer()) : null;
       session = new CaptureSession(lib!, wiregasmVersion);
-      const model = await session.open(msg.file.name, bytes, (progress) => post({ type: 'progress', progress }), keyLog);
+      const model = await session.open(msg.file.name, input.stream, (progress) => post({ type: 'progress', progress }), keyLog, {
+        fileSize: msg.file.size, maxBytes: MAX_ANALYSIS_BYTES, partial: input.partial,
+      });
       post({ type: 'ready', model });
     } catch (e) {
       session?.close();

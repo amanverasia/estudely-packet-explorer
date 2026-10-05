@@ -27,7 +27,12 @@ export interface InterfaceInfo {
 
 export interface CaptureInfo {
   fileName: string;
+  /** Size of the user's original capture file. */
   fileSize: number;
+  /** Uncompressed bytes analyzed by Wiregasm (may be a bounded prefix). */
+  analyzedBytes: number;
+  /** True when the analysis intentionally stopped at the configured byte cap. */
+  partial: boolean;
   fileType: string;
   linkType: string;
   packetCount: number;

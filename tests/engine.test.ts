@@ -29,15 +29,32 @@ beforeAll(async () => {
   expect(lib.init()).toBe(true);
 });
 
-async function open(name: string, keyLogName?: string): Promise<{ model: AnalysisModel; session: CaptureSession }> {
+async function open(name: string, keyLogName?: string, maxBytes?: number): Promise<{ model: AnalysisModel; session: CaptureSession }> {
   current?.close();
   const session = new CaptureSession(lib, 'test');
   current = session;
   const bytes = new Uint8Array(readFileSync(join(root, 'fixtures', name)));
   const keyLog = keyLogName ? new Uint8Array(readFileSync(join(root, 'fixtures', keyLogName))) : null;
-  const model = await session.open(name, bytes, () => {}, keyLog);
+  const input = maxBytes === undefined ? bytes : new Blob([bytes]).stream();
+  const model = await session.open(name, input, () => {}, keyLog, maxBytes === undefined ? {} : { fileSize: bytes.byteLength, maxBytes });
   return { model, session };
 }
+
+describe('bounded capture prefix', () => {
+  it('streams a limited prefix and marks its metadata as partial', async () => {
+    const original = new Uint8Array(readFileSync(join(root, 'fixtures', 'dns.pcap')));
+    const limit = Math.floor(original.byteLength / 2);
+    const { model, session } = await open('dns.pcap', undefined, limit);
+    expect(model.capture).toMatchObject({
+      fileSize: original.byteLength,
+      analyzedBytes: limit,
+      partial: true,
+    });
+    expect(model.capture.packetCount).toBeGreaterThan(0);
+    expect(model.capture.packetCount).toBeLessThan(29);
+    session.close();
+  });
+});
 
 describe('DNS fixture', () => {
   let m: AnalysisModel;
