@@ -127,9 +127,19 @@ export function applySharedFilter(source: AnalysisModel, filter: SharedFilter): 
       start: traffic.first, end: traffic.last,
       records: { dns: 0, http: 0, tls: 0 } }];
   });
-  for (const d of dns) if (d.convId !== null) { const c = conversations.find((row) => row.id === d.convId); if (c) c.records.dns++; }
-  for (const h of http) if (h.convId !== null) { const c = conversations.find((row) => row.id === h.convId); if (c) c.records.http++; }
-  for (const t of tls) if (t.convId !== null) { const c = conversations.find((row) => row.id === t.convId); if (c) c.records.tls++; }
+  const conversationsById = new Map(conversations.map((conv) => [conv.id, conv]));
+  for (const d of dns) {
+    const conv = d.convId === null ? undefined : conversationsById.get(d.convId);
+    if (conv) conv.records.dns++;
+  }
+  for (const h of http) {
+    const conv = h.convId === null ? undefined : conversationsById.get(h.convId);
+    if (conv) conv.records.http++;
+  }
+  for (const t of tls) {
+    const conv = t.convId === null ? undefined : conversationsById.get(t.convId);
+    if (conv) conv.records.tls++;
+  }
 
   const topProtocols = index.protocolNames.map((proto, i) => ({ proto, packets: topPackets[i], bytes: topBytes[i] }))
     .filter((s) => s.packets > 0).sort((a, b) => b.bytes - a.bytes);
@@ -140,11 +150,11 @@ export function applySharedFilter(source: AnalysisModel, filter: SharedFilter): 
     topProtocols, hosts, conversations, dns, http, tls, arp, arpBindings, dhcp, icmp, ssh, quic,
     unsupported: {
       ...source.unsupported,
-      httpPortsUndecoded: source.unsupported.httpPortsUndecoded.filter((id) => conversations.some((c) => c.id === id)),
+      httpPortsUndecoded: source.unsupported.httpPortsUndecoded.filter((id) => conversationsById.has(id)),
       encryptedConversations: conversations.filter((c) => c.protocols.includes('TLS') || c.protocols.includes('QUIC')).length,
       quicConversations: conversations.filter((c) => c.protocols.includes('QUIC')).length,
       http2Packets,
-      httpWithGaps: source.unsupported.httpWithGaps.filter((id) => conversations.some((c) => c.id === id)),
+      httpWithGaps: source.unsupported.httpWithGaps.filter((id) => conversationsById.has(id)),
     },
   };
   return { model: filtered, stats: {
