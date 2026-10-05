@@ -531,7 +531,7 @@ test('edge cases: truncated/malformed notes, incomplete file, non-capture file',
   await quality.getByRole('button', { name: 'RST seen (0)' }).click();
   await expect(page.getByText('No matching conversations.')).toBeVisible();
   await page.getByRole('button', { name: 'Clear quality filter' }).click();
-  await expect(conversations.getByRole('row')).toHaveCount(4);
+  await expect(conversations.getByRole('row')).toHaveCount(5);
 
   await page.locator('input[type=file]').first().setInputFiles(fixture('cut.pcap'));
   await expect(page.locator('.cap-title h1')).toHaveText('cut.pcap');
