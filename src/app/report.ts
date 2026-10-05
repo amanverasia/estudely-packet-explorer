@@ -4,6 +4,12 @@
 // separate from JSON export: packet-level and content-bearing fields do not
 // belong in a shareable report.
 import type { AnalysisModel, ProtoStat } from '../engine/types';
+import type { FilterStats, SharedFilter } from './filtering';
+
+export interface HtmlReportScope {
+  filter: SharedFilter;
+  stats: FilterStats;
+}
 
 const escapeHtml = (value: unknown): string => String(value ?? '')
   .replaceAll('&', '&amp;')
@@ -51,8 +57,9 @@ function protoRows(items: ProtoStat[]): unknown[][] {
     .map((item) => [item.proto, number(item.packets), bytes(item.bytes)]);
 }
 
-/** Returns a self-contained HTML document containing whole-capture aggregates only. */
-export function htmlReport(model: AnalysisModel): string {
+/** Returns a self-contained HTML document containing aggregate data only. */
+export function htmlReport(model: AnalysisModel, scope?: HtmlReportScope): string {
+  const isScoped = scope !== undefined;
   const c = model.capture;
   const generatedAt = new Date().toISOString();
   const start = c.startEpoch ? new Date(Number(c.startEpoch) * 1000).toISOString() : 'Unavailable';
@@ -80,13 +87,19 @@ export function htmlReport(model: AnalysisModel): string {
   const interfaceRows = c.interfaces.map((iface) => [
     iface.id === null ? 'Unavailable' : number(iface.id), iface.name || 'Unnamed', iface.linkType, number(iface.packets),
   ]);
-  const cards = [
+  const cards = (isScoped ? [
+    ['Matching packets', number(scope.stats.packets)],
+    ['Matching bytes on wire', bytes(scope.stats.wireBytes)],
+    ['Matching captured bytes', bytes(scope.stats.capturedBytes)],
+    ['Matching hosts', number(model.hosts.length)],
+    ['Matching conversations', number(model.conversations.length)],
+  ] : [
     ['Packets', number(c.packetCount)],
     ['Bytes on wire', bytes(c.wireBytes)],
     ['Captured bytes', bytes(c.capturedBytes)],
     ['Hosts', number(model.hosts.length)],
     ['Conversations', number(model.conversations.length)],
-  ].map(([label, value]) => `<div class="metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('');
+  ]).map(([label, value]) => `<div class="metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('');
 
   const hosts = [...model.hosts]
     .sort((a, b) => b.txBytes + b.rxBytes - (a.txBytes + a.rxBytes) || a.addr.localeCompare(b.addr))
@@ -117,22 +130,36 @@ export function htmlReport(model: AnalysisModel): string {
   const ssh = groupRows(model.ssh, (item) => [item.clientVersion ?? 'Client version unavailable', item.serverVersion ?? 'Server version unavailable'], 'session');
   const quic = groupRows(model.quic, (item) => [item.sni ?? 'Name unavailable', item.versions.join(', ') || 'Version unavailable', item.alpn.join(', ') || 'ALPN unavailable'], 'connection');
 
+  const scopeRows = isScoped ? [
+    ['Time window', scope.filter.start !== null && scope.filter.end !== null
+      ? `${scope.filter.start.toFixed(6)}–${scope.filter.end.toFixed(6)} s relative to the first packet`
+      : 'Entire capture timeline'],
+    ['Host', scope.filter.host ?? 'Any host'],
+    ['Matching packets', number(scope.stats.packets)],
+    ['Matching bytes on wire', bytes(scope.stats.wireBytes)],
+    ['Matching captured bytes', bytes(scope.stats.capturedBytes)],
+    ['Matching hosts', number(model.hosts.length)],
+    ['Matching conversations', number(model.conversations.length)],
+  ] : [];
+  const noMatches = isScoped && scope.stats.packets === 0;
+  const emptyMessage = isScoped ? 'No records matched the active time and host filters.' : 'No records in this capture.';
   const sections = [
-    table('Capture details', ['Property', 'Value'], captureRows),
-    table('Capture interfaces', ['Interface ID', 'Name', 'Link type', 'Packets'], interfaceRows),
-    table('Protocol totals', ['Protocol', 'Packets', 'Bytes on wire'], protoRows(model.topProtocols)),
-    table('Protocol hierarchy', ['Protocol', 'Packets', 'Bytes on wire'], protoRows(model.protocolHierarchy)),
-    table('Hosts', ['Address', 'Observed or inferred names', 'MAC addresses', 'Sent packets / bytes', 'Received packets / bytes', 'Protocols'], hosts),
-    table('Conversations', ['Endpoints', 'Transport', 'Observed protocol', 'Packets', 'Bytes on wire', 'Relative time'], conversations),
-    table('DNS activity', ['Protocol', 'Query name', 'Query type', 'Status', 'Response code', 'Transactions'], dns),
-    table('HTTP activity', ['Host', 'Method', 'Status', 'Content type', 'Exchange state', 'Decryption', 'Exchanges'], http),
-    table('TLS activity', ['Carrier', 'Server name', 'Negotiated version', 'ALPN', 'Decryption status', 'Sessions'], tls),
-    table('DHCP activity', ['Outcome', 'Observed message types', 'Exchanges'], dhcp),
-    table('ARP address mappings', ['IPv4 address', 'MAC addresses stated by senders', 'Mapping changes', 'ARP messages'], arp),
-    table('ICMP activity', ['IP version', 'Type', 'Code', 'Kind', 'Echo status', 'Messages'], icmp),
-    table('SSH activity', ['Client version', 'Server version', 'Sessions'], ssh),
-    table('QUIC activity', ['Server name', 'Versions', 'ALPN', 'Connections'], quic),
-    table('Data quality', ['Measure', 'Count or status'], qualityRows.map(([label, value]) => [label, typeof value === 'number' ? number(value) : value])),
+    ...(isScoped ? [table('Report scope', ['Filter or measure', 'Value'], scopeRows)] : []),
+    table(isScoped ? 'Whole-capture metadata' : 'Capture details', ['Property', 'Value'], captureRows),
+    table('Capture interfaces', ['Interface ID', 'Name', 'Link type', 'Packets'], interfaceRows, isScoped ? 'No interface metadata is available.' : undefined),
+    table('Protocol totals', ['Protocol', 'Packets', 'Bytes on wire'], protoRows(model.topProtocols), emptyMessage),
+    ...(!isScoped ? [table('Protocol hierarchy', ['Protocol', 'Packets', 'Bytes on wire'], protoRows(model.protocolHierarchy))] : []),
+    table('Hosts', ['Address', 'Observed or inferred names', 'MAC addresses', 'Sent packets / bytes', 'Received packets / bytes', 'Protocols'], hosts, emptyMessage),
+    table('Conversations', ['Endpoints', 'Transport', 'Observed protocol', 'Packets', 'Bytes on wire', 'Relative time'], conversations, emptyMessage),
+    table('DNS activity', ['Protocol', 'Query name', 'Query type', 'Status', 'Response code', 'Transactions'], dns, emptyMessage),
+    table('HTTP activity', ['Host', 'Method', 'Status', 'Content type', 'Exchange state', 'Decryption', 'Exchanges'], http, emptyMessage),
+    table('TLS activity', ['Carrier', 'Server name', 'Negotiated version', 'ALPN', 'Decryption status', 'Sessions'], tls, emptyMessage),
+    table('DHCP activity', ['Outcome', 'Observed message types', 'Exchanges'], dhcp, emptyMessage),
+    table('ARP address mappings', ['IPv4 address', 'MAC addresses stated by senders', 'Mapping changes', 'ARP messages'], arp, emptyMessage),
+    table('ICMP activity', ['IP version', 'Type', 'Code', 'Kind', 'Echo status', 'Messages'], icmp, emptyMessage),
+    table('SSH activity', ['Client version', 'Server version', 'Sessions'], ssh, emptyMessage),
+    table('QUIC activity', ['Server name', 'Versions', 'ALPN', 'Connections'], quic, emptyMessage),
+    table(isScoped ? 'Data quality (whole capture)' : 'Data quality', ['Measure', 'Count or status'], qualityRows.map(([label, value]) => [label, typeof value === 'number' ? number(value) : value])),
   ].join('\n');
 
   return `<!doctype html>
@@ -147,9 +174,9 @@ export function htmlReport(model: AnalysisModel): string {
 </style>
 </head>
 <body><main>
-<header><h1>Packet capture report</h1><p class="meta">${escapeHtml(c.fileName)} · Generated ${escapeHtml(generatedAt)} · Whole-capture aggregates</p></header>
-<aside class="notice" aria-label="Report contents and privacy"><strong>What this report contains</strong><p>Aggregate capture and protocol summaries, including names and network addresses observed in the capture. These can identify people or systems; share this file carefully.</p><p>It does not contain packet bytes, payloads, stream contents, packet-by-packet details, TLS key logs, certificate details, or the Files view inventory or downloaded file contents. Current app filters do not change this whole-capture report.</p><p>This is a self-contained static HTML file. It uses no scripts, external assets, or network requests and can be opened offline.</p></aside>
-<div class="metrics" aria-label="Capture totals">${cards}</div>
+<header><h1>Packet capture report</h1><p class="meta">${escapeHtml(c.fileName)} · Generated ${escapeHtml(generatedAt)} · ${isScoped ? 'Active shared-filter aggregates' : 'Whole-capture aggregates'}</p></header>
+<aside class="notice" aria-label="Report contents and privacy"><strong>What this report contains</strong><p>Aggregate capture and protocol summaries, including names and network addresses observed in the capture. These can identify people or systems; share this file carefully.</p><p>It does not contain packet bytes, payloads, stream contents, packet-by-packet details, TLS key logs, certificate details, or the Files view inventory or downloaded file contents. ${isScoped ? 'Packet aggregates and protocol records use the active shared time and host filters. Capture details, interface packet counts, and data-quality counts remain whole-capture metadata. Names, MAC addresses, protocol labels, and correlated exchange details attached to matching records may also reflect packets outside the selected packet set.' : 'Current app filters do not change this whole-capture report.'}</p>${noMatches ? '<p><strong>No packets matched the active time and host filters.</strong> Filtered aggregate tables are empty; the explicitly labelled whole-capture metadata is retained for context.</p>' : ''}<p>This is a self-contained static HTML file. It uses no scripts, external assets, or network requests and can be opened offline.</p></aside>
+<div class="metrics" aria-label="${isScoped ? 'Filtered capture totals' : 'Capture totals'}">${cards}</div>
 ${sections}
 <footer class="footer">Created locally by Estudely Packet Explorer. Times in conversation rows are relative to the first packet. Byte totals use original frame lengths unless labelled captured.</footer>
 </main></body></html>`;

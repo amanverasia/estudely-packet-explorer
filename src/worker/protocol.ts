@@ -13,7 +13,7 @@ export type WorkerRequest =
   | { kind: 'frame'; number: number }
   | { kind: 'packetList'; filter: string; skip: number; limit: number }
   | { kind: 'checkFilter'; filter: string }
-  | { kind: 'rows'; convId?: number; frames?: number[]; limit?: number }
+  | { kind: 'rows'; convId?: number; frames?: number[]; skip?: number; limit?: number }
   | { kind: 'follow'; transport: 'TCP' | 'UDP'; stream: number; maxBytes?: number; maxSegments?: number }
   | { kind: 'exportObjects' }
   | { kind: 'downloadObject'; token: string };
