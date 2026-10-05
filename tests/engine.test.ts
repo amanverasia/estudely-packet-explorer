@@ -114,8 +114,8 @@ describe('DNS fixture', () => {
   });
 
   it('marks a subnet broadcast address as broadcast when sent to the Ethernet broadcast MAC', () => {
-    expect(m.hosts.find((h) => h.addr === '10.0.0.255')?.scope).toBe('broadcast');
-    expect(m.hosts.find((h) => h.addr === '10.0.0.20')?.scope).toBe('private');
+    expect(m.hosts.find((h) => h.addr === '10.0.0.255')).toMatchObject({ scope: 'broadcast', globallyReachable: false });
+    expect(m.hosts.find((h) => h.addr === '10.0.0.20')).toMatchObject({ scope: 'private', globallyReachable: false });
   });
 
   it('records names with their source', () => {

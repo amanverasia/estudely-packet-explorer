@@ -128,7 +128,10 @@ export interface ServicePort {
 export interface Host {
   addr: string;
   ipVersion: 4 | 6;
+  /** Descriptive allocation label from the reviewed IANA range table. */
   scope: string;
+  /** Conservative eligibility for local country/ASN lookup. */
+  globallyReachable: boolean;
   /**
    * Source MAC addresses of this host's packets. `vendor` is the registered
    * owner of the address prefix (Wireshark's OUI table), not a device identity;

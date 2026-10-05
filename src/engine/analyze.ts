@@ -9,6 +9,9 @@ import type {
 import type { RawDns, RawNbns, RawPacket, RawRecords } from './records';
 import { buildArp, buildDhcp, buildIcmp, buildQuic, buildSsh, type ProtoCtx } from './protocols';
 import { fingerprint, hexToBytes, parseCertificate } from './x509';
+import { addressScope, isGloballyReachable } from './address-scope';
+
+export { addressScope, isGloballyReachable } from './address-scope';
 
 export interface CaptureMeta {
   fileName: string;
@@ -78,42 +81,6 @@ function shortType(t: string | null): string | null {
 }
 
 // --------------------------------------------------------------- addresses
-function ipv4ToInt(a: string): number | null {
-  const m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(a);
-  if (!m) return null;
-  return ((+m[1] << 24) >>> 0) + (+m[2] << 16) + (+m[3] << 8) + +m[4];
-}
-
-function inV4(n: number, base: string, bits: number): boolean {
-  const b = ipv4ToInt(base)!;
-  const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0;
-  return ((n & mask) >>> 0) === ((b & mask) >>> 0);
-}
-
-export function addressScope(a: string): string {
-  if (a.includes(':')) {
-    const l = a.toLowerCase();
-    if (l === '::1') return 'loopback';
-    if (l === '::') return 'unspecified';
-    if (/^fe[89ab]/.test(l)) return 'link-local';
-    if (/^f[cd]/.test(l)) return 'unique local';
-    if (l.startsWith('ff')) return 'multicast';
-    if (l.startsWith('2001:db8:') || l === '2001:db8::' || l.startsWith('2001:0db8')) return 'documentation';
-    return 'global';
-  }
-  const n = ipv4ToInt(a);
-  if (n === null) return 'unknown';
-  if (a === '255.255.255.255') return 'broadcast';
-  if (a === '0.0.0.0') return 'unspecified';
-  if (inV4(n, '127.0.0.0', 8)) return 'loopback';
-  if (inV4(n, '10.0.0.0', 8) || inV4(n, '172.16.0.0', 12) || inV4(n, '192.168.0.0', 16)) return 'private';
-  if (inV4(n, '169.254.0.0', 16)) return 'link-local';
-  if (inV4(n, '224.0.0.0', 4)) return 'multicast';
-  if (inV4(n, '100.64.0.0', 10)) return 'shared (CGNAT)';
-  if (inV4(n, '192.0.2.0', 24) || inV4(n, '198.51.100.0', 24) || inV4(n, '203.0.113.0', 24)) return 'documentation';
-  return 'public';
-}
-
 function isGroupAddress(a: string): boolean {
   const s = addressScope(a);
   return s === 'multicast' || s === 'broadcast' || /\.255$/.test(a);
@@ -469,7 +436,8 @@ export async function analyze(raw: RawRecords, meta: CaptureMeta, onProgress?: (
     let h = hosts.get(addr);
     if (!h) {
       h = {
-        addr, ipVersion: addr.includes(':') ? 6 : 4, scope: addressScope(addr), macs: [], arpMacs: [], txPackets: 0,
+        addr, ipVersion: addr.includes(':') ? 6 : 4, scope: addressScope(addr), globallyReachable: isGloballyReachable(addr),
+        macs: [], arpMacs: [], txPackets: 0,
         txBytes: 0, rxPackets: 0, rxBytes: 0, peers: 0, conversations: 0, firstSeen: t, lastSeen: t, names: [],
         servicePorts: [], clientPortCount: 0, protocols: [],
         _peers: new Set(), _macs: new Map(), _protos: new Set(), _clientPorts: new Set(), _convs: new Set(),
@@ -492,7 +460,10 @@ export async function analyze(raw: RawRecords, meta: CaptureMeta, onProgress?: (
     s._protos.add(topOf[i]); d._protos.add(topOf[i]);
     // The subnet is not in the capture, but an IPv4 packet sent to the Ethernet
     // broadcast MAC shows its destination is a (subnet) broadcast address.
-    if (p.ethDst === 'ff:ff:ff:ff:ff:ff' && d.ipVersion === 4 && d.scope !== 'unspecified') d.scope = 'broadcast';
+    if (p.ethDst === 'ff:ff:ff:ff:ff:ff' && d.ipVersion === 4 && d.scope !== 'unspecified') {
+      d.scope = 'broadcast';
+      d.globallyReachable = false;
+    }
     const c = convOf[i];
     if (c >= 0) { s._convs.add(c); d._convs.add(c); }
   }
