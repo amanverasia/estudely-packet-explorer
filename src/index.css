@@ -288,9 +288,11 @@ p { margin: 0; }
 .tree ul { list-style: none; margin: 0; padding-left: 16px; }
 .tree > ul { padding-left: 0; }
 .tree li { margin: 0; }
-.tree .node { display: flex; gap: 4px; align-items: flex-start; padding: 2px 4px; border: 0; border-radius: 4px; width: 100%; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
-.tree .node:hover { background: var(--hover); }
-.tree .node[aria-pressed='true'] { background: var(--select); }
+.tree .node { margin: 0; padding: 0; border-radius: 4px; width: 100%; color: inherit; cursor: pointer; overflow-wrap: anywhere; }
+.tree .node-label { display: flex; gap: 4px; align-items: flex-start; padding: 2px 4px; border-radius: 4px; width: 100%; }
+.tree .node:hover > .node-label { background: var(--hover); }
+.tree .node[aria-selected='true'] > .node-label { background: var(--select); }
+.tree .node:focus-visible { outline: 2px solid var(--focus); outline-offset: -1px; }
 .tree .twisty { width: 14px; flex: none; color: var(--ink-3); text-align: center; }
 .hex { font: 12px/1.6 var(--mono); white-space: pre; overflow-x: auto; background: var(--panel-2); border: 1px solid var(--rule); border-radius: 6px; padding: 10px 12px; }
 .hex mark { background: var(--accent-soft); color: var(--ink); outline: 1px solid var(--accent); }

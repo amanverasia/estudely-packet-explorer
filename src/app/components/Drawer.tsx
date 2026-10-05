@@ -1,6 +1,6 @@
 // Copyright (C) 2026 Estudely and contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { FrameDetails, PacketRow, ProtoTreeNode } from '../../engine/types';
 import { useApp, type DrawerSpec } from '../context';
 import { absTime, bytes, endpoint, epochText, num, rel } from '../format';
@@ -13,6 +13,7 @@ export function Drawer({ spec, onClose }: { spec: DrawerSpec; onClose: () => voi
   const [details, setDetails] = useState<FrameDetails | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sel, setSel] = useState<ProtoTreeNode | null>(null);
+  const [activeTreePath, setActiveTreePath] = useState('');
   const closeRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
   const onCloseRef = useRef(onClose);
@@ -62,6 +63,7 @@ export function Drawer({ spec, onClose }: { spec: DrawerSpec; onClose: () => voi
     let live = true;
     setDetails(null);
     setSel(null);
+    setActiveTreePath('');
     setError(null);
     engine.request({ kind: 'frame', number: current })
       .then((d) => { if (live) setDetails(d); })
@@ -113,9 +115,9 @@ export function Drawer({ spec, onClose }: { spec: DrawerSpec; onClose: () => voi
           {details && (
             <>
               <section className="tree" aria-label="Decoded fields">
-                <h3 style={{ marginBottom: 6 }}>Decoded fields</h3>
-                <ul>
-                  {details.tree.map((n, i) => <TreeNode key={i} node={n} depth={0} sel={sel} onSel={setSel} />)}
+                <h3 id="decoded-fields-title" style={{ marginBottom: 6 }}>Decoded fields</h3>
+                <ul role="tree" aria-labelledby="decoded-fields-title" onKeyDown={moveTreeFocus}>
+                  {details.tree.map((n, i) => <TreeNode key={i} node={n} path={String(i)} depth={0} sel={sel} onSel={setSel} activePath={activeTreePath} onActive={setActiveTreePath} />)}
                 </ul>
                 {details.truncatedTree && <p className="muted">The field tree was cut off at 20,000 entries.</p>}
               </section>
@@ -141,17 +143,63 @@ export function flagText(f: string): string {
   return [...new Set(f.split(''))].map((c) => names[c] ?? c).join(', ');
 }
 
-function TreeNode({ node, depth, sel, onSel }: { node: ProtoTreeNode; depth: number; sel: ProtoTreeNode | null; onSel: (n: ProtoTreeNode) => void }) {
+function moveTreeFocus(event: ReactKeyboardEvent<HTMLUListElement>) {
+  const tree = event.currentTarget;
+  const current = (event.target as HTMLElement).closest<HTMLElement>('[role="treeitem"]');
+  if (!current || !tree.contains(current)) return;
+  const items = [...tree.querySelectorAll<HTMLElement>('[role="treeitem"]')];
+  const index = items.indexOf(current);
+  const next = event.key === 'ArrowDown' ? items[index + 1]
+    : event.key === 'ArrowUp' ? items[index - 1]
+      : event.key === 'Home' ? items[0]
+        : event.key === 'End' ? items.at(-1)
+          : undefined;
+  if (next) {
+    event.preventDefault();
+    next.focus();
+  }
+}
+
+function TreeNode({ node, path, depth, sel, onSel, activePath, onActive }: {
+  node: ProtoTreeNode;
+  path: string;
+  depth: number;
+  sel: ProtoTreeNode | null;
+  onSel: (n: ProtoTreeNode) => void;
+  activePath: string;
+  onActive: (path: string) => void;
+}) {
   const [open, setOpen] = useState(depth === 0 && node.children.length < 40 && !/^(Frame|Ethernet)/.test(node.label));
   const has = node.children.length > 0;
   return (
-    <li>
-      <button type="button" className="node" aria-expanded={has ? open : undefined} aria-pressed={sel === node}
-        onClick={() => { onSel(node); if (has) setOpen(!open); }}>
-        <span className="twisty" aria-hidden="true">{has ? (open ? '▾' : '▸') : ''}</span>
-        <span>{node.label}</span>
-      </button>
-      {has && open && <ul>{node.children.map((c, i) => <TreeNode key={i} node={c} depth={depth + 1} sel={sel} onSel={onSel} />)}</ul>}
+    <li role="treeitem" className="node" tabIndex={activePath === path || (!activePath && path === '0') ? 0 : -1}
+      aria-expanded={has ? open : undefined} aria-selected={sel === node}
+      onFocus={() => onActive(path)}
+      onClick={(event) => {
+        event.stopPropagation();
+        event.currentTarget.focus();
+        onSel(node);
+        if (has) setOpen(!open);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'ArrowRight' && has) {
+          event.preventDefault();
+          if (!open) setOpen(true);
+          else event.currentTarget.querySelector<HTMLElement>(':scope > ul[role="group"] > [role="treeitem"]')?.focus();
+        } else if (event.key === 'ArrowLeft') {
+          event.preventDefault();
+          if (has && open) setOpen(false);
+          else event.currentTarget.parentElement?.closest<HTMLElement>('[role="treeitem"]')?.focus();
+        } else if (event.key === ' ' || event.key === 'Enter') {
+          event.preventDefault();
+          onSel(node);
+        }
+      }}>
+        <span className="node-label">
+          <span className="twisty" aria-hidden="true">{has ? (open ? '▾' : '▸') : ''}</span>
+          <span>{node.label}</span>
+        </span>
+      {has && open && <ul role="group">{node.children.map((c, i) => <TreeNode key={i} node={c} path={`${path}.${i}`} depth={depth + 1} sel={sel} onSel={onSel} activePath={activePath} onActive={onActive} />)}</ul>}
     </li>
   );
 }

@@ -18,13 +18,13 @@
 | Connections | TCP/UDP sessions by stream index, other IP and non-IP groups; directional packets/bytes; start and duration; TCP flags seen and analysis counts; drill-down into the conversation's DNS/HTTP/TLS records and packets | Packets |
 | Network | Force-directed host graph, edge width = log bytes, edge colour = main protocol; protocol filter, host focus, node limit with "Other hosts" aggregation; node and edge details; keyboard-accessible host-link table with traffic totals and conversation actions | Conversations |
 | Packet list | Wireshark's columns for every packet, Wireshark display filters, paged | Wiregasm `getFrames` |
-| Packet drawer | For any record: its source packet numbers; for the chosen packet the exact timestamp, Wireshark's full field tree and a hex dump with field highlighting | Wiregasm `getFrame` |
+| Packet drawer | For any record: its source packet numbers; for the chosen packet the exact timestamp, Wireshark's keyboard-navigable field tree and a hex dump with field highlighting | Wiregasm `getFrame` |
 
 Exports: CSV from every table (rows as currently searched/sorted), JSON summary of the whole model, and a self-contained HTML report of whole-capture aggregates. The HTML report opens offline and makes no external requests. It includes names and addresses observed in the capture, but excludes packet bytes, payloads, stream contents, packet-by-packet details, TLS key logs, certificate details, the Files view inventory and downloaded file contents. Reports and other exports are browser downloads.
 
 ## Accessibility checks
 
-The browser suite runs axe WCAG 2.1 A/AA checks on the start screen, every view, the packet drawer, and the expanded network link list in light and dark themes. It checks text palette pairs at 4.5:1 and chart series colours at 3:1, and exercises the network link list with the keyboard. Automated checks do not replace a manual NVDA, VoiceOver or Orca screen-reader pass.
+The browser suite runs axe WCAG 2.1 A/AA checks on the start screen, every view, the packet drawer, and the expanded network link list in light and dark themes. It checks text palette pairs at 4.5:1 and chart series colours at 3:1, and exercises the network link list and packet field tree with the keyboard. Automated checks do not replace a manual NVDA, VoiceOver or Orca screen-reader pass.
 
 ## Shared filters
 
