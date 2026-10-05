@@ -324,7 +324,7 @@ test('packet-list pages can be retried after a transient worker request failure'
   await expect(page.getByRole('columnheader', { name: 'No.' })).toBeVisible();
 
   const grid = page.getByRole('grid', { name: 'Packets' });
-  await grid.evaluate((element) => { element.scrollTop = 22000; element.dispatchEvent(new Event('scroll')); });
+  await grid.evaluate((element) => { element.scrollTop = 15000; element.dispatchEvent(new Event('scroll')); });
   await expect(page.getByText(/Could not load packet page 2/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Retry packet page 2' })).toBeVisible();
   await page.waitForTimeout(200);
