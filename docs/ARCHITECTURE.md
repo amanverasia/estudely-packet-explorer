@@ -5,7 +5,7 @@
 ```
  UI thread (React)                         Analysis worker (one per capture)
  ─────────────────                         ─────────────────────────────────
- File picker / drop  ── capture + key log ──▶ file.arrayBuffer()  (local read)
+ File picker / drop  ── capture + key log ──▶ bounded File stream  (local read)
  EngineClient        ◀── progress ───      Wiregasm (Wireshark 4.4.5 WASM)
    │                                         1. load()        index packets
    │                                         2. armed pass    Lua extractor writes TSV
@@ -16,6 +16,8 @@
 ```
 
 All views read one shared `AnalysisModel` (`src/engine/types.ts`). The file is decoded once; tabs never re-parse it. The model carries a compact, columnar packet filter index (times, lengths, endpoint/stream IDs and top protocol IDs), not packet payloads. The UI uses it to recalculate time/host-filtered packet, host and conversation totals. Protocol hierarchy and non-traffic host metadata remain capture-wide.
+
+Compare mode analyzes the baseline capture, copies only host names/protocols, top-protocol totals, conversation summaries and capture metadata, then terminates that worker before analyzing the second capture. Conversation IDs use protocol and the order-independent endpoint address/port pair; repeated uses of one tuple are paired by first-seen order. The comparison keeps no packet index or payloads and never holds two Wiregasm sessions concurrently.
 
 An optional TLS key log follows the capture directly to the worker. The worker places it in the virtual filesystem and applies Wireshark's `tls.keylog_file` preference. Wireshark can read the file again during later dissections, so the temporary copy stays in the in-memory filesystem until the worker is terminated with the capture.
 

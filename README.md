@@ -24,6 +24,8 @@ Drop in a `.pcap` or `.pcapng` file and get organised views of its DNS lookups, 
 | **Network** | An interactive graph of which hosts talked to which, sized by traffic and coloured by protocol, with a keyboard-accessible host-link table |
 | **Packet list** | Wireshark's own packet list and display filters, with the full decode and hex bytes of any packet |
 
+Compare two captures from the start screen or an open capture. Capture A is the baseline; the comparison shows added, missing and changed hosts, learned names, protocol totals and conversations. Captures are analyzed one at a time, and conversation matching uses protocol plus the unordered pair of endpoint addresses and ports.
+
 Every table can be searched, sorted and exported as CSV, and the whole analysis can be saved as a JSON summary. You can also download a self-contained HTML report of whole-capture aggregates that opens offline and makes no external requests. It includes names and addresses observed in the capture, so share it carefully; packet bytes, payloads, stream contents and file inventory or contents are excluded. Exports are ordinary browser downloads. Captured files are untrusted: the Files view never previews or opens contents, and saves an object only after you select Download.
 
 To enable the optional country or ASN data, follow a DB-IP link in Hosts, download the corresponding Lite CSV, and import it there. The downloads are separate from capture analysis, stored in this browser for offline use, and removable at any time. DB-IP Lite files are updated monthly and licensed CC BY 4.0; results are approximate. The app does not download them automatically.

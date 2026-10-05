@@ -6,6 +6,8 @@ import { BuildTag } from './components/BuildTag';
 import { Strip } from './components/charts';
 import { Drawer } from './components/Drawer';
 import { OfflineStatus, UpdateBanner } from './components/Offline';
+import { ThemeButton, type Theme } from './components/ThemeButton';
+import { ComparePage } from './Compare';
 import { Ctx, type AppCtx, type DrawerSpec } from './context';
 import { applySharedFilter, type SharedFilter } from './filtering';
 import { downloadBlob, safeBase, summaryJson } from './download';
@@ -40,7 +42,6 @@ function parseHash(): { view: View; params: URLSearchParams } {
   return { view, params: new URLSearchParams(query) };
 }
 
-type Theme = 'system' | 'light' | 'dark';
 function loadTheme(): Theme {
   try { return (localStorage.getItem('epx-theme') as Theme) || 'system'; } catch { return 'system'; }
 }
@@ -53,6 +54,8 @@ export function App() {
   const [route, setRoute] = useState(parseHash);
   const [drawer, setDrawer] = useState<DrawerSpec | null>(null);
   const [theme, setTheme] = useState<Theme>(loadTheme);
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareSeed, setCompareSeed] = useState<AnalysisModel | null>(null);
 
   useEffect(() => {
     const on = () => setRoute(parseHash());
@@ -70,6 +73,19 @@ export function App() {
     setDrawer(null);
     engine.open(file, keyLog);
   }, [engine]);
+
+  const enterCompare = useCallback((seed: AnalysisModel | null) => {
+    engine.close();
+    setState({ kind: 'idle' });
+    setDrawer(null);
+    setCompareSeed(seed);
+    setCompareMode(true);
+  }, [engine]);
+  const leaveCompare = useCallback(() => {
+    setCompareMode(false);
+    setCompareSeed(null);
+  }, []);
+  const clearCompareSeed = useCallback(() => setCompareSeed(null), []);
 
   const patchRouteParams = useCallback((updates: Record<string, string | null>) => {
     const current = parseHash();
@@ -96,24 +112,17 @@ export function App() {
   const model = state.kind === 'ready' ? state.model : null;
   return (
     <>
-      {model ? (
+      {compareMode ? (
+        <ComparePage seed={compareSeed} onClearSeed={clearCompareSeed} onClose={leaveCompare} theme={theme} setTheme={setTheme} />
+      ) : model ? (
         <Workspace model={model} engine={engine} view={route.view} params={route.params} go={go} openDrawer={setDrawer}
           patchRouteParams={patchRouteParams}
-          onOpen={openFile} onClose={() => { engine.cancel(); setDrawer(null); }} theme={theme} setTheme={setTheme} drawer={drawer} closeDrawer={() => setDrawer(null)} />
+          onOpen={openFile} onClose={() => { engine.cancel(); setDrawer(null); }} onCompare={() => enterCompare(model)} theme={theme} setTheme={setTheme} drawer={drawer} closeDrawer={() => setDrawer(null)} />
       ) : (
-        <Landing state={state} onOpen={openFile} onCancel={() => engine.cancel()} theme={theme} setTheme={setTheme} />
+        <Landing state={state} onOpen={openFile} onCancel={() => engine.cancel()} onCompare={() => enterCompare(null)} theme={theme} setTheme={setTheme} />
       )}
       <UpdateBanner captureOpen={state.kind !== 'idle' && state.kind !== 'error'} />
     </>
-  );
-}
-
-function ThemeButton({ theme, setTheme }: { theme: Theme; setTheme: (t: Theme) => void }) {
-  const next: Record<Theme, Theme> = { system: 'light', light: 'dark', dark: 'system' };
-  return (
-    <button className="btn" onClick={() => setTheme(next[theme])} title="Switch colour theme" aria-label={`Colour theme: ${theme}. Switch to ${next[theme]}`}>
-      Theme: {theme}
-    </button>
   );
 }
 
@@ -158,7 +167,7 @@ const PHASES: { phase: string; label: string }[] = [
   { phase: 'analyze', label: 'Build summaries' },
 ];
 
-function Landing({ state, onOpen, onCancel, theme, setTheme }: { state: EngineState; onOpen: (f: File, keyLog?: File | null) => void; onCancel: () => void; theme: Theme; setTheme: (t: Theme) => void }) {
+function Landing({ state, onOpen, onCancel, onCompare, theme, setTheme }: { state: EngineState; onOpen: (f: File, keyLog?: File | null) => void; onCancel: () => void; onCompare: () => void; theme: Theme; setTheme: (t: Theme) => void }) {
   const [over, setOver] = useState(false);
   const [keyLog, setKeyLog] = useState<File | null>(null);
   const [now, setNow] = useState(performance.now());
@@ -205,6 +214,7 @@ function Landing({ state, onOpen, onCancel, theme, setTheme }: { state: EngineSt
             <h2>Open a packet capture</h2>
             <p className="ink2" style={{ maxWidth: '52ch' }}>Choose a .pcap or .pcapng file, or drop it here. Wireshark's dissectors run inside this page, so the file is opened, not uploaded.</p>
             <OpenButton onOpen={onOpen} primary label="Choose capture file" keyLog={keyLog} onKeyLogChange={setKeyLog} />
+            <button className="btn" onClick={onCompare}>Compare two captures</button>
             <p className="local-note" style={{ fontSize: 13 }}><ShieldIcon />{LOCAL_NOTICE}</p>
           </section>
         )}
@@ -232,7 +242,7 @@ function Landing({ state, onOpen, onCancel, theme, setTheme }: { state: EngineSt
 
 function Workspace(props: {
   model: AnalysisModel; engine: EngineClient; view: View; params: URLSearchParams; go: AppCtx['go']; patchRouteParams: (p: Record<string, string | null>) => void; openDrawer: (d: DrawerSpec) => void;
-  onOpen: (f: File, keyLog?: File | null) => void; onClose: () => void; theme: Theme; setTheme: (t: Theme) => void; drawer: DrawerSpec | null; closeDrawer: () => void;
+  onOpen: (f: File, keyLog?: File | null) => void; onClose: () => void; onCompare: () => void; theme: Theme; setTheme: (t: Theme) => void; drawer: DrawerSpec | null; closeDrawer: () => void;
 }) {
   const { model: sourceModel, view } = props;
   const c = sourceModel.capture;
@@ -348,6 +358,7 @@ function Workspace(props: {
               <div className="actions">
                 <button className="btn" onClick={() => downloadBlob(`${safeBase(c.fileName)}-report.html`, new Blob([htmlReport(sourceModel)], { type: 'text/html;charset=utf-8' }))}>Download HTML report</button>
                 <button className="btn" onClick={() => downloadBlob(`${safeBase(c.fileName)}-summary.json`, new Blob([summaryJson(sourceModel)], { type: 'application/json' }))}>Export JSON summary</button>
+                <button className="btn" onClick={props.onCompare}>Compare captures</button>
                 <OpenButton onOpen={props.onOpen} label="Open another" />
                 <button className="btn" onClick={props.onClose} title="Close this capture and free its memory">Close</button>
                 <ThemeButton theme={props.theme} setTheme={props.setTheme} />

@@ -102,6 +102,37 @@ test('shows the local-processing notice before any file is chosen', async ({ pag
   await expect(page.getByRole('button', { name: 'Choose TLS key log (optional)' })).toBeVisible();
 });
 
+test('compares two local captures sequentially and labels capture changes', async ({ page }) => {
+  const reqs = watchRequests(page);
+  await page.route('**/axe-for-test.js', (route) => route.fulfill({
+    contentType: 'application/javascript',
+    body: readFileSync(axeScript, 'utf8'),
+  }));
+  await page.goto('./');
+  await page.addScriptTag({ url: './axe-for-test.js' });
+  await page.getByRole('button', { name: 'Compare two captures' }).click();
+  await page.getByLabel('Choose capture A').setInputFiles(fixture('http.pcap'));
+  await page.getByLabel('Choose capture B').setInputFiles(fixture('dns.pcap'));
+  await page.getByRole('button', { name: 'Compare captures' }).click();
+  await expect(page.getByRole('heading', { name: 'Analyzing capture A of 2' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Capture comparison' })).toBeVisible();
+  await expect(page.getByRole('grid', { name: 'Host and name changes' })).toBeVisible();
+  await expect(page.getByRole('grid', { name: 'Protocol changes' })).toBeVisible();
+  await expect(page.getByRole('grid', { name: 'Conversation changes' })).toBeVisible();
+  await expect(page.locator('.compare-overview')).toContainText('A · http.pcap');
+  await expect(page.locator('.compare-overview')).toContainText('B · dns.pcap');
+  await auditA11y(page, 'capture comparison results');
+
+  await page.getByRole('button', { name: 'Back' }).click();
+  await openCapture(page, 'http.pcap');
+  await page.getByRole('button', { name: 'Compare captures' }).click();
+  await expect(page.locator('.compare-baseline')).toContainText('http.pcap');
+  await page.getByLabel('Choose capture B').setInputFiles(fixture('dns.pcap'));
+  await page.getByRole('button', { name: 'Compare captures' }).click();
+  await expect(page.getByRole('heading', { name: 'Capture comparison' })).toBeVisible();
+  expect(reqs.offenders()).toEqual([]);
+});
+
 test('axe WCAG 2.1 AA audit: start screen, every view and drawer in light and dark themes', async ({ page }) => {
   await page.route('**/axe-for-test.js', (route) => route.fulfill({
     contentType: 'application/javascript',

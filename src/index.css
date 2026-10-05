@@ -304,6 +304,17 @@ p { margin: 0; }
 /* ---------- landing ---------- */
 .landing { min-height: 100%; display: grid; place-items: center; padding: 32px 16px; }
 .landing-card { width: min(720px, 100%); display: grid; gap: 22px; }
+.compare-page > .landing-card { width: min(1120px, 100%); align-self: start; margin: 16px auto; }
+.compare-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.compare-head h1 { font-size: 24px; margin: 6px 0; }
+.compare-head p { max-width: 70ch; }
+.compare-pickers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.compare-picker { display: grid; align-content: start; gap: 10px; padding: 16px; min-width: 0; }
+.compare-picker h2, .compare-progress h2 { font-size: 15px; }
+.compare-picker input { max-width: 100%; }
+.compare-baseline { display: grid; justify-items: start; gap: 8px; }
+.compare-progress { display: grid; gap: 10px; }
+.compare-table-panel .panel-body { padding-top: 10px; }
 .drop {
   border: 1.5px dashed var(--rule-strong); border-radius: 10px; background: var(--panel); padding: 38px 24px;
   display: grid; gap: 14px; justify-items: center; text-align: center;
@@ -360,6 +371,8 @@ p { margin: 0; }
   .topbar { position: static; padding: 12px 16px 0; }
   .content { padding: 16px 16px 40px; }
   .grid-2, .grid-3 { grid-template-columns: minmax(0, 1fr); }
+  .compare-pickers { grid-template-columns: minmax(0, 1fr); }
+  .compare-head { align-items: flex-start; }
   .mobile-local { display: flex !important; }
 }
 .mobile-local { display: none; }
