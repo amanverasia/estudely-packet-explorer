@@ -75,6 +75,13 @@ export function registerServiceWorker(): void {
   }, (e: unknown) => {
     set({ offline: { kind: 'error', message: e instanceof Error ? e.message : String(e) } });
   });
+  // `ready` is an independent signal that an active worker exists. Some
+  // browsers can resolve it without the installing worker's final statechange
+  // being observed here, which would otherwise leave the status stuck at
+  // "Saving the app…" after the offline cache is ready.
+  void navigator.serviceWorker.ready.then(() => {
+    if (state.offline.kind === 'installing') markReady();
+  });
   let hadController = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (reloadOnTakeover) { location.reload(); return; }
