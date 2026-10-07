@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 import { describe, expect, it } from 'vitest';
 import {
-  directionBytes, findFollowByteMatches, findFollowTextMatches, followRuns, hexDump, joinRuns,
+  directionBytes, findFollowByteMatches, findFollowTextMatches, followRuns, followSaveData, hexDump, joinRuns,
   mappedPayloadText, parseHexQuery, payloadText,
 } from '../src/app/follow';
 import type { FollowStream } from '../src/engine/types';
@@ -50,6 +50,26 @@ describe('follow stream helpers', () => {
     expect(directionBytes(g, 'client')).toBe(100);
     expect(directionBytes(g, 'server')).toBe(40);
     expect(directionBytes(g, 'both')).toBe(140);
+  });
+
+  it('saves both directions without copying and each single direction with one output buffer', () => {
+    expect(followSaveData(f, 'both')).toBe(f.data);
+    for (const direction of ['client', 'server'] as const) {
+      expect(followSaveData(f, direction)).toEqual(joinRuns(followRuns(f, direction)));
+    }
+  });
+
+  it('saves only retained selected-direction bytes when the shared cap excludes later segments', () => {
+    const capped = stream([[1, false, 'request'], [2, true, 'res']]);
+    capped.clientBytes = 7;
+    capped.serverBytes = 100;
+    capped.truncated = true;
+    expect(Buffer.from(followSaveData(capped, 'server')).toString()).toBe('res');
+    expect(followSaveData(capped, 'server').length).toBeLessThan(directionBytes(capped, 'server'));
+    const excluded = stream([[1, false, 'request']]);
+    excluded.serverBytes = 100;
+    excluded.truncated = true;
+    expect(followSaveData(excluded, 'server')).toEqual(new Uint8Array());
   });
 
   it('renders text with control and bidi characters neutralised', () => {

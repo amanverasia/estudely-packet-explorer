@@ -317,6 +317,21 @@ describe('Follow stream fixture', () => {
     expect(Buffer.from(full.data.subarray(full.data.length - 51)).toString('latin1')).toBe('line 11999 of the large follow-stream fixture body\n');
   });
 
+  it('supports repeated zero, preview and segment-capped save requests with exact full totals', () => {
+    for (let i = 0; i < 3; i++) {
+      const zero = s.follow('TCP', 0, { maxBytes: 0, maxSegments: 0 });
+      expect(zero).toMatchObject({ clientBytes: 51, serverBytes: 612069, totalSegments: 439, truncated: true, segments: [] });
+      expect(zero.data.length).toBe(0);
+      const preview = s.follow('TCP', 0, { maxBytes: 52 });
+      expect(preview.data.length).toBe(52);
+      expect(preview.segments.map((segment) => segment.length)).toEqual([51, 1]);
+      const save = s.follow('TCP', 0, { maxBytes: 64 * 1024 * 1024, maxSegments: 2 });
+      expect(save).toMatchObject({ clientBytes: 51, serverBytes: 612069, totalSegments: 439, truncated: true });
+      expect(save.segments).toHaveLength(2);
+      expect(save.data.length).toBe(1451);
+    }
+  });
+
   it('follows a UDP exchange', () => {
     const f = s.follow('UDP', 0);
     expect(f.client).toEqual({ addr: '10.0.0.5', port: 41001 });

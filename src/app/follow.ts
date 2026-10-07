@@ -9,6 +9,7 @@ import type { FollowStream } from '../engine/types';
 export const FOLLOW_VIEW_BYTES = 512 * 1024;
 export const FOLLOW_VIEW_SEGMENTS = 5000;
 export const FOLLOW_SAVE_BYTES = 64 * 1024 * 1024;
+export const FOLLOW_SAVE_SEGMENTS = 100000;
 
 export type FollowDirection = 'both' | 'client' | 'server';
 
@@ -63,6 +64,20 @@ export function followRuns(f: FollowStream, dir: FollowDirection): FollowRun[] {
 /** Payload bytes in the selected directions over the whole stream, before any cap. */
 export function directionBytes(f: FollowStream, dir: FollowDirection): number {
   return (dir === 'server' ? 0 : f.clientBytes) + (dir === 'client' ? 0 : f.serverBytes);
+}
+
+/** Save without allocating display runs or an intermediate concatenation. */
+export function followSaveData(f: FollowStream, dir: FollowDirection): Uint8Array<ArrayBuffer> {
+  // Worker output uses ordinary ArrayBuffers; tolerate other caller buffers.
+  if (dir === 'both') return f.data.buffer instanceof ArrayBuffer ? f.data as Uint8Array<ArrayBuffer> : new Uint8Array(f.data);
+  const selected = f.segments.filter((segment) => segment.fromServer === (dir === 'server'));
+  const out = new Uint8Array(selected.reduce((size, segment) => size + segment.length, 0));
+  let offset = 0;
+  for (const segment of selected) {
+    out.set(f.data.subarray(segment.offset, segment.offset + segment.length), offset);
+    offset += segment.length;
+  }
+  return out;
 }
 
 /** The selected directions' payload as one buffer, in capture order (for saving). */

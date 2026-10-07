@@ -26,27 +26,101 @@ export type LocalIpMatch =
   | { kind: 'country'; country: string }
   | { kind: 'asn'; asn: number; organization: string };
 
-type RangeArrays = {
-  start: number[];
-  end: number[];
-  value: number[];
-  asn: number[];
-};
+// Fixed blocks avoid ordinary number arrays and geometric growth copies.
+const RANGE_BLOCK_ROWS = 16_384;
+type RangeBlock = { start: Uint32Array; end: Uint32Array; value: Uint32Array; asn: Uint32Array };
 
-/** Parse a DB-IP Lite Country or ASN CSV entirely in local memory. */
-export function parseLocalIpCsv(kind: LocalIpDataKind, csv: string, fileName: string): LocalIpDatabase {
-  const v4: RangeArrays = { start: [], end: [], value: [], asn: [] };
-  const v6: RangeArrays = { start: [], end: [], value: [], asn: [] };
+class RangeBuilder {
+  private blocks: RangeBlock[] = [];
+  private length = 0;
+  private sorted = true;
+  constructor(private width: number) {}
+
+  add(start: number[], end: number[], value: number, asn: number) {
+    const position = this.length % RANGE_BLOCK_ROWS;
+    if (position === 0) this.blocks.push({
+      start: new Uint32Array(RANGE_BLOCK_ROWS * this.width), end: new Uint32Array(RANGE_BLOCK_ROWS * this.width),
+      value: new Uint32Array(RANGE_BLOCK_ROWS), asn: new Uint32Array(RANGE_BLOCK_ROWS),
+    });
+    if (this.length) {
+      const previous = this.length - 1;
+      const previousBlock = this.blocks[Math.floor(previous / RANGE_BLOCK_ROWS)];
+      if (compareAt(previousBlock.start, previous % RANGE_BLOCK_ROWS * this.width, start) > 0) this.sorted = false;
+    }
+    const block = this.blocks[this.blocks.length - 1];
+    block.start.set(start, position * this.width);
+    block.end.set(end, position * this.width);
+    block.value[position] = value;
+    block.asn[position] = asn;
+    this.length++;
+  }
+
+  finish(): RangeBlock {
+    const { length, width } = this;
+    const output = {
+      start: new Uint32Array(length * width), end: new Uint32Array(length * width),
+      value: new Uint32Array(length), asn: new Uint32Array(length),
+    };
+    let order: Uint32Array | undefined;
+    if (!this.sorted) {
+      order = new Uint32Array(length);
+      for (let i = 0; i < length; i++) order[i] = i;
+      sortRangeOrder(order, (a, b) => {
+        const blockA = this.blocks[Math.floor(a / RANGE_BLOCK_ROWS)];
+        const blockB = this.blocks[Math.floor(b / RANGE_BLOCK_ROWS)];
+        return compareFlat(blockA.start, a % RANGE_BLOCK_ROWS * width, blockB.start, b % RANGE_BLOCK_ROWS * width, width);
+      });
+    }
+    for (let sorted = 0; sorted < length; sorted++) {
+      const source = order ? order[sorted] : sorted;
+      const block = this.blocks[Math.floor(source / RANGE_BLOCK_ROWS)];
+      const sourceOffset = (source % RANGE_BLOCK_ROWS) * width, targetOffset = sorted * width;
+      if (sorted && compareFlat(output.end, targetOffset - width, block.start, sourceOffset, width) >= 0) {
+        throw new Error('The CSV contains overlapping IP ranges and cannot be imported safely.');
+      }
+      output.start.set(block.start.subarray(sourceOffset, sourceOffset + width), targetOffset);
+      output.end.set(block.end.subarray(sourceOffset, sourceOffset + width), targetOffset);
+      output.value[sorted] = block.value[source % RANGE_BLOCK_ROWS];
+      output.asn[sorted] = block.asn[source % RANGE_BLOCK_ROWS];
+    }
+    this.blocks = [];
+    return output;
+  }
+}
+
+/** In-place heapsort keeps fallback scratch constant (native comparator sorts may allocate).
+ * Only the typed permutation moves; all four range columns remain associated. */
+function sortRangeOrder(order: Uint32Array, compare: (a: number, b: number) => number) {
+  const sift = (root: number, length: number) => {
+    for (;;) {
+      let child = root * 2 + 1;
+      if (child >= length) return;
+      if (child + 1 < length && compare(order[child], order[child + 1]) < 0) child++;
+      if (compare(order[root], order[child]) >= 0) return;
+      const value = order[root]; order[root] = order[child]; order[child] = value;
+      root = child;
+    }
+  };
+  for (let root = Math.floor(order.length / 2) - 1; root >= 0; root--) sift(root, order.length);
+  for (let end = order.length - 1; end > 0; end--) {
+    const value = order[0]; order[0] = order[end]; order[end] = value;
+    sift(0, end);
+  }
+}
+
+/** Consume decoded CSV chunks without retaining the whole input. */
+export function createLocalIpCsvParser(kind: LocalIpDataKind, fileName: string) {
+  const v4 = new RangeBuilder(1), v6 = new RangeBuilder(4);
   const valueIds = new Map<string, number>();
   const values: string[] = [];
   let count = 0;
   let columns: Map<string, number> | null = null;
-
-  for (const fields of csvRows(csv)) {
-    if (fields.length === 1 && !fields[0].trim()) continue;
+  let finished = false;
+  const tokenizer = new CsvTokenizer((fields) => {
+    if (fields.length === 1 && !fields[0].trim()) return;
     if (!columns && fields[0]?.trim().toLowerCase() === 'ip_start') {
       columns = new Map(fields.map((field, i) => [field.trim().toLowerCase(), i]));
-      continue;
+      return;
     }
     const col = (name: string, fallback: number) => columns?.get(name) ?? fallback;
     const start = parseIp(fields[col('ip_start', 0)]?.trim() ?? '');
@@ -85,59 +159,38 @@ export function parseLocalIpCsv(kind: LocalIpDataKind, csv: string, fileName: st
       values.push(label);
       valueIds.set(label, valueId);
     }
-    target.start.push(...start.words);
-    target.end.push(...end.words);
-    target.value.push(valueId);
-    target.asn.push(asn);
+    target.add(start.words, end.words, valueId, asn);
     count++;
-  }
-  if (count === 0) throw new Error('The selected CSV contains no IP ranges.');
-
-  const pack = (input: RangeArrays, width: number) => {
-    const length = input.value.length;
-    if (input.start.length !== length * width || input.end.length !== length * width) throw new Error('The CSV contains an incomplete IP range.');
-    const order = Array.from({ length }, (_, i) => i);
-    order.sort((a, b) => compareFlat(input.start, a * width, input.start, b * width, width));
-    const starts = new Uint32Array(length * width), ends = new Uint32Array(length * width);
-    const value = new Uint32Array(length), asn = new Uint32Array(length);
-    for (let sorted = 0; sorted < length; sorted++) {
-      const source = order[sorted];
-      const sourceOffset = source * width, targetOffset = sorted * width;
-      if (sorted && compareFlat(ends, targetOffset - width, input.start, sourceOffset, width) >= 0) {
-        throw new Error('The CSV contains overlapping IP ranges and cannot be imported safely.');
-      }
-      for (let i = 0; i < width; i++) {
-        starts[targetOffset + i] = input.start[sourceOffset + i];
-        ends[targetOffset + i] = input.end[sourceOffset + i];
-      }
-      value[sorted] = input.value[source];
-      asn[sorted] = input.asn[source];
-    }
-    return {
-      start: starts,
-      end: ends,
-      value,
-      asn,
-    };
-  };
-  const a4 = pack(v4, 1), a6 = pack(v6, 4);
-  const releaseMatch = /(?:^|[^\d])(20\d{2})[-_](0[1-9]|1[0-2])(?:[^\d]|$)/.exec(fileName);
+  });
   return {
-    schema: 1,
-    kind,
-    release: releaseMatch ? `${releaseMatch[1]}-${releaseMatch[2]}` : null,
-    importedAt: new Date().toISOString(),
-    recordCount: count,
-    values,
-    ipv4Start: a4.start,
-    ipv4End: a4.end,
-    ipv4Value: a4.value,
-    ipv4Asn: a4.asn,
-    ipv6Start: a6.start,
-    ipv6End: a6.end,
-    ipv6Value: a6.value,
-    ipv6Asn: a6.asn,
+    get recordCount() { return count; },
+    write(text: string) {
+      if (finished) throw new Error('The CSV parser has already finished.');
+      tokenizer.write(text);
+    },
+    finish(): LocalIpDatabase {
+      if (finished) throw new Error('The CSV parser has already finished.');
+      finished = true;
+      tokenizer.finish();
+      if (count === 0) throw new Error('The selected CSV contains no IP ranges.');
+      const a4 = v4.finish(), a6 = v6.finish();
+      valueIds.clear();
+      const releaseMatch = /(?:^|[^\d])(20\d{2})[-_](0[1-9]|1[0-2])(?:[^\d]|$)/.exec(fileName);
+      return {
+        schema: 1, kind, release: releaseMatch ? `${releaseMatch[1]}-${releaseMatch[2]}` : null,
+        importedAt: new Date().toISOString(), recordCount: count, values,
+        ipv4Start: a4.start, ipv4End: a4.end, ipv4Value: a4.value, ipv4Asn: a4.asn,
+        ipv6Start: a6.start, ipv6End: a6.end, ipv6Value: a6.value, ipv6Asn: a6.asn,
+      };
+    },
   };
+}
+
+/** Compatibility wrapper; file imports use the incremental parser directly. */
+export function parseLocalIpCsv(kind: LocalIpDataKind, csv: string, fileName: string): LocalIpDatabase {
+  const parser = createLocalIpCsvParser(kind, fileName);
+  parser.write(csv);
+  return parser.finish();
 }
 
 export function lookupLocalIp(db: LocalIpDatabase, address: string): LocalIpMatch | null {
@@ -212,26 +265,62 @@ function compareFlat(a: number[] | Uint32Array, offsetA: number, b: number[] | U
   return 0;
 }
 
-function* csvRows(text: string): Generator<string[]> {
-  let row: string[] = [];
-  let field = '';
-  let quoted = false;
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i];
-    if (quoted) {
-      if (char === '"' && text[i + 1] === '"') { field += '"'; i++; }
-      else if (char === '"') quoted = false;
-      else field += char;
-    } else if (char === '"' && field.length === 0) quoted = true;
-    else if (char === ',') { row.push(field); field = ''; }
-    else if (char === '\n' || char === '\r') {
-      if (char === '\r' && text[i + 1] === '\n') i++;
-      row.push(field.replace(/^\uFEFF/, ''));
-      yield row;
-      row = [];
-      field = '';
-    } else field += char;
+/** RFC 4180 state survives quoted newlines, escaped quotes, CRLF and chunk boundaries. */
+class CsvTokenizer {
+  private row: string[] = [];
+  private field = '';
+  private quoted = false;
+  private quotePending = false;
+  private skipLf = false;
+  private first = true;
+  constructor(private accept: (fields: string[]) => void) {}
+
+  write(text: string) {
+    const delimiters = /[,"\r\n]/g;
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      if (this.first) {
+        this.first = false;
+        if (char === '\uFEFF') continue;
+      }
+      if (this.skipLf) {
+        this.skipLf = false;
+        if (char === '\n') continue;
+      }
+      if (this.quotePending) {
+        this.quotePending = false;
+        if (char === '"') { this.field += '"'; continue; }
+        this.quoted = false;
+      }
+      if (this.quoted) {
+        if (char === '"') this.quotePending = true;
+        else {
+          const quote = text.indexOf('"', i);
+          const end = quote < 0 ? text.length : quote;
+          this.field += text.slice(i, end);
+          i = end - 1;
+        }
+      } else if (char === '"' && this.field.length === 0) this.quoted = true;
+      else if (char === ',') { this.row.push(this.field); this.field = ''; }
+      else if (char === '\n' || char === '\r') {
+        this.row.push(this.field);
+        this.accept(this.row);
+        this.row = [];
+        this.field = '';
+        this.skipLf = char === '\r';
+      } else {
+        delimiters.lastIndex = i + 1;
+        const end = delimiters.exec(text)?.index ?? text.length;
+        this.field += text.slice(i, end);
+        i = end - 1;
+      }
+    }
   }
-  if (quoted) throw new Error('The CSV has an unclosed quoted field.');
-  if (field || row.length) { row.push(field); yield row; }
+
+  finish() {
+    if (this.quoted && !this.quotePending) throw new Error('The CSV has an unclosed quoted field.');
+    if (this.field || this.row.length) { this.row.push(this.field); this.accept(this.row); }
+    this.row = [];
+    this.field = '';
+  }
 }
