@@ -31,15 +31,18 @@ npm run deploy         # build + wrangler deploy
 
 `public/_headers` (copied into `dist/`) sets the security headers. Cloudflare and Netlify both read it.
 
-### Cloudflare zone settings that must stay off
+### Cloudflare zone settings
 
-Cloudflare can inject scripts into pages at the edge. For this app they would break the "no analytics" promise. The CSP blocks them, so nothing is sent, but they should be switched off for `esdy.cc` (or at least `trace.esdy.cc`):
+**Keep Bot Fight Mode enabled for `esdy.cc`.** Disabling it is not authorized as part of a deployment. Changes to this zone-wide security control require explicit owner authorization.
+
+Cloudflare may inject a JavaScript detection snippet into served HTML. Its presence is expected with Bot Fight Mode enabled and is not a deployment failure. Keep the existing CSP intact; do not relax it to allow injected inline scripts.
+
+The following optional script-injection features should remain off for this app:
 
 - **Web Analytics automatic setup** (Analytics & Logs, then Web Analytics; the RUM beacon from `static.cloudflareinsights.com`).
-- **Bot Fight Mode / JavaScript detections** (Security, then Bots), which injects an inline `__CF$cv$params` script.
 - Rocket Loader, Email Address Obfuscation and Zaraz, if they are ever enabled.
 
-Check with: `curl -s https://trace.esdy.cc/ | grep -c "<script"` should print `1`.
+Verify that the deployed HTML references the expected build assets and that the response includes the CSP from `public/_headers`. Do not use the number of `<script>` tags as a deployment acceptance check, because Cloudflare may add its security snippet.
 
 ## Recommended headers (any host)
 

@@ -13,7 +13,7 @@
 - Keep capture data local. Do not add upload, analytics, or network lookup behavior without explicit direction.
 - Keep record tags unique between Lua output and `parseRecords`. In particular, `Q` is already the QUIC record tag; HTTP/2 currently uses `J`.
 - For Wireshark fields, verify field names against the bundled Wireshark version or its official reference. Reassembled field offsets must only be compared within the same `FieldInfo.source` when that source is available.
-- Do not close GitHub issues or post issue comments unless asked. Leave an issue open when its acceptance criteria or required evidence are incomplete.
+- Close GitHub issues after their fixes are merged to the default branch and their acceptance criteria and required evidence are complete. Do not close unresolved issues or post issue comments unless asked.
 
 ## Useful commands
 
