@@ -7,6 +7,7 @@ import { DataTable, type Column } from '../components/DataTable';
 import { Addr, Fact, FramesLink, Note, Panel, ViewHead } from '../components/bits';
 import { useApp, useViewState } from '../context';
 import { absTime, duration, endpoint, num, plural } from '../format';
+import { countHttpStatuses } from '../httpStats';
 
 function statusTag(s: number | null) {
   if (s === null) return <span className="muted">none</span>;
@@ -28,7 +29,7 @@ export function Http() {
     };
     return {
       methods: count((h) => h.method),
-      statuses: count((h) => (h.status === null ? null : `${h.status}${h.phrase ? ' ' + h.phrase : ''}`)),
+      statuses: countHttpStatuses(model.http),
       hosts: count((h) => (h.method ? h.host ?? '(no Host header)' : null)),
       requests: model.http.filter((h) => h.method).length,
       responses: model.http.filter((h) => h.status !== null).length,

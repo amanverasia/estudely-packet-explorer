@@ -571,3 +571,13 @@ describe('protocols edge fixture (DHCP outcome order, tunnelled ICMP)', () => {
     expect(m.icmp[1].quoted).toBeNull();
   });
 });
+
+describe('multi-interface nanosecond time filters', () => {
+  it('matches a nanosecond range with Wireshark relative-time filters', async () => {
+    const { model, session } = await open('multi-iface.pcapng');
+    expect(Array.from(model.filterIndex.frameTimes)).toEqual([0, 0, 0.000000789]);
+    const page = session.packetList('frame.time_relative >= 0.0000007 && frame.time_relative <= 0.0000008', 0, 10);
+    expect(page.matched).toBe(1);
+    expect(page.rows.map((row) => row.number)).toEqual([2]);
+  });
+});

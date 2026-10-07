@@ -46,6 +46,20 @@ function model(conversations: Conversation[], packetConversations: number[], pac
 }
 
 describe('shared filter conversation record indexing', () => {
+  it('keeps inclusive time endpoints for millisecond and nanosecond captures', () => {
+    const millisecondEnd = 0.019999999999999997;
+    const millisecond = model([], [-1, -1, -1], [0, 0.01, millisecondEnd]);
+    millisecond.timeline.end = millisecondEnd;
+    millisecond.capture.duration = millisecondEnd;
+    const tinyEnd = 7.890000000010389e-7;
+    const nanosecond = model([], [-1, -1], [0, tinyEnd]);
+    nanosecond.timeline.end = tinyEnd;
+    nanosecond.capture.duration = tinyEnd;
+
+    expect(applySharedFilter(millisecond, { start: 0, end: millisecondEnd, host: null }).stats.packets).toBe(3);
+    expect(applySharedFilter(nanosecond, { start: 0, end: tinyEnd, host: null }).stats.packets).toBe(2);
+  });
+
   it('counts records by original conversation ID and ignores filtered, missing, and null IDs', () => {
     const source = model([conversation(41), conversation(900)], [0, 1], [0.25, 2]);
     source.dns = [

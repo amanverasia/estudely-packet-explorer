@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { FrameDetails, PacketRow, ProtoTreeNode } from '../../engine/types';
 import { useApp, type DrawerSpec } from '../context';
-import { absTime, bytes, endpoint, epochText, num, rel } from '../format';
+import { absTime, bytes, decimalLiteral, endpoint, epochText, num, rel } from '../format';
 import { SOURCE_PACKET_PAGE_SIZE, sourceFramePage } from '../sourceFrames';
 
 export function Drawer({ spec, onClose }: { spec: DrawerSpec; onClose: () => void }) {
@@ -32,7 +32,7 @@ export function Drawer({ spec, onClose }: { spec: DrawerSpec; onClose: () => voi
   const sharedDisplay = useMemo(() => {
     const terms: string[] = [];
     if (filter.start !== null && filter.end !== null) {
-      terms.push(`(frame.time_relative_capture_start >= ${filter.start.toPrecision(12)} && frame.time_relative_capture_start <= ${filter.end.toPrecision(12)})`);
+      terms.push(`(frame.time_relative >= ${decimalLiteral(filter.start)} && frame.time_relative <= ${decimalLiteral(filter.end)})`);
     }
     if (filter.host) terms.push(`(${filter.host.includes(':') ? 'ipv6.addr' : 'ip.addr'} == ${filter.host})`);
     return terms.join(' && ');

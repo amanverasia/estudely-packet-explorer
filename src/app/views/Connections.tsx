@@ -8,6 +8,7 @@ import { Addr, Note, Panel, Seg, ViewHead } from '../components/bits';
 import { FollowStream } from '../components/FollowStream';
 import { useApp, useViewState } from '../context';
 import { bytes, duration, endpoint, num, plural, rel } from '../format';
+import { CONNECTION_TRANSPORTS, countConnectionTransports } from '../connectionCounts';
 import {
   connectionQualityFilters,
   countConnectionQuality,
@@ -65,17 +66,18 @@ export function Connections() {
     for (const c of sourceModel.conversations) m.set(c.appProtocol, (m.get(c.appProtocol) ?? 0) + 1);
     return [...m.entries()].sort((a, b) => b[1] - a[1]);
   }, [sourceModel.conversations]);
-  const unfilteredRows = useMemo(() => model.conversations.filter((c) =>
-    (transport === 'all' || c.transport === transport) && (app === 'all' || c.appProtocol === app)
-    && (!hostFilter || c.a === hostFilter || c.b === hostFilter)), [model.conversations, transport, app, hostFilter]);
+  const transportScope = useMemo(() => model.conversations.filter((c) =>
+    (app === 'all' || c.appProtocol === app) && (!hostFilter || c.a === hostFilter || c.b === hostFilter)),
+  [model.conversations, app, hostFilter]);
+  const unfilteredRows = useMemo(() => transportScope.filter((c) => transport === 'all' || c.transport === transport), [transportScope, transport]);
   const rows = useMemo(() => filterConnectionsByQuality(unfilteredRows, qualityFilter), [unfilteredRows, qualityFilter]);
   const qualityCounts = useMemo(() => countConnectionQuality(unfilteredRows), [unfilteredRows]);
   const conv = selected !== null ? model.conversations.find((c) => c.id === selected) ?? null : null;
-  const counts = useMemo(() => {
-    const m: Record<string, number> = { TCP: 0, UDP: 0, IP: 0, 'Non-IP': 0 };
-    for (const c of sourceModel.conversations) m[c.transport]++;
-    return m;
-  }, [sourceModel.conversations]);
+  const counts = useMemo(() => countConnectionTransports(transportScope), [transportScope]);
+  const availableTransports = useMemo(() => {
+    const available = countConnectionTransports(sourceModel.conversations);
+    return CONNECTION_TRANSPORTS.filter((item) => available[item] > 0 || transport === item);
+  }, [sourceModel.conversations, transport]);
   const digits = Math.min(6, model.capture.timestampDigits);
 
   const columns: Column<Conversation>[] = [
@@ -97,13 +99,13 @@ export function Connections() {
     <>
       <ViewHead title="Connections"
         right={<Seg label="Transport" value={transport} onChange={setTransport}
-          options={[{ value: 'all', label: `All ${num(model.conversations.length)}` }, ...(['TCP', 'UDP', 'IP', 'Non-IP'] as Transport[]).filter((t) => counts[t]).map((t) => ({ value: t, label: `${t} ${num(counts[t])}` }))]} />}>
+          options={[{ value: 'all', label: `All ${num(transportScope.length)}` }, ...availableTransports.map((t) => ({ value: t, label: `${t} ${num(counts[t])}` }))]} />}>
         TCP and UDP conversations use Wireshark's stream index, so a reused address and port pair appears as separate sessions. Endpoint A is the TCP SYN sender, or otherwise the first packet's sender. Other IP traffic (such as ICMP) is grouped per address pair and protocol.
       </ViewHead>
       {hostFilter && (
         <Note>Showing conversations involving <span className="mono">{hostFilter}</span>. <button className="btn small" onClick={() => { setHostFilter(null); go('connections'); }}>Show all</button></Note>
       )}
-      <Note>Counts are conversations with at least one recorded Wireshark indicator. They describe observations in this capture, not a diagnosed cause. TCP indicators use full-conversation counts; shared packet filters affect the displayed packet totals, bytes, and times.</Note>
+      <Note>Transport counts use the shared capture filters and current protocol/host choices, before the transport and quality filters, so the chips partition the same conversation set. TCP indicators are full-conversation observations, not diagnoses; their counts keep that scope even when packet filters are active.</Note>
       {conv && <ConversationDetail key={conv.id} c={conv} onClose={() => setSelected(null)} />}
       <section className="panel">
         <DataTable stateId="connections.conversations" label="Conversations" exportName="conversations" rows={rows} columns={columns} rowKey={(c) => c.id} selectedKey={selected}

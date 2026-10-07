@@ -195,10 +195,19 @@ function bool(s: string | undefined): boolean {
 }
 
 /** Splits "1700000000.123456789" into integer seconds and the fractional digits. */
-function splitEpoch(e: string): [number, string] {
+function splitEpoch(e: string): [bigint, string] {
   const dot = e.indexOf('.');
-  if (dot < 0) return [Number(e), ''];
-  return [Number(e.slice(0, dot)), e.slice(dot + 1)];
+  if (dot < 0) return [BigInt(e), ''];
+  return [BigInt(e.slice(0, dot)), e.slice(dot + 1)];
+}
+
+/** Subtract decimal epoch parts before converting the small relative value to a float. */
+function relativeSeconds(sec: bigint, fracDigits: string, baseSec: bigint, baseFracDigits: string): number {
+  const precision = Math.max(fracDigits.length, baseFracDigits.length);
+  const ticks = (digits: string) => BigInt(digits.padEnd(precision, '0') || '0');
+  const fractionalDelta = ticks(fracDigits) - ticks(baseFracDigits);
+  const scale = 10n ** BigInt(precision);
+  return Number(sec - baseSec) + Number(fractionalDelta) / Number(scale);
 }
 
 /** Calls fn for each line in the buffer without materialising one huge string. */
@@ -228,8 +237,8 @@ export function parseRecords(buf: Uint8Array, onProgress?: (fraction: number) =>
     packets: [], segments: new Map(), dns: [], nbns: [], http: [], tls: [], arp: [], dhcp: [], icmp: [], ssh: [], quic: [], ifaces: [],
     macVendors: new Map(), warnings: [], startEpoch: null, timestampDigits: 0,
   };
-  let baseSec = 0;
-  let baseFrac = 0;
+  let baseSec = 0n;
+  let baseFracDigits = '';
   let digits = 0;
   // Interning keeps one copy of repeated strings (addresses, protocol stacks).
   const pool = new Map<string, string>();
@@ -250,15 +259,14 @@ export function parseRecords(buf: Uint8Array, onProgress?: (fraction: number) =>
         const [sec, fracDigits] = splitEpoch(epoch);
         const trimmed = fracDigits.replace(/0+$/, '');
         if (trimmed.length > digits) digits = trimmed.length;
-        const frac = fracDigits ? Number('0.' + fracDigits) : 0;
         if (out.startEpoch === null) {
           out.startEpoch = epoch;
           baseSec = sec;
-          baseFrac = frac;
+          baseFracDigits = fracDigits;
         }
         out.packets.push({
           frame: Number(c[1]),
-          t: sec - baseSec + (frac - baseFrac),
+          t: relativeSeconds(sec, fracDigits, baseSec, baseFracDigits),
           len: Number(c[3]) || 0,
           caplen: Number(c[4]) || 0,
           iface: int(c[5]),
