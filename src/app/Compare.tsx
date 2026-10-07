@@ -154,7 +154,7 @@ export function ComparePage({ seed, onClearSeed, onClose, theme, setTheme }: {
         <div className="actions">
           {!running ? <button className="btn primary" disabled={!canStart} onClick={run}>{phase === 'done' ? 'Compare again' : 'Compare captures'}</button>
             : <button className="btn" onClick={cancel}>Cancel</button>}
-          <button className="btn" disabled={running} onClick={onClose}>Back</button>
+          <button className="btn" onClick={() => { clientRef.current?.close(); clientRef.current = null; onClose(); }}>Back</button>
         </div>
 
         {running && <section className="compare-progress" aria-live="polite">

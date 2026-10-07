@@ -24,7 +24,7 @@ Drop in a `.pcap` or `.pcapng` file and get organised views of its DNS lookups, 
 | **Network** | An interactive graph of which hosts talked to which, sized by traffic and coloured by protocol, with a keyboard-accessible host-link table |
 | **Packet list** | Wireshark's own packet list and display filters, with the full decode and hex bytes of any packet |
 
-Compare two captures from the start screen or an open capture. Capture A is the baseline; the comparison shows added, missing and changed hosts, learned names, protocol totals and conversations. Captures are analyzed one at a time, and conversation matching uses protocol plus the unordered pair of endpoint addresses and ports.
+Compare two captures from the start screen or an open capture. Capture A is the baseline; the comparison shows added, missing and changed hosts, learned names, protocol totals and conversations. Back returns to the original investigation, restoring its view, filters and selected context by reanalyzing the original local file. Captures are analyzed one at a time, and conversation matching uses protocol plus the unordered pair of endpoint addresses and ports.
 
 Every table can be searched, sorted and exported as CSV. The JSON export menu offers an aggregate summary with an explicit allowlist of counts and protocol totals, or detailed analysis that can include addresses, names, HTTP paths and headers, certificate identities, and packet references. Detailed JSON redacts known identifying and content-like values by default; you can turn redaction off. Redaction retains frame numbers, relative times, ports, traffic sizes, protocol labels, and counts, so review any export before sharing. Both JSON choices exclude packet bytes, stream payloads, TLS key logs, file inventory and contents. JSON and CSV exports are ordinary local browser downloads. You can also download a self-contained HTML report of whole-capture aggregates that opens offline and makes no external requests. It includes names and addresses observed in the capture, so share it carefully. Captured files are untrusted: the Files view never previews or opens contents, and saves an object only after you select Download.
 
@@ -33,6 +33,8 @@ To enable the optional country or ASN data, follow a DB-IP link in Hosts, downlo
 ## Decrypting TLS locally
 
 Choose a TLS key log file alongside the capture to decrypt matching TLS and QUIC sessions. Browsers such as Firefox and Chrome can write one when started with the `SSLKEYLOGFILE` environment variable set to a writable file path. Capture the traffic from that browser, then select both the capture and its key log here. Wireshark reads the key log in the local analysis worker; it is not uploaded or saved by the app. Decrypted HTTP/1.x and HTTP/2 messages are marked in their rows, decrypted QUIC stream packets are marked in packet details, and the TLS view reports which sessions decrypted. HTTP/3 request rows remain unsupported.
+
+For an already open capture, expand **TLS keys**, choose a file, and select **Apply keys to current capture**. Staging a file leaves results unchanged; active status shows the applied filename and actual decrypted-session count. **Remove active keys** reanalyzes without keys. Opening another capture clears them.
 
 Key logs contain session secrets. Anyone who gets the file and matching capture may be able to read that traffic, so store and share the key log as carefully as the capture. Closing the capture releases the app's in-memory copy.
 

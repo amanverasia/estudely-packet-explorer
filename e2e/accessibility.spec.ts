@@ -23,7 +23,9 @@ async function openCapture(page: Page, name: string) {
 }
 
 async function view(page: Page, id: string) {
-  await page.locator(`.nav a[href="#/${id}"]`).click();
+  const link = page.locator(`.nav a[href="#/${id}"]`);
+  if (!(await link.isVisible())) await page.locator('.workspace-absent summary').click();
+  await link.click();
   await expect(page.locator(`.nav a[href="#/${id}"]`)).toHaveAttribute('aria-current', 'page');
 }
 

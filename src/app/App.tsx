@@ -9,9 +9,12 @@ import { Drawer } from './components/Drawer';
 import { OfflineStatus, UpdateBanner } from './components/Offline';
 import { ThemeButton, type Theme } from './components/ThemeButton';
 import { ComparePage } from './Compare';
+import { TlsKeyControls } from './components/TlsKeyControls';
 import { Ctx, ViewStateCtx, type AppCtx, type DrawerSpec, type ViewStateStore } from './context';
 import { applySharedFilter, type SharedFilter } from './filtering';
 import { downloadBlob, safeBase } from './download';
+import { CaptureToolbar } from './components/CaptureToolbar';
+import { WorkspaceNavigation } from './components/WorkspaceNavigation';
 import { JsonExport } from './components/JsonExport';
 import { htmlReport } from './report';
 import { EngineClient, HARD_LIMIT_BYTES, SOFT_LIMIT_BYTES, type EngineState } from './engine';
@@ -56,6 +59,11 @@ export function App() {
   const [route, setRoute] = useState(parseHash);
   const [drawer, setDrawer] = useState<DrawerSpec | null>(null);
   const [theme, setTheme] = useState<Theme>(loadTheme);
+  const currentFileRef = useRef<File | null>(null);
+  const [activeKeyLog, setActiveKeyLog] = useState<File | null>(null);
+  const pendingKeysRef = useRef<File | null>(null);
+  const [returnOperation, setReturnOperation] = useState<'restore' | 'keys' | null>(null);
+  const snapshotRef = useRef<{ hash: string; drawer: DrawerSpec | null; scroll: number; workspaceScroll: number; tables: { label: string | null; top: number }[] } | null>(null);
   const [compareMode, setCompareMode] = useState(false);
   const [compareSeed, setCompareSeed] = useState<AnalysisModel | null>(null);
   const [captureSession, setCaptureSession] = useState(0);
@@ -66,6 +74,7 @@ export function App() {
   const viewState = useMemo<ViewStateStore>(() => ({
     get: (key) => viewStateRef.current.get(key),
     set: (key, value) => { viewStateRef.current.set(key, value); },
+    session: () => captureSessionRef.current,
   }), []);
   const setHistoryCaptureSession = useCallback((session: number, hash?: string) => {
     const oldState = history.state;
@@ -118,6 +127,11 @@ export function App() {
   useEffect(() => () => engine.close(), [engine]);
 
   const openFile = useCallback((file: File, keyLog?: File | null) => {
+    currentFileRef.current = file;
+    pendingKeysRef.current = keyLog ?? null;
+    setActiveKeyLog(null);
+    setReturnOperation(null);
+    snapshotRef.current = null;
     const replacingCapture = captureAttempted.current;
     captureAttempted.current = true;
     const session = resetViewState();
@@ -127,23 +141,74 @@ export function App() {
     engine.open(file, keyLog);
   }, [engine, replaceRoute, resetViewState, setHistoryCaptureSession]);
 
+  const saveSnapshot = useCallback(() => {
+    snapshotRef.current = { hash: location.hash, drawer, scroll: window.scrollY, workspaceScroll: document.querySelector('.content')?.scrollTop ?? 0, tables: Array.from(document.querySelectorAll('.dt-scroll')).map((element) => ({ label: element.getAttribute('aria-label'), top: element.scrollTop })) };
+  }, [drawer]);
   const enterCompare = useCallback((seed: AnalysisModel | null) => {
-    const hadCapture = captureAttempted.current;
-    captureAttempted.current = true;
-    const session = resetViewState();
-    if (hadCapture && seed) replaceRoute('#/overview', session);
-    else setHistoryCaptureSession(session);
+    if (seed) saveSnapshot();
+    else { currentFileRef.current = null; pendingKeysRef.current = null; setActiveKeyLog(null); snapshotRef.current = null; }
     engine.close();
     setState({ kind: 'idle' });
     setDrawer(null);
     setCompareSeed(seed);
     setCompareMode(true);
-  }, [engine, replaceRoute, resetViewState, setHistoryCaptureSession]);
+  }, [engine, saveSnapshot]);
+  const reanalyze = useCallback((keys: File | null, operation: 'restore' | 'keys') => {
+    const file = currentFileRef.current;
+    if (!file) return;
+    pendingKeysRef.current = keys;
+    setReturnOperation(operation);
+    setDrawer(null);
+    engine.open(file, keys);
+  }, [engine]);
   const leaveCompare = useCallback(() => {
     setCompareMode(false);
     setCompareSeed(null);
-  }, []);
+    if (currentFileRef.current) reanalyze(activeKeyLog, 'restore');
+  }, [activeKeyLog, reanalyze]);
   const clearCompareSeed = useCallback(() => setCompareSeed(null), []);
+  const closeCapture = useCallback(() => {
+    currentFileRef.current = null;
+    pendingKeysRef.current = null;
+    setActiveKeyLog(null);
+    setReturnOperation(null);
+    snapshotRef.current = null;
+    captureAttempted.current = true;
+    const session = resetViewState();
+    replaceRoute('#/overview', session);
+    engine.cancel();
+    setDrawer(null);
+  }, [engine, replaceRoute, resetViewState]);
+  useEffect(() => {
+    if (state.kind !== 'ready') return;
+    setActiveKeyLog(pendingKeysRef.current);
+    if (!returnOperation) return;
+    const snapshot = snapshotRef.current;
+    if (snapshot) {
+      replaceRoute(snapshot.hash, captureSessionRef.current);
+      setDrawer(snapshot.drawer);
+      const restorePageScroll = () => {
+        window.scrollTo(0, snapshot.scroll);
+        const main = document.querySelector('.content');
+        if (main) main.scrollTop = snapshot.workspaceScroll;
+      };
+      // Packet counts and virtual height arrive after the ready model. Consume
+      // this once in Packets when its content can accept the saved page offset.
+      if (/^#\/?packets(?:\?|$)/.test(snapshot.hash)) viewState.set('workspace.pendingPageScroll', { hash: snapshot.hash, restore: restorePageScroll });
+      requestAnimationFrame(() => {
+        restorePageScroll();
+        for (const table of document.querySelectorAll('.dt-scroll')) {
+          // The packet list restores its own offset once its virtual rows are
+          // laid out; writing here would clamp against its empty body and the
+          // clamping scroll event would overwrite the saved offset.
+          if (table.getAttribute('aria-label') === 'Packets') continue;
+          const saved = snapshot.tables.find((entry) => entry.label === table.getAttribute('aria-label'));
+          if (saved) table.scrollTop = saved.top;
+        }
+      });
+    }
+    setReturnOperation(null);
+  }, [state, returnOperation, replaceRoute, viewState]);
 
   const patchRouteParams = useCallback((updates: Record<string, string | null>) => {
     const current = parseHash();
@@ -182,19 +247,28 @@ export function App() {
       ) : model ? (
         <Workspace key={captureSession} model={model} engine={engine} view={route.view} params={route.params} go={go} openDrawer={setDrawer}
           patchRouteParams={patchRouteParams}
-          onOpen={openFile} onClose={() => { captureAttempted.current = true; const session = resetViewState(); replaceRoute('#/overview', session); engine.cancel(); setDrawer(null); }} onCompare={() => enterCompare(model)} theme={theme} setTheme={setTheme} drawer={drawer} closeDrawer={() => setDrawer(null)}
-          viewState={viewState} captureSession={captureSession} />
+          onOpen={openFile} onClose={closeCapture} onCompare={() => enterCompare(model)} theme={theme} setTheme={setTheme} drawer={drawer} closeDrawer={() => setDrawer(null)}
+          viewState={viewState} captureSession={captureSession} activeKeyLog={activeKeyLog}
+          onApplyKeys={(keys) => { saveSnapshot(); reanalyze(keys, 'keys'); }} onRemoveKeys={() => { saveSnapshot(); reanalyze(null, 'keys'); }} />
+      ) : returnOperation ? (
+        <main className="landing"><section className="landing-card" aria-live="polite">
+          <h1>{returnOperation === 'restore' ? 'Restoring your investigation' : 'Updating TLS decryption'}</h1>
+          {state.kind === 'working' && <AnalysisProgress key={state.startedAt} working={state} />}
+          {state.kind === 'error' && <><p className="note crit" role="alert">{state.message}</p><button className="btn primary" onClick={() => reanalyze(pendingKeysRef.current, returnOperation)}>Retry</button></>}
+          <button className="btn" onClick={() => reanalyze(activeKeyLog, 'restore')}>Return to previous analysis</button>
+          <button className="btn" onClick={closeCapture}>Return to start</button>
+        </section></main>
       ) : (
-        <Landing state={state} onOpen={openFile} onCancel={() => { resetViewState(); engine.cancel(); }} onCompare={() => enterCompare(null)} theme={theme} setTheme={setTheme} />
+        <Landing state={state} onOpen={openFile} onCancel={closeCapture} onCompare={() => enterCompare(null)} theme={theme} setTheme={setTheme} />
       )}
       <UpdateBanner captureOpen={state.kind !== 'idle' && state.kind !== 'error'} />
     </>
   );
 }
 
-function OpenButton({ onOpen, primary, label = 'Open capture', keyLog: controlledKeyLog, onKeyLogChange }: {
+function OpenButton({ onOpen, primary, label = 'Open capture', keyLog: controlledKeyLog, onKeyLogChange, captureOnly }: {
   onOpen: (f: File, keyLog?: File | null) => void; primary?: boolean; label?: string;
-  keyLog?: File | null; onKeyLogChange?: (file: File | null) => void;
+  captureOnly?: boolean; keyLog?: File | null; onKeyLogChange?: (file: File | null) => void;
 }) {
   const ref = useRef<HTMLInputElement>(null);
   const keyRef = useRef<HTMLInputElement>(null);
@@ -210,12 +284,12 @@ function OpenButton({ onOpen, primary, label = 'Open capture', keyLog: controlle
         <button className={`btn${primary ? ' primary' : ''}`} onClick={() => ref.current?.click()}>{label}</button>
         <input ref={ref} type="file" hidden accept=".pcap,.pcapng,.cap,.pcap.gz,.pcapng.gz,.ntar,.dmp,.erf,.snoop,application/vnd.tcpdump.pcap"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) { onOpen(f, keyLog); selectKeyLog(null); } e.target.value = ''; }} />
-        <button className="btn" onClick={() => keyRef.current?.click()}>{keyLog ? 'Change TLS key log' : 'Choose TLS key log (optional)'}</button>
+        {!captureOnly && <><button className="btn" onClick={() => keyRef.current?.click()}>{keyLog ? 'Change TLS key log' : 'Choose TLS key log (optional)'}</button>
         <input ref={keyRef} type="file" hidden accept=".txt,text/plain"
           onChange={(e) => { selectKeyLog(e.target.files?.[0] ?? null); e.target.value = ''; }} />
-        {keyLog && <><span className="muted" title={keyLog.name}>{keyLog.name}</span><button className="btn small ghost" onClick={() => selectKeyLog(null)}>Clear key log</button></>}
+        {keyLog && <><span className="muted" title={keyLog.name}>{keyLog.name}</span><button className="btn small ghost" onClick={() => selectKeyLog(null)}>Clear key log</button></>}</>}
       </div>
-      <span className="muted" style={{ fontSize: 12 }}>Key logs contain session secrets. They are read locally and held only while this capture is open.</span>
+      {!captureOnly && <span className="muted" style={{ fontSize: 12 }}>Key logs contain session secrets. They are read locally and held only while this capture is open.</span>}
     </div>
   );
 }
@@ -327,6 +401,7 @@ function Workspace(props: {
   model: AnalysisModel; engine: EngineClient; view: View; params: URLSearchParams; go: AppCtx['go']; patchRouteParams: (p: Record<string, string | null>) => void; openDrawer: (d: DrawerSpec) => void;
   onOpen: (f: File, keyLog?: File | null) => void; onClose: () => void; onCompare: () => void; theme: Theme; setTheme: (t: Theme) => void; drawer: DrawerSpec | null; closeDrawer: () => void;
   viewState: ViewStateStore; captureSession: number;
+  activeKeyLog: File | null; onApplyKeys: (keys: File) => void; onRemoveKeys: () => void;
 }) {
   const { model: sourceModel, view } = props;
   const c = sourceModel.capture;
@@ -405,59 +480,30 @@ function Workspace(props: {
     <ViewStateCtx.Provider value={props.viewState}>
     <Ctx.Provider value={ctx}>
       <div className="shell">
-        <aside className="sidebar" aria-label="Views">
-          <div className="brand">
-            <div className="brand-name">Estudely Packet Explorer</div>
-            <div className="brand-sub">Local capture analysis</div>
-          </div>
-          <nav className="nav">
-            {nav.map((n) => (
-              <a key={n.id} href={`#/${n.id}`} onClick={(e) => { e.preventDefault(); props.go(n.id); }} aria-current={view === n.id ? 'page' : undefined}>
-                <span className="nav-mark" aria-hidden="true" />{n.label}
-                {n.count !== undefined && <span className="nav-count">{num(n.count)}{n.total !== undefined && n.total !== n.count ? `/${num(n.total)}` : ''}</span>}
-              </a>
-            ))}
-            <div className="nav-sep" />
-            <a href="#/packets" onClick={(e) => { e.preventDefault(); props.go('packets'); }} aria-current={view === 'packets' ? 'page' : undefined}><span className="nav-mark" aria-hidden="true" />Packet list<span className="nav-count">{num(stats.packets)}{stats.packets !== c.packetCount ? `/${num(c.packetCount)}` : ''}</span></a>
-          </nav>
-          <div className="sidebar-foot">
-            <p className="local-note"><ShieldIcon />{LOCAL_NOTICE}</p>
-            <p>Decoded with Wireshark {c.engine.wireshark} via Wiregasm. <a href="./ABOUT.html" target="_blank" rel="noopener">Licences and limitations</a></p>
-            <BuildTag />
-          </div>
-        </aside>
-        <div className="main">
-          <header className="topbar">
-            <div className="topbar-row">
-              <div className="cap-title">
-                <h1>{c.fileName}</h1>
-                <div className="cap-facts">
+        <WorkspaceNavigation items={[...nav, { id: 'packets', label: 'Packet list', count: stats.packets, total: c.packetCount }]}
+          current={view} onNavigate={props.go} wireshark={c.engine.wireshark} localNotice={LOCAL_NOTICE} />
+        <div className="main workspace-main">
+          <CaptureToolbar fileName={c.fileName} theme={props.theme} setTheme={props.setTheme}
+            onOpen={(file) => props.onOpen(file, null)} onClose={props.onClose} onCompare={props.onCompare}
+            facts={<>
                   <span><b>{num(stats.packets)}</b>{stats.packets !== c.packetCount ? ` / ${num(c.packetCount)}` : ''} packets</span>
                   <span><b>{duration(filter.start !== null && filter.end !== null ? filter.end - filter.start : stats.end !== null && stats.start !== null ? Math.max(0, stats.end - stats.start) : c.duration)}</b>{filter.start !== null || filter.host ? ' selected' : ''}</span>
                   <span><b>{bytes(stats.wireBytes)}</b> on wire{stats.wireBytes !== c.wireBytes ? ` / ${bytes(c.wireBytes)}` : ''}</span>
                   <span><b>{num(model.hosts.length)}</b>{stats.allHosts !== model.hosts.length ? ` / ${num(stats.allHosts)}` : ''} hosts</span>
                   {c.partial && <span className="tag warn">partial analysis</span>}
                   {c.incomplete && <span className="tag bad">incomplete file</span>}
-                </div>
-              </div>
-              <div className="actions">
-                <button className="btn" onClick={() => downloadBlob(`${safeBase(c.fileName)}-report.html`, new Blob([htmlReport(sourceModel)], { type: 'text/html;charset=utf-8' }))}>Download HTML report</button>
-                <button className="btn" disabled={filter.start === null && !filter.host} title={filter.start === null && !filter.host ? 'Apply a time or host shared filter to create this report' : undefined} onClick={() => downloadBlob(`${safeBase(c.fileName)}-filtered-report.html`, new Blob([htmlReport(model, { filter, stats })], { type: 'text/html;charset=utf-8' }))}>Download filtered HTML report</button>
-                <JsonExport model={sourceModel} />
-                <button className="btn" onClick={props.onCompare}>Compare captures</button>
-                <OpenButton onOpen={props.onOpen} label="Open another" />
-                <button className="btn" onClick={props.onClose} title="Close this capture and free its memory">Close</button>
-                <ThemeButton theme={props.theme} setTheme={props.setTheme} />
-              </div>
-            </div>
-            <Strip timeline={sourceModel.timeline} selection={filter.start !== null && filter.end !== null ? { start: filter.start, end: filter.end } : null} onRangeChange={setTimeRange} />
-            {(filter.start !== null || filter.host) && <div className="filter-chips" aria-label="Shared filters">
+            </>}
+            exports={<JsonExport model={sourceModel} selectionAvailable={filter.start !== null || !!filter.host}
+              selectionDescription={`${num(stats.packets)} of ${num(c.packetCount)} packets${filter.start !== null && filter.end !== null ? ` · time ${rangeLabel(filter.start, filter.end)}` : ''}${filter.host ? ` · host ${filter.host}` : ''}`}
+              onWholeHtml={() => downloadBlob(`${safeBase(c.fileName)}-report.html`, new Blob([htmlReport(sourceModel)], { type: 'text/html;charset=utf-8' }))}
+              onSelectionHtml={() => downloadBlob(`${safeBase(c.fileName)}-filtered-report.html`, new Blob([htmlReport(model, { filter, stats })], { type: 'text/html;charset=utf-8' }))} />}
+            keys={<TlsKeyControls activeKeyLog={props.activeKeyLog} model={sourceModel} onApplyKeys={props.onApplyKeys} onRemoveKeys={props.onRemoveKeys} />}
+            timeline={<Strip timeline={sourceModel.timeline} selection={filter.start !== null && filter.end !== null ? { start: filter.start, end: filter.end } : null} onRangeChange={setTimeRange} />}
+            filters={(filter.start !== null || filter.host) && <div className="filter-chips" aria-label="Shared filters">
               {filter.start !== null && filter.end !== null && <button className="filter-chip" onClick={clearTimeRange} aria-label="Remove time range filter">Time {rangeLabel(filter.start, filter.end)} <span aria-hidden="true">×</span></button>}
               {filter.host && <button className="filter-chip" onClick={() => setHostFilter(null)} aria-label={`Remove host filter for ${filter.host}`}>Host {filter.host} <span aria-hidden="true">×</span></button>}
               <button className="btn ghost small" onClick={clearFilters}>Clear filters</button>
-            </div>}
-            <p className="mobile-local local-note" style={{ fontSize: 12, padding: '4px 0 8px' }}><ShieldIcon />{LOCAL_NOTICE}</p>
-          </header>
+            </div>} />
           <main className="content" id="content">
             {model.tls.length > 0 && <TlsStatusBanner sessions={model.tls} />}
             {c.partial && <div className="note warn" role="status" style={{ marginBottom: 14 }}>

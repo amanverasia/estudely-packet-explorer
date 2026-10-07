@@ -1,15 +1,16 @@
 // Copyright (C) 2026 Estudely and contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Note, ViewHead } from '../components/bits';
-import { useApp, useViewState } from '../context';
+import { useApp, useViewState, ViewStateCtx } from '../context';
 import { decimalLiteral, num } from '../format';
 
 const PAGE = 500;
 const ROW = 30;
 
 export function Packets({ captureSession }: { captureSession: number }) {
+  const viewState = useContext(ViewStateCtx);
   const { engine, params, patchRouteParams, openDrawer, model, filter: sharedFilter } = useApp();
   const [draft, setDraft] = useViewState<string>('packets.filter.draft', params.get('filter') ?? '', (value): value is string => typeof value === 'string');
   const [filter, setFilter] = useViewState<string>('packets.filter.applied', params.get('filter') ?? '', (value): value is string => typeof value === 'string');
@@ -164,6 +165,39 @@ export function Packets({ captureSession }: { captureSession: number }) {
   };
 
   const virt = useVirtualizer({ count: matched ?? 0, getScrollElement: () => scrollRef.current, estimateSize: () => ROW, overscan: 20 });
+  const scrollKey = `packets.scroll.${sharedDisplay}\u0000${filter}`;
+  // A restored worker returns the matched count asynchronously. Wait until the
+  // virtual body's real height exists before restoring an offset beyond page 1.
+  useLayoutEffect(() => {
+    if (busy || matched === null || !scrollRef.current) return;
+    const el = scrollRef.current;
+    const saved = viewState?.get(scrollKey);
+    if (typeof saved === 'number' && Number.isFinite(saved)) {
+      // Writing the offset before the rows are laid out makes the browser clamp
+      // it, and the clamping scroll event then overwrites the saved value. Only
+      // scroll once the element can actually hold the offset.
+      let frames = 0;
+      const apply = () => {
+        if (el.isConnected && frames++ < 120 && el.scrollHeight - el.clientHeight < saved - 1) { requestAnimationFrame(apply); return; }
+        virt.scrollToOffset(saved);
+      };
+      apply();
+    }
+    const pending = viewState?.get('workspace.pendingPageScroll') as { hash: string; restore: () => void } | undefined;
+    if (pending && (columns.length > 0 || matched === 0)) {
+      viewState?.set('workspace.pendingPageScroll', undefined);
+      if (pending.hash === location.hash) pending.restore();
+    }
+    return () => {
+      // The scroll event that normally records this offset is asynchronous and
+      // is lost when the view unmounts before it fires (for example when
+      // entering comparison): persist the live offset here. Skipped when this
+      // capture was replaced or closed, so a fresh capture inherits nothing.
+      if (matched !== null && scrollRef.current && viewState?.session() === sessionRef.current) {
+        viewState?.set(scrollKey, scrollRef.current.scrollTop);
+      }
+    };
+  }, [busy, matched, columns.length, scrollKey, viewState, virt]);
   const items = virt.getVirtualItems();
   useEffect(() => {
     if (!items.length) return;
@@ -195,7 +229,7 @@ export function Packets({ captureSession }: { captureSession: number }) {
             <button className="btn small" type="button" onClick={() => retryPage(p)} aria-label={`Retry packet page ${p + 1}`}>Retry page {p + 1}</button>
           </div>)}
         </div>}
-        <div className="dt-scroll" ref={scrollRef} style={{ maxHeight: '70vh' }} role="grid" tabIndex={0} aria-label="Packets" aria-busy={busy} aria-rowcount={matched === null ? -1 : matched + 1}>
+        <div className="dt-scroll" ref={scrollRef} onScroll={(event) => { if (!busy && matched !== null) viewState?.set(scrollKey, event.currentTarget.scrollTop); }} style={{ maxHeight: '70vh' }} role="grid" tabIndex={0} aria-label="Packets" aria-busy={busy} aria-rowcount={matched === null ? -1 : matched + 1}>
           <div className="dt-grid" role="presentation">
             {columns.length > 0 && <div className="dt-row dt-head" role="row" style={{ gridTemplateColumns: template }}>
               {columns.map((c) => <div key={c} role="columnheader" className={c === 'No.' || c === 'Length' ? 'r' : undefined}>{c}</div>)}

@@ -70,7 +70,9 @@ test('works offline after the first visit', async ({ page, context, browserName,
   expect(await page.evaluate(() => fetch('./sw.js', { cache: 'no-store' }).then(() => 'reached', () => 'unreachable'))).toBe('unreachable');
   await page.reload();
   await page.locator('input[type=file]').first().setInputFiles(fixture('dns.pcap'));
-  await expect(page.locator('.cap-title h1')).toHaveText('dns.pcap');
+  // A cold offline open decompresses the ~20 MiB engine in the worker; on a
+  // loaded CI runner that alone can exceed the default expectation timeout.
+  await expect(page.locator('.cap-title h1')).toHaveText('dns.pcap', { timeout: 90_000 });
   await expect(page.locator('.facts').getByText('Packets', { exact: true }).locator('..')).toContainText('29');
   // Lazily loaded views come from the cache too.
   await page.evaluate(() => { location.hash = '#/http'; });
@@ -122,7 +124,8 @@ test('offers to reload when a new version is deployed', async ({ page, context, 
   await page.evaluate(async () => { await (await navigator.serviceWorker.ready).update(); });
   const banner = page.getByRole('status').filter({ hasText: 'A new version is available' });
   await expect(banner).toBeVisible();
-  expect(await page.evaluate(async () => !!(await navigator.serviceWorker.ready).waiting)).toBe(true);
+  // The installed state event can precede registration.waiting in WebKit.
+  await expect.poll(() => page.evaluate(async () => !!(await navigator.serviceWorker.ready).waiting)).toBe(true);
   // The fixed update notice must not block controls behind its text. Keep
   // only its explicit Reload button interactive while the user decides.
   const point = await banner.evaluate((el) => {

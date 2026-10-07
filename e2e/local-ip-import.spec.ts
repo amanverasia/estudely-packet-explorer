@@ -63,7 +63,10 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 960, height: 900 
     });
     await page.goto('./');
     await page.locator('input[type=file]').first().setInputFiles(fileURLToPath(new URL('../fixtures/ip-data.pcap', import.meta.url)));
-    await page.locator('a[href="#/hosts"]').click();
+    await expect(page.locator('.cap-title h1')).toHaveText('ip-data.pcap');
+    const viewSelector = page.getByRole('combobox', { name: 'Current view' });
+    if (await viewSelector.isVisible()) await viewSelector.selectOption('hosts');
+    else await page.locator('a[href="#/hosts"]').click();
     const grid = page.getByRole('grid', { name: 'Hosts' });
     await expect(grid.getByRole('row').filter({ hasText: '8.8.8.8' })).toBeVisible();
     await expect(page.getByLabel('Import Country CSV')).toBeHidden();

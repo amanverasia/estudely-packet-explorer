@@ -1,0 +1,29 @@
+.main .capture-toolbar { position: static; padding: 10px 24px; }
+.capture-toolbar-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; }
+.capture-toolbar .cap-title { flex: 1 1 260px; }
+.capture-toolbar .cap-title h1 { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 16px; }
+.capture-toolbar .cap-facts { font-size: 12px; gap: 4px 12px; }
+.capture-toolbar-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.capture-toolbar .btn { font-size: 12px; padding: 5px 9px; }
+.capture-action-menu { position: relative; }
+.capture-action-menu > summary { list-style: none; cursor: pointer; }
+.capture-action-menu > summary::-webkit-details-marker { display: none; }
+.capture-action-panel { position: absolute; top: calc(100% + 6px); right: 0; z-index: 15; width: min(330px, calc(100vw - 32px)); max-height: 65vh; overflow: auto; display: grid; gap: 8px; padding: 14px; border: 1px solid var(--rule-strong); border-radius: 8px; background: var(--panel); box-shadow: 0 8px 28px rgba(0,0,0,.2); }
+.capture-action-panel p { margin: 0; overflow-wrap: anywhere; font-size: 12px; }
+.capture-action-panel h2 { font-size: 14px; margin: 0; }
+.capture-toolbar-filter-row { display: flex; gap: 8px 16px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+.capture-timeline { display: flex; align-items: center; gap: 10px; flex: 1 1 240px; min-width: 0; font-size: 11px; }
+.capture-timeline > span { flex: none; }
+.capture-timeline .strip { flex: 1; min-width: 80px; margin: 0; }
+.capture-toolbar-context { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.capture-toolbar .filter-chips { margin: 0; gap: 6px; padding: 0; }
+@media (max-width: 860px) {
+  .main .capture-toolbar { padding: 8px 16px; }
+  .capture-toolbar .cap-title { flex-basis: 100%; }
+  .capture-toolbar-row { gap: 6px; }
+  .capture-toolbar-actions { width: 100%; }
+  .capture-toolbar .capture-action-panel, .capture-toolbar .json-export-panel { position: fixed; top: 12px; right: 16px; left: 16px; width: auto; max-height: calc(100dvh - 24px); }
+  .capture-toolbar-filter-row { gap: 6px; margin-top: 6px; }
+}
+.capture-toolbar .tls-key-menu > summary { display: flex; gap: 6px; max-width: 270px; align-items: center; }
+.capture-toolbar .capture-action-value { min-width: 0; max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink-2); }

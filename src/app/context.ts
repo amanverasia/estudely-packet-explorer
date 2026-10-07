@@ -35,6 +35,8 @@ export interface AppCtx {
 export interface ViewStateStore {
   get(key: string): unknown;
   set(key: string, value: unknown): void;
+  /** Current capture session; a view unmounting after replacement compares it with its own to avoid writing into the reset store. */
+  session(): number;
 }
 
 export const Ctx = createContext<AppCtx | null>(null);

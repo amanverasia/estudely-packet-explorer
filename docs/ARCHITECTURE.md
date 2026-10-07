@@ -114,3 +114,14 @@ Follow Stream iterates Wiregasm's payload vector without retaining an array of a
 | 400k packets, 351 MB | 12.6 s | 39.5 s | 334 MB | 930 MB |
 
 Hence the limits in `src/engine/limits.ts`: a warning above 250 MB and a 1 GiB cap on bytes streamed into the in-memory capture. Larger inputs are read as a bounded prefix, never materialized as one large JavaScript `ArrayBuffer`, and are marked partial throughout the UI and exported summaries. Gzip data is bounded after decompression. Browser times are similar to Node; expect a few seconds of engine start-up on first use.
+
+### Capture restoration and TLS reanalysis
+
+The App retains the original File and applied key-log File in refs/state only for the
+current tab. Comparison keeps a compact seed summary, closes the investigation worker,
+and snapshots capture-local route, selection and table state. Its Back action closes
+its own EngineClient synchronously before App starts restoration. Reanalysis preserves
+the capture-session identity, whereas replacement and Close reset state and keys.
+Worker identity checks reject stale messages. Key updates stage a file explicitly,
+reanalyze the retained original File, and commit active-key status only on ready results;
+failure/cancellation can reanalyze using the prior applied keys.
