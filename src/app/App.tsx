@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { AnalysisModel } from '../engine/types';
+import { AnalysisProgress } from './components/AnalysisProgress';
 import { BuildTag } from './components/BuildTag';
 import { Strip } from './components/charts';
 import { Drawer } from './components/Drawer';
@@ -223,26 +224,10 @@ function ShieldIcon() {
   return <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1 2.5 3v4.3c0 3.4 2.3 6.4 5.5 7.7 3.2-1.3 5.5-4.3 5.5-7.7V3L8 1Zm-1 9.7L4.6 8.3l1.1-1.1L7 8.5l3.3-3.3 1.1 1.1L7 10.7Z" /></svg>;
 }
 
-const PHASES: { phase: string; label: string }[] = [
-  { phase: 'engine', label: 'Load the Wireshark engine (first time only)' },
-  { phase: 'read', label: 'Read the file from your device' },
-  { phase: 'load', label: 'Index packets' },
-  { phase: 'extract', label: 'Decode every packet' },
-  { phase: 'parse', label: 'Read decoded fields' },
-  { phase: 'analyze', label: 'Build summaries' },
-];
-
 function Landing({ state, onOpen, onCancel, onCompare, theme, setTheme }: { state: EngineState; onOpen: (f: File, keyLog?: File | null) => void; onCancel: () => void; onCompare: () => void; theme: Theme; setTheme: (t: Theme) => void }) {
   const [over, setOver] = useState(false);
   const [keyLog, setKeyLog] = useState<File | null>(null);
-  const [now, setNow] = useState(performance.now());
-  useEffect(() => {
-    if (state.kind !== 'working') return;
-    const t = setInterval(() => setNow(performance.now()), 500);
-    return () => clearInterval(t);
-  }, [state.kind]);
   const working = state.kind === 'working' ? state : null;
-  const phaseIdx = working ? PHASES.findIndex((p) => p.phase === working.progress.phase) : -1;
   return (
     <main className="landing"
       onDragOver={(e) => { e.preventDefault(); setOver(true); }}
@@ -274,19 +259,7 @@ function Landing({ state, onOpen, onCancel, onCompare, theme, setTheme }: { stat
               <section className="drop landing-drop landing-processing" aria-live="polite">
                 <p className="landing-kicker">ANALYZING CAPTURE</p>
                 <h2 style={{ overflowWrap: 'anywhere' }}>{working.fileName}</h2>
-                <p className="muted">{bytes(working.fileSize)}, {duration((now - working.startedAt) / 1000)} elapsed</p>
-                <div className={`progress${working.progress.fraction === null ? ' indeterminate' : ''}`} role="progressbar"
-                  aria-valuemin={0} aria-valuemax={100} aria-valuenow={working.progress.fraction === null ? undefined : Math.round(working.progress.fraction * 100)} aria-label="Analysis progress">
-                  <div style={{ width: working.progress.fraction === null ? undefined : `${Math.round(working.progress.fraction * 100)}%` }} />
-                </div>
-                <p>{working.progress.message}</p>
-                <div className="steps"><ol>
-                  {PHASES.map((p, i) => (
-                    <li key={p.phase} data-state={i < phaseIdx ? 'done' : i === phaseIdx ? 'active' : 'todo'}>
-                      <span aria-hidden="true" style={{ width: 14 }}>{i < phaseIdx ? '✓' : i === phaseIdx ? '›' : ''}</span>{p.label}
-                    </li>
-                  ))}
-                </ol></div>
+                <AnalysisProgress key={working.startedAt} working={working} />
                 <button className="btn" onClick={onCancel}>Cancel</button>
               </section>
             ) : (

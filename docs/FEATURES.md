@@ -77,3 +77,22 @@ Not supported: live capture and files Wireshark cannot open (the error says so).
 - Ports listed for a host are traffic observations, not open-port confirmations. No OS or device identification is done.
 - Performance is roughly 8–10k packets/second on a laptop core; captures above ~1–2 million packets may exhaust the 2 GiB WASM heap.
 - Engine download is about 20 MB (compressed). After the first visit the app and engine are kept by a service worker for offline use; in browsers without service workers they are downloaded again per session (HTTP-cached).
+
+## Investigation controls
+
+Analysis shows a fresh elapsed clock for each capture, with separate engine download,
+initialization, file reading, indexing, decoding, parsing and summary phases. Percentages
+refer to the current download or analysis phase; results become available only when analysis completes.
+
+Hosts keeps optional country/ASN import in an Add/Manage country/ASN data disclosure.
+Installed database kinds automatically show their approximate columns; Show country/ASN
+columns reveals both even without data. Hiding a column affects presentation only: search,
+sort and CSV export retain all host fields. Address-registry dates and inference caveats
+remain in About host evidence and address ranges. Imports and matches remain local.
+
+Network offers host search/focus, Fit graph, Reset viewport and keyboard zoom buttons.
+Fit and Reset affect only pan/zoom; graph and shared filters remain active. Clear host
+focus resets graph focus and its search, keeping protocol and shared filters. Layout
+refits after resizing, includes label bounds and packs disconnected components. Automatic
+fit stays capped at 1.2 to keep small captures sensibly sized. Selected hosts have a
+readable label and retain the accessible host/link tables.

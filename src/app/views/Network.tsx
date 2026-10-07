@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, type SimulationLinkDatum, type SimulationNodeDatum } from 'd3-force';
 import { select } from 'd3-selection';
-import { zoom, zoomIdentity } from 'd3-zoom';
+import { zoom, zoomIdentity, type ZoomBehavior, type ZoomTransform } from 'd3-zoom';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Legend, colorMap } from '../components/charts';
 import { Panel, ViewHead } from '../components/bits';
@@ -39,6 +39,29 @@ export function Network() {
   const svgRef = useRef<SVGSVGElement>(null);
   const gRef = useRef<SVGGElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const zoomRef = useRef<ZoomBehavior<SVGSVGElement, unknown> | null>(null);
+  const fitRef = useRef<ZoomTransform>(zoomIdentity);
+  const [viewport, setViewport] = useState({ w: 900, h: 600 });
+  const [scale, setScale] = useState(1);
+  const [hostSearch, setHostSearch] = useState('');
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const measure = () => setViewport((previous) => {
+      const w = wrap.clientWidth, h = wrap.clientHeight;
+      return w === previous.w && h === previous.h ? previous : { w, h };
+    });
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(wrap);
+    return () => observer.disconnect();
+  }, []);
+  const fitViewport = () => {
+    if (svgRef.current && zoomRef.current) select(svgRef.current).call(zoomRef.current.transform, fitRef.current);
+  };
+  const zoomViewport = (factor: number) => {
+    if (svgRef.current && zoomRef.current) select(svgRef.current).call(zoomRef.current.scaleBy, factor);
+  };
 
   const protoOptions = useMemo(() => {
     const m = new Map<string, number>();
@@ -93,37 +116,57 @@ export function Network() {
 
   const [layout, setLayout] = useState<{ nodes: GNode[]; edges: GEdge[]; w: number; h: number } | null>(null);
   useEffect(() => {
-    const w = wrapRef.current?.clientWidth ?? 900;
-    const h = wrapRef.current?.clientHeight ?? 600;
+    const { w, h } = viewport;
     const nodes = graph.nodes.map((n) => ({ ...n }));
     const edges = graph.edges.map((e) => ({ ...e }));
     const maxB = Math.max(1, ...nodes.map((n) => n.bytes));
     const sim = forceSimulation<GNode>(nodes)
       .force('link', forceLink<GNode, GEdge>(edges).id((d) => d.id).distance(70).strength(0.4))
-      .force('charge', forceManyBody().strength(-260))
+      .force('charge', forceManyBody().strength(-180))
       .force('center', forceCenter(w / 2, h / 2))
       .force('collide', forceCollide<GNode>((d) => radius(d.bytes, maxB) + 6))
       .stop();
     // Settle the layout up front: no continuous motion on screen.
     for (let i = 0; i < 300; i++) sim.tick();
-    setLayout({ nodes, edges, w, h });
-  }, [graph]);
-
-  useEffect(() => {
-    if (!svgRef.current || !gRef.current || !layout) return;
-    const svg = select(svgRef.current);
-    const g = select(gRef.current);
-    const z = zoom<SVGSVGElement, unknown>().scaleExtent([0.2, 6]).on('zoom', (ev) => g.attr('transform', ev.transform.toString()));
-    svg.call(z);
-    // Fit the settled layout into view.
-    const xs = layout.nodes.map((n) => n.x ?? 0), ys = layout.nodes.map((n) => n.y ?? 0);
-    if (xs.length) {
-      const minX = Math.min(...xs) - 40, maxX = Math.max(...xs) + 40, minY = Math.min(...ys) - 40, maxY = Math.max(...ys) + 40;
-      const k = Math.min(1.2, 0.95 / Math.max((maxX - minX) / layout.w, (maxY - minY) / layout.h));
-      svg.call(z.transform, zoomIdentity.translate(layout.w / 2 - k * (minX + maxX) / 2, layout.h / 2 - k * (minY + maxY) / 2).scale(k));
+    // Unlinked components otherwise repel each other into distant empty space.
+    // Pack their settled shapes without changing the positions within a component.
+    const neighbors = new Map(nodes.map((n) => [n.id, new Set<string>()]));
+    for (const edge of edges) {
+      neighbors.get(edge.a)?.add(edge.b);
+      neighbors.get(edge.b)?.add(edge.a);
     }
-    return () => { svg.on('.zoom', null); };
-  }, [layout]);
+    const remaining = new Set(nodes.map((n) => n.id));
+    const byId = new Map(nodes.map((n) => [n.id, n]));
+    const components: { nodes: GNode[]; x: number; y: number; width: number; height: number }[] = [];
+    while (remaining.size) {
+      const pending = [remaining.values().next().value!], members: GNode[] = [];
+      while (pending.length) {
+        const id = pending.pop()!;
+        if (!remaining.delete(id)) continue;
+        members.push(byId.get(id)!);
+        for (const neighbor of neighbors.get(id) ?? []) if (remaining.has(neighbor)) pending.push(neighbor);
+      }
+      const xs = members.map((n) => n.x ?? 0), ys = members.map((n) => n.y ?? 0);
+      const x = Math.min(...xs), y = Math.min(...ys);
+      components.push({ nodes: members, x, y, width: Math.max(...xs) - x + 150, height: Math.max(...ys) - y + 90 });
+    }
+    if (components.length > 1) {
+      components.sort((a, b) => b.height - a.height);
+      const rowWidth = Math.max(...components.map((c) => c.width), Math.sqrt(components.reduce((area, c) => area + c.width * c.height, 0) * w / h));
+      let x = 0, y = 0, rowHeight = 0;
+      for (const component of components) {
+        if (x && x + component.width > rowWidth) { x = 0; y += rowHeight; rowHeight = 0; }
+        for (const node of component.nodes) {
+          node.x = (node.x ?? 0) - component.x + x + 75;
+          node.y = (node.y ?? 0) - component.y + y + 45;
+        }
+        x += component.width;
+        rowHeight = Math.max(rowHeight, component.height);
+      }
+    }
+    setLayout({ nodes, edges, w, h });
+  }, [graph, viewport]);
+
 
   const maxB = Math.max(1, ...graph.nodes.map((n) => n.bytes));
   const labelOf = (n: GNode) => (n.id === OTHER_NODE ? `${OTHER_NODE} (${n.other})` : nameOf(n.id) ?? n.id);
@@ -136,8 +179,37 @@ export function Network() {
       layout.edges.map((e) => { const s = e.source as GNode, t = e.target as GNode; return { x1: s.x ?? 0, y1: s.y ?? 0, x2: t.x ?? 0, y2: t.y ?? 0 }; }),
     );
   }, [layout]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!svgRef.current || !gRef.current || !layout) return;
+    const svg = select(svgRef.current);
+    const g = select(gRef.current);
+    const z = zoom<SVGSVGElement, unknown>().scaleExtent([0.05, 6]).on('zoom', (ev) => {
+      g.attr('transform', ev.transform.toString());
+      setScale(ev.transform.k);
+    });
+    zoomRef.current = z;
+    svg.call(z);
+    // Include the placed labels so disconnected components and edge labels fit too.
+    const bounds = layout.nodes.flatMap((n) => {
+      const at = labels.get(n.id);
+      const x = (n.x ?? 0) + (at?.x ?? 0), y = (n.y ?? 0) + (at?.y ?? 0);
+      const width = shortLabel(labelOf(n)).length * 6.4;
+      const left = at?.anchor === 'end' ? x - width : at?.anchor === 'middle' ? x - width / 2 : x;
+      return [{ x: (n.x ?? 0) - 36, y: (n.y ?? 0) - 36 }, { x: (n.x ?? 0) + 36, y: (n.y ?? 0) + 36 }, { x: left, y: y - 8 }, { x: left + width, y: y + 8 }];
+    });
+    if (bounds.length) {
+      const minX = Math.min(...bounds.map((p) => p.x)), maxX = Math.max(...bounds.map((p) => p.x));
+      const minY = Math.min(...bounds.map((p) => p.y)), maxY = Math.max(...bounds.map((p) => p.y));
+      const k = Math.max(0.05, Math.min(1.2, (layout.w - 32) / (maxX - minX), (layout.h - 32) / (maxY - minY)));
+      fitRef.current = zoomIdentity.translate(layout.w / 2 - k * (minX + maxX) / 2, layout.h / 2 - k * (minY + maxY) / 2).scale(k);
+      svg.call(z.transform, fitRef.current);
+    }
+    return () => { svg.on('.zoom', null); zoomRef.current = null; };
+  }, [layout, labels]);
+
   const maxE = Math.max(1, ...graph.edges.map((e) => e.bytes));
   const hosts = useMemo(() => [...model.hosts].sort((a, b) => a.addr.localeCompare(b.addr, undefined, { numeric: true })), [model.hosts]);
+  const matchingHosts = hosts.filter((h) => `${h.addr} ${nameOf(h.addr) ?? ''}`.toLowerCase().includes(hostSearch.toLowerCase()));
   const selNode = sel?.kind === 'node' ? graph.nodes.find((n) => n.id === sel.id) : null;
   const selEdge = sel?.kind === 'edge' ? graph.edges.find((e) => e.key === sel.key) : null;
   const orderedEdges = useMemo(() => [...graph.edges].sort((a, b) => b.bytes - a.bytes), [graph.edges]);
@@ -160,10 +232,6 @@ export function Network() {
             <option value="all">All protocols</option>
             {protoOptions.map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
-          <select className="select" value={focus} onChange={(e) => { setFocus(e.target.value); setSel(e.target.value ? { kind: 'node', id: e.target.value } : null); }} aria-label="Focus on host" style={{ maxWidth: 220 }}>
-            <option value="">All hosts</option>
-            {hosts.map((h) => <option key={h.addr} value={h.addr}>{h.addr}{nameOf(h.addr) ? ` (${nameOf(h.addr)})` : ''}</option>)}
-          </select>
           <label className="muted" style={{ display: 'inline-flex', gap: 6, alignItems: 'center', fontSize: 12 }}>
             Max nodes
             <select className="select" value={limit} onChange={(e) => setLimit(Number(e.target.value))}>
@@ -173,6 +241,25 @@ export function Network() {
         </>} flush>
         <div style={{ padding: '0 16px 10px' }}>
           <Legend items={[...protoOptions.slice(0, 7), ...(protoOptions.length > 7 ? ['Other'] : [])].map((k) => ({ key: k, color: colorOf(k) }))} />
+        </div>
+        <div style={{ padding: '0 16px 12px', display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+          <label htmlFor="network-host-search">Focus on host</label>
+          <input id="network-host-search" type="search" className="input" placeholder="Search address or name" aria-label="Search graph hosts" value={hostSearch} onChange={(e) => setHostSearch(e.target.value)} style={{ width: 210, maxWidth: '100%' }} />
+          <select className="select" value={focus} onChange={(e) => { setFocus(e.target.value); setSel(e.target.value ? { kind: 'node', id: e.target.value } : null); }} aria-label="Focus on host" style={{ maxWidth: '100%', width: 240 }}>
+            <option value="">All hosts</option>
+            {focus && !matchingHosts.some((h) => h.addr === focus) && <option value={focus}>{focus}</option>}
+            {matchingHosts.map((h) => <option key={h.addr} value={h.addr}>{h.addr}{nameOf(h.addr) ? ` (${nameOf(h.addr)})` : ''}</option>)}
+          </select>
+          {hostSearch && <span className="muted">{plural(matchingHosts.length, 'matching host')}</span>}
+          <button className="btn small" disabled={!focus && !hostSearch} onClick={() => { setFocus(''); setSel(null); setHostSearch(''); }}>Clear host focus</button>
+        </div>
+        <div role="group" aria-label="Graph viewport controls" style={{ padding: '0 16px 12px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+          <button className="btn small" disabled={!graph.nodes.length} onClick={fitViewport} title="Fit the currently filtered graph">Fit graph</button>
+          <button className="btn small" disabled={!graph.nodes.length} onClick={fitViewport} title="Reset pan and zoom to the fitted view; keep graph and shared filters">Reset viewport</button>
+          <button className="btn small" aria-label="Zoom out graph" disabled={!graph.nodes.length || scale <= 0.05} onClick={() => zoomViewport(1 / 1.25)}>−</button>
+          <span className="mono" style={{ minWidth: 44, textAlign: 'center' }} aria-label="Graph zoom">{Math.round(scale * 100)}%</span>
+          <button className="btn small" aria-label="Zoom in graph" disabled={!graph.nodes.length || scale >= 6} onClick={() => zoomViewport(1.25)}>+</button>
+          <span className="muted" style={{ fontSize: 12 }}>Fit and Reset change only pan and zoom. Filters stay active.</span>
         </div>
         <div className="graph-wrap" ref={wrapRef}>
           {!graph.nodes.length ? <div className="empty"><strong>No IP traffic matches these filters.</strong></div> : (
@@ -201,15 +288,17 @@ export function Network() {
                       <circle r={r} fill={n.id === OTHER_NODE ? 'var(--s-other)' : n.scope === 'multicast' || n.scope === 'broadcast' ? 'var(--panel)' : 'var(--accent)'}
                         stroke={isSel ? 'var(--ink)' : n.scope === 'multicast' || n.scope === 'broadcast' ? 'var(--ink-3)' : 'var(--panel)'} strokeWidth={isSel ? 2.5 : 2}
                         strokeDasharray={n.scope === 'multicast' || n.scope === 'broadcast' ? '3 2' : undefined} />
-                      <text x={at.x} y={at.y} dy="0.32em" textAnchor={at.anchor}>{shortLabel(label)}</text>
+                      <title>{`${label}: ${bytes(n.bytes)}, ${plural(n.packets, 'packet')}`}</title>
+                      <text style={isSel ? { fill: 'var(--ink)', fontWeight: 600, fontSize: 13 } : undefined} x={at.x} y={at.y} dy="0.32em" textAnchor={at.anchor}>{shortLabel(label)}</text>
                     </g>
                   );
                 })}
               </g>
             </svg>
           )}
+          {selNode && <div role="status" aria-label="Selected host label" className="mono" style={{ position: 'absolute', left: 12, bottom: 12, maxWidth: 'calc(100% - 24px)', overflowWrap: 'anywhere', padding: '6px 10px', background: 'var(--panel)', border: '1px solid var(--rule-strong)', borderRadius: 6, fontSize: 14 }}>{edgeLabel(selNode.id)}</div>}
           {(selNode || selEdge) && (
-            <div className="graph-side" role="region" aria-label="Selected graph item details" aria-live="polite">
+            <div className="graph-side" style={{ maxHeight: viewport.w < 540 ? '42%' : 'calc(100% - 76px)' }} role="region" aria-label="Selected graph item details" aria-live="polite">
               {selNode && <NodeDetail id={selNode.id} n={selNode} edges={graph.edges} onFocus={() => setFocus(selNode.id === OTHER_NODE ? '' : selNode.id)} go={go} />}
               {selEdge && (
                 <>

@@ -20,6 +20,8 @@ export interface Column<T> {
   title?: string;
   /** Exclude from the free-text search (e.g. numeric columns). */
   noSearch?: boolean;
+  /** Hide on screen while retaining searching, sorting and CSV export. */
+  hidden?: boolean;
 }
 
 interface Props<T> {
@@ -85,7 +87,8 @@ export function DataTable<T>(props: Props<T>) {
   }, [rows, columns, deferred, sort]);
 
   const virt = useVirtualizer({ count: view.length, getScrollElement: () => scrollRef.current, estimateSize: () => ROW, overscan: 12 });
-  const template = columns.map((c) => c.width).join(' ');
+  const visibleColumns = columns.filter((c) => !c.hidden);
+  const template = visibleColumns.map((c) => c.width).join(' ');
 
   const toggleSort = (key: string) => {
     setSort((s) => (s && s.key === key ? (s.dir === 'desc' ? { key, dir: 'asc' } : null) : { key, dir: 'desc' }));
@@ -123,7 +126,7 @@ export function DataTable<T>(props: Props<T>) {
         <div className="dt-scroll" ref={scrollRef} style={{ maxHeight: height }} role="grid" aria-label={label} aria-rowcount={view.length + 1}>
           <div className="dt-grid" role="presentation">
             <div className="dt-row dt-head" role="row" style={{ gridTemplateColumns: template }}>
-              {columns.map((c) => (
+              {visibleColumns.map((c) => (
                 <div
                   key={c.key}
                   role="columnheader"
@@ -157,7 +160,7 @@ export function DataTable<T>(props: Props<T>) {
                     onClick={onRowClick ? () => onRowClick(r) : undefined}
                     onKeyDown={onRowClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onRowClick(r); } } : undefined}
                   >
-                    {columns.map((c) => {
+                    {visibleColumns.map((c) => {
                       const content = c.render ? c.render(r) : c.value(r);
                       return (
                         <div key={c.key} role="gridcell" className={c.align === 'right' ? 'r' : undefined}

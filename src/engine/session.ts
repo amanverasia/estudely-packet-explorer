@@ -43,7 +43,7 @@ export interface ExportObjectFile {
   bytes: Uint8Array<ArrayBuffer>;
 }
 
-export type ProgressPhase = 'engine' | 'read' | 'load' | 'extract' | 'parse' | 'analyze';
+export type ProgressPhase = 'engine' | 'init' | 'read' | 'load' | 'extract' | 'parse' | 'analyze';
 export interface Progress {
   phase: ProgressPhase;
   /** 0..1 when known */

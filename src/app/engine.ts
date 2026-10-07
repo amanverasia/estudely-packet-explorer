@@ -114,7 +114,7 @@ export class EngineClient {
     }
     this.currentFile = file;
     this.startedAt = performance.now();
-    this.listenerProgress({ phase: this.wasmModule ? 'read' : 'engine', fraction: null, message: this.wasmModule ? 'Starting…' : 'Loading the Wireshark engine…' });
+    this.listenerProgress({ phase: this.wasmModule ? 'init' : 'engine', fraction: null, message: this.wasmModule ? 'Starting…' : 'Loading the Wireshark engine…' });
     const msg: ToWorker = { type: 'open', file, keyLog };
     this.worker.postMessage(msg);
   }
