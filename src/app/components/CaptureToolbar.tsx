@@ -1,6 +1,6 @@
 // Copyright (C) 2026 Estudely and contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
-import { useRef, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { ThemeButton, type Theme } from './ThemeButton';
 import './CaptureToolbar.css';
 
@@ -12,6 +12,25 @@ export function CaptureToolbar({ fileName, facts, exports, keys, timeline, filte
   const actions = useRef<HTMLDetailsElement>(null);
   const help = useRef<HTMLDetailsElement>(null);
   const action = (callback: () => void) => { if (actions.current) actions.current.open = false; callback(); };
+  const dismiss = (menu: HTMLDetailsElement | null) => {
+    if (!menu?.open) return;
+    menu.open = false;
+    menu.querySelector('summary')?.focus();
+  };
+  useEffect(() => {
+    const onPointer = (event: PointerEvent) => {
+      if (!(event.target instanceof Node)) return;
+      for (const menu of [actions.current, help.current]) {
+        if (menu?.open && !menu.contains(event.target)) {
+          const summary = menu.querySelector('summary');
+          menu.open = false;
+          requestAnimationFrame(() => { if (summary instanceof HTMLElement) summary.focus(); });
+        }
+      }
+    };
+    document.addEventListener('pointerdown', onPointer);
+    return () => document.removeEventListener('pointerdown', onPointer);
+  }, []);
   return <header className="topbar capture-toolbar" aria-label="Capture toolbar">
     <div className="capture-toolbar-row">
       <div className="cap-title">
@@ -21,25 +40,23 @@ export function CaptureToolbar({ fileName, facts, exports, keys, timeline, filte
       <div className="capture-toolbar-actions">
         {exports}
         <details className="capture-action-menu" ref={actions} onKeyDown={(event) => {
-          if (event.key === 'Escape') { actions.current!.open = false; actions.current?.querySelector('summary')?.focus(); }
+          if (event.key === 'Escape') { event.preventDefault(); dismiss(actions.current); }
         }}>
           <summary className="btn">Capture actions</summary>
           <div className="capture-action-panel">
-            <button className="btn" onClick={() => { actions.current!.open = false; actions.current?.querySelector('summary')?.focus(); }}>Close capture actions</button>
-            <button className="btn" onClick={() => action(() => file.current?.click())}>Open another</button>
-            <button className="btn" onClick={() => action(onCompare)}>Compare captures</button>
-            <button className="btn" onClick={() => action(onClose)}>Close</button>
-            <p className="muted">Opening another capture clears this investigation and its TLS keys.</p>
+            <button type="button" className="menu-row" onClick={() => action(() => file.current?.click())}>Open another</button>
+            <p className="menu-note">Opening another capture clears this investigation and its TLS keys.</p>
+            <button type="button" className="menu-row" onClick={() => action(onCompare)}>Compare captures</button>
+            <button type="button" className="menu-row danger" onClick={() => action(onClose)}>Close capture</button>
           </div>
         </details>
         <ThemeButton theme={theme} setTheme={setTheme} />
         <details ref={help} className="capture-action-menu capture-help" onKeyDown={(event) => {
-          if (event.key === 'Escape') { help.current!.open = false; help.current?.querySelector('summary')?.focus(); }
+          if (event.key === 'Escape') { event.preventDefault(); dismiss(help.current); }
         }}>
           <summary className="btn">Help</summary>
           <div className="capture-action-panel">
             <h2>Capture information</h2>
-            <button className="btn" onClick={() => { help.current!.open = false; help.current?.querySelector('summary')?.focus(); }}>Close help</button>
             <p className="mono">{fileName}</p>
             <p>Your capture is processed locally in your browser. Capture and key-log files are not uploaded or saved by the app.</p>
             <p>Use the traffic strip or Overview time bounds to select a time range. Shared filters follow you between views.</p>

@@ -4,7 +4,7 @@ import { useMemo } from 'react';
 import type { DhcpExchange } from '../../engine/types';
 import { BarList } from '../components/charts';
 import { DataTable, type Column } from '../components/DataTable';
-import { Addr, Fact, FramesLink, Panel, ViewHead } from '../components/bits';
+import { Addr, Fact, FramesLink, Panel, SummaryCharts, ViewHead } from '../components/bits';
 import { useApp } from '../context';
 import { absTime, duration, num } from '../format';
 
@@ -51,7 +51,7 @@ export function Dhcp() {
   return (
     <>
       <ViewHead title="DHCP">
-        DHCPv4 messages grouped by transaction ID and client MAC address. The assigned address and lease parameters are taken from the server's ACK; the host name is the one the client sent.
+        DHCPv4 exchanges grouped by transaction ID and client MAC.
       </ViewHead>
       {!model.dhcp.length ? (
         <div className="panel empty"><strong>No DHCP messages were decoded.</strong>Hosts usually request an address only when they join a network, so a capture started later will not contain it.</div>
@@ -61,17 +61,18 @@ export function Dhcp() {
             <Fact label="Exchanges" value={num(model.dhcp.length)} />
             <Fact label="Client MACs" value={num(stats.clients)} />
             <Fact label="Addresses assigned" value={num(stats.acked)} small="ACK seen" />
-            <Fact label="Refused" value={num(stats.nak)} small="NAK seen" />
-            <Fact label="No server reply seen" value={num(stats.silent)} />
           </dl>
-          <div className="grid-2">
-            <Panel title="Outcomes" sub="Per exchange"><BarList items={stats.outcomes} limit={6} /></Panel>
-            <Panel title="Servers" sub="Server Identifier option, else reply source"><BarList items={stats.servers} limit={6} color="var(--s7)" emptyText="No server replies decoded." /></Panel>
-          </div>
           <section className="panel">
             <DataTable stateId="dhcp.exchanges" label="DHCP exchanges" exportName="dhcp" rows={model.dhcp} columns={columns} rowKey={(d) => d.id} onRowClick={open}
               searchPlaceholder="Search MACs, host names, addresses" />
           </section>
+          <SummaryCharts>
+            <p className="muted">Assigned address and lease come from the server ACK. The host name is the one the client sent. Refused: {num(stats.nak)}. No server reply seen: {num(stats.silent)}.</p>
+            <div className="grid-2">
+              <Panel title="Outcomes" sub="Per exchange"><BarList items={stats.outcomes} limit={6} /></Panel>
+              <Panel title="Servers" sub="Server Identifier option, else reply source"><BarList items={stats.servers} limit={6} color="var(--s7)" emptyText="No server replies decoded." /></Panel>
+            </div>
+          </SummaryCharts>
         </>
       )}
     </>

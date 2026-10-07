@@ -4,7 +4,7 @@ import { useMemo } from 'react';
 import type { SshSession } from '../../engine/types';
 import { BarList } from '../components/charts';
 import { DataTable, type Column } from '../components/DataTable';
-import { Addr, Fact, FramesLink, Panel, ViewHead } from '../components/bits';
+import { Addr, Fact, FramesLink, Panel, SummaryCharts, ViewHead } from '../components/bits';
 import { useApp } from '../context';
 import { absTime, endpoint, num } from '../format';
 
@@ -47,7 +47,7 @@ export function Ssh() {
   return (
     <>
       <ViewHead title="SSH">
-        The identification strings each side sends in cleartext at the start of an SSH connection, as written by the software. Everything after the key exchange is encrypted.
+        Cleartext identification strings. Everything after the key exchange is encrypted.
       </ViewHead>
       {!model.ssh.length ? (
         <div className="panel empty"><strong>No SSH version strings were decoded.</strong>Connections that started before the capture, or SSH on ports Wireshark does not associate with it, will not appear.</div>
@@ -59,14 +59,16 @@ export function Ssh() {
             <Fact label="Client versions" value={num(stats.clients.length)} small="distinct" />
             <Fact label="Server versions" value={num(stats.servers.length)} small="distinct" />
           </dl>
-          <div className="grid-2">
-            <Panel title="Client version strings" sub="Per session"><BarList items={stats.clients} limit={8} emptyText="No client strings captured." /></Panel>
-            <Panel title="Server version strings" sub="Per session"><BarList items={stats.servers} limit={8} color="var(--s7)" emptyText="No server strings captured." /></Panel>
-          </div>
           <section className="panel">
             <DataTable stateId="ssh.sessions" label="SSH sessions" exportName="ssh" rows={model.ssh} columns={columns} rowKey={(s) => s.id} onRowClick={open}
               searchPlaceholder="Search addresses and version strings" />
           </section>
+          <SummaryCharts>
+            <div className="grid-2">
+              <Panel title="Client version strings" sub="Per session"><BarList items={stats.clients} limit={8} emptyText="No client strings captured." /></Panel>
+              <Panel title="Server version strings" sub="Per session"><BarList items={stats.servers} limit={8} color="var(--s7)" emptyText="No server strings captured." /></Panel>
+            </div>
+          </SummaryCharts>
         </>
       )}
     </>

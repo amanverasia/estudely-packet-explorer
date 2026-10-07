@@ -67,7 +67,7 @@ export function Files() {
   return (
     <>
       <ViewHead title="Files">
-        Opening this view scans and reassembles objects with Wireshark’s DICOM, HTTP, IMF, SMB and TFTP export-object taps. The bytes stay in the worker until you choose Download; large captures with many transfers can use significant memory.
+        Reassembled DICOM, HTTP, IMF, SMB and TFTP objects. Bytes stay in the worker until you choose Download.
       </ViewHead>
       <Note kind="warn"><b>Captured files are untrusted.</b> They may contain malware or sensitive data. Download them only if you trust the source. This view shows metadata only; it never previews or runs a file. Downloads are saved to your device.</Note>
       {objects && (filter.start !== null || filter.host) && <Note>

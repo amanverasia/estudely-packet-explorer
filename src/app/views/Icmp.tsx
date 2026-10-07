@@ -4,7 +4,7 @@ import { useMemo } from 'react';
 import type { IcmpMessage } from '../../engine/types';
 import { BarList } from '../components/charts';
 import { DataTable, type Column } from '../components/DataTable';
-import { Addr, Fact, FramesLink, Panel, Seg, ViewHead } from '../components/bits';
+import { Addr, Fact, FramesLink, Panel, Seg, SummaryCharts, ViewHead } from '../components/bits';
 import { useApp, useViewState } from '../context';
 import { absTime, endpoint, num } from '../format';
 
@@ -57,7 +57,7 @@ export function Icmp() {
       <ViewHead title="ICMP" right={
         <Seg label="Message kind" value={filter} onChange={setFilter}
           options={(['all', 'error', 'echo', 'other'] as Filter[]).map((f) => ({ value: f, label: `${labels[f]} ${num(stats.counts[f])}` }))} />}>
-        ICMP and ICMPv6 messages. Error messages quote the start of the packet that caused them; the quoted addresses and ports are linked to that conversation when it is in the capture. Echo requests and replies are paired by addresses, identifier and sequence number.
+        ICMP and ICMPv6 messages, with echo replies and quoted error flows when they are in the capture.
       </ViewHead>
       {!model.icmp.length ? (
         <div className="panel empty"><strong>No ICMP or ICMPv6 messages were decoded.</strong></div>
@@ -69,14 +69,16 @@ export function Icmp() {
             <Fact label="Linked to a conversation" value={num(stats.linked)} small="errors" />
             <Fact label="Echo requests without reply" value={num(stats.noReply)} />
           </dl>
-          <div className="grid-2">
-            <Panel title="Message types" sub="Per message"><BarList items={stats.types} limit={8} /></Panel>
-            <Panel title="Error senders" sub="Address that sent the error"><BarList items={stats.errorSenders} limit={8} color="var(--s3)" emptyText="No error messages." /></Panel>
-          </div>
           <section className="panel">
             <DataTable stateId="icmp.messages" label="ICMP messages" exportName="icmp" rows={rows} columns={columns} rowKey={(i) => i.id} onRowClick={open}
               searchPlaceholder="Search addresses, types, quoted packets" />
           </section>
+          <SummaryCharts>
+            <div className="grid-2">
+              <Panel title="Message types" sub="Per message"><BarList items={stats.types} limit={8} /></Panel>
+              <Panel title="Error senders" sub="Address that sent the error"><BarList items={stats.errorSenders} limit={8} color="var(--s3)" emptyText="No error messages." /></Panel>
+            </div>
+          </SummaryCharts>
         </>
       )}
     </>

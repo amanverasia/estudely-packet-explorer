@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useDeferredValue, useId, useMemo, useRef, type ReactNode } from 'react';
+import { columnVisible, isColumnChoice } from '../columns';
 import { downloadCsv } from '../download';
 import { num } from '../format';
 import { useViewState } from '../context';
@@ -22,6 +23,10 @@ export interface Column<T> {
   noSearch?: boolean;
   /** Hide on screen while retaining searching, sorting and CSV export. */
   hidden?: boolean;
+  /** User can show or hide this column. Hidden columns stay in search and CSV. */
+  choosable?: boolean;
+  /** Choosable columns start hidden until the user enables them. */
+  defaultHidden?: boolean;
 }
 
 interface Props<T> {
@@ -53,6 +58,8 @@ export function DataTable<T>(props: Props<T>) {
     value === null || (typeof value === 'object' && value !== null && typeof (value as { key?: unknown }).key === 'string' &&
       ((value as { dir?: unknown }).dir === 'asc' || (value as { dir?: unknown }).dir === 'desc')));
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [columnChoice, setColumnChoice] = useViewState<Record<string, boolean>>(`table:${stateId}:columns`, {}, isColumnChoice);
+  const optionalColumns = columns.filter((column) => column.choosable || column.defaultHidden);
 
   const sortKeyExists = sort === null || columns.some((column) => column.key === sort.key);
   if (!sortKeyExists) setSort(props.initialSort ?? null);
@@ -87,7 +94,7 @@ export function DataTable<T>(props: Props<T>) {
   }, [rows, columns, deferred, sort]);
 
   const virt = useVirtualizer({ count: view.length, getScrollElement: () => scrollRef.current, estimateSize: () => ROW, overscan: 12 });
-  const visibleColumns = columns.filter((c) => !c.hidden);
+  const visibleColumns = columns.filter((column) => columnVisible(column, columnChoice));
   const template = visibleColumns.map((c) => c.width).join(' ');
 
   const toggleSort = (key: string) => {
@@ -111,6 +118,23 @@ export function DataTable<T>(props: Props<T>) {
           onChange={(e) => setQuery(e.target.value)}
         />
         {toolbar}
+        {optionalColumns.length > 0 && (
+          <details className="column-chooser">
+            <summary>Columns</summary>
+            <div className="column-chooser-menu" role="group" aria-label={`${label} columns`}>
+              {optionalColumns.map((column) => (
+                <label key={column.key}>
+                  <input type="checkbox" checked={columnVisible(column, columnChoice)} onChange={(event) => {
+                    const checked = event.currentTarget.checked;
+                    setColumnChoice((choice) => ({ ...choice, [column.key]: checked }));
+                  }} />
+                  {column.header}
+                </label>
+              ))}
+              <p>Search and CSV include hidden columns. Clipped text stays in the cell and in the record details.</p>
+            </div>
+          </details>
+        )}
         <span className="dt-count" aria-live="polite">
           {view.length === rows.length ? `${num(rows.length)} rows` : `${num(view.length)} of ${num(rows.length)} rows`}
         </span>
@@ -161,10 +185,11 @@ export function DataTable<T>(props: Props<T>) {
                     onKeyDown={onRowClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onRowClick(r); } } : undefined}
                   >
                     {visibleColumns.map((c) => {
-                      const content = c.render ? c.render(r) : c.value(r);
+                      const plain = c.value(r);
+                      const content = c.render ? c.render(r) : plain;
+                      const full = plain === null || plain === undefined || plain === '' ? '' : String(plain);
                       return (
-                        <div key={c.key} role="gridcell" className={c.align === 'right' ? 'r' : undefined}
-                          title={typeof content === 'string' || typeof content === 'number' ? String(content) : undefined}>
+                        <div key={c.key} role="gridcell" className={c.align === 'right' ? 'r' : undefined} title={full || undefined}>
                           {content === null || content === undefined || content === '' ? <span className="muted">—</span> : content}
                         </div>
                       );

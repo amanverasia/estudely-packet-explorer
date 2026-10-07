@@ -115,8 +115,6 @@ test('Export dismisses on Escape and outside click and fits a narrow viewport', 
   expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
   await page.mouse.click(4, 4);
   await expect(menu).not.toHaveAttribute('open', '');
-  await trigger.press('Enter');
-  await menu.getByRole('button', { name: 'Close export menu' }).click();
-  await expect(menu).not.toHaveAttribute('open', '');
   await expect(trigger).toBeFocused();
+  await expect(menu.getByRole('button', { name: 'Close export menu' })).toHaveCount(0);
 });

@@ -43,7 +43,7 @@ export function Arp() {
   return (
     <>
       <ViewHead title="ARP">
-        IPv4-to-MAC mappings as stated by the senders of ARP requests and replies, in time order. A change means a later message gave a different MAC for the same address; the capture alone does not say why.
+        IPv4-to-MAC mappings stated by ARP senders, in time order.
       </ViewHead>
       {!model.arp.length ? (
         <div className="panel empty"><strong>No ARP messages were decoded.</strong>ARP is only visible on the local network segment where the capture was taken.</div>

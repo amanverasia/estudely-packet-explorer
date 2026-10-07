@@ -12,7 +12,12 @@ export function TlsKeyControls({ activeKeyLog, model, onApplyKeys, onRemoveKeys 
   const disclosure = useRef<HTMLDetailsElement>(null);
   const close = () => { if (disclosure.current) { disclosure.current.open = false; disclosure.current.querySelector('summary')?.focus(); } };
   useEffect(() => {
-    const dismiss = (event: PointerEvent) => { if (disclosure.current?.open && event.target instanceof Node && !disclosure.current.contains(event.target)) disclosure.current.open = false; };
+    const dismiss = (event: PointerEvent) => {
+      if (!(disclosure.current?.open && event.target instanceof Node && !disclosure.current.contains(event.target))) return;
+      const summary = disclosure.current.querySelector('summary');
+      disclosure.current.open = false;
+      requestAnimationFrame(() => { if (summary instanceof HTMLElement) summary.focus(); });
+    };
     document.addEventListener('pointerdown', dismiss);
     return () => document.removeEventListener('pointerdown', dismiss);
   }, []);
@@ -25,7 +30,6 @@ export function TlsKeyControls({ activeKeyLog, model, onApplyKeys, onRemoveKeys 
   }}>
     <summary className="btn" title={`TLS keys · ${summary}`}><span>TLS keys</span><span className="capture-action-value">{summary}</span></summary>
     <div className="capture-action-panel">
-      <button className="btn" onClick={close}>Close TLS keys</button>
       <button className="btn" onClick={() => ref.current?.click()}>Choose TLS key log (optional)</button>
       <input ref={ref} type="file" hidden accept=".keys,.txt,text/plain" aria-label="Choose current capture TLS key log" onChange={(event) => { setStaged(event.target.files?.[0] ?? null); event.target.value = ''; if (disclosure.current) disclosure.current.open = true; }} />
       {staged && <div role="status">Staged: {staged.name} · results unchanged <button className="btn small" onClick={() => onApplyKeys(staged)}>Apply keys to current capture</button><button className="btn small ghost" onClick={() => setStaged(null)}>Discard staged keys</button></div>}

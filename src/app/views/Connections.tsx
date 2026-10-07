@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { PACKET_ROW_PAGE_SIZE, type Conversation, type PacketRow, type Transport } from '../../engine/types';
 import { DataTable, type Column } from '../components/DataTable';
 import { flagText } from '../components/Drawer';
-import { Addr, Note, Panel, Seg, ViewHead } from '../components/bits';
+import { Addr, Note, Seg, ViewHead } from '../components/bits';
 import { FollowStream } from '../components/FollowStream';
 import { useApp, useViewState } from '../context';
 import { bytes, duration, endpoint, num, plural, rel } from '../format';
@@ -29,7 +29,7 @@ export function tcpState(c: Conversation): string {
 }
 
 export function Connections() {
-  const { model, sourceModel, params, go } = useApp();
+  const { model, sourceModel, params, go, openDrawer } = useApp();
   const [transport, setTransport] = useViewState<'all' | Transport>('connections.transport', 'all', (value): value is 'all' | Transport =>
     value === 'all' || value === 'TCP' || value === 'UDP' || value === 'IP' || value === 'Non-IP');
   const [app, setApp] = useViewState<string>('connections.protocol', 'all', (value): value is string =>
@@ -52,15 +52,26 @@ export function Connections() {
       if (params.has('conv')) setHostFilter(null);
     }
   }, [params, sourceModel.hosts, setHostFilter]);
+  const openConversation = (c: Conversation) => {
+    setSelected(c.id);
+    openDrawer({
+      title: `${endpoint(c.a, c.aPort)} ↔ ${endpoint(c.b, c.bPort)}`,
+      frames: [],
+      showSourcePackets: false,
+      summary: <ConversationDetail key={c.id} c={c} />,
+    });
+  };
   useEffect(() => {
     if (!params.has('conv')) { lastRouteConversation.current = null; return; }
     const requested = params.get('conv') || '';
-    if (requested !== lastRouteConversation.current) {
-      lastRouteConversation.current = requested;
-      const id = Number(requested);
-      setSelected(requested && Number.isInteger(id) && sourceModel.conversations.some((c) => c.id === id) ? id : null);
-    }
-  }, [params, sourceModel.conversations, setSelected]);
+    if (requested === lastRouteConversation.current) return;
+    lastRouteConversation.current = requested;
+    const id = Number(requested);
+    const found = requested && Number.isInteger(id) ? sourceModel.conversations.find((c) => c.id === id) : undefined;
+    setSelected(found ? found.id : null);
+    if (found) openConversation(found);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params, sourceModel.conversations]);
   const apps = useMemo(() => {
     const m = new Map<string, number>();
     for (const c of sourceModel.conversations) m.set(c.appProtocol, (m.get(c.appProtocol) ?? 0) + 1);
@@ -72,7 +83,6 @@ export function Connections() {
   const unfilteredRows = useMemo(() => transportScope.filter((c) => transport === 'all' || c.transport === transport), [transportScope, transport]);
   const rows = useMemo(() => filterConnectionsByQuality(unfilteredRows, qualityFilter), [unfilteredRows, qualityFilter]);
   const qualityCounts = useMemo(() => countConnectionQuality(unfilteredRows), [unfilteredRows]);
-  const conv = selected !== null ? model.conversations.find((c) => c.id === selected) ?? null : null;
   const counts = useMemo(() => countConnectionTransports(transportScope), [transportScope]);
   const availableTransports = useMemo(() => {
     const available = countConnectionTransports(sourceModel.conversations);
@@ -106,10 +116,9 @@ export function Connections() {
         <Note>Showing conversations involving <span className="mono">{hostFilter}</span>. <button className="btn small" onClick={() => { setHostFilter(null); go('connections'); }}>Show all</button></Note>
       )}
       <Note>Transport counts use the shared capture filters and current protocol/host choices, before the transport and quality filters, so the chips partition the same conversation set. TCP indicators are full-conversation observations, not diagnoses; their counts keep that scope even when packet filters are active.</Note>
-      {conv && <ConversationDetail key={conv.id} c={conv} onClose={() => setSelected(null)} />}
       <section className="panel">
         <DataTable stateId="connections.conversations" label="Conversations" exportName="conversations" rows={rows} columns={columns} rowKey={(c) => c.id} selectedKey={selected}
-          onRowClick={(c) => setSelected(c.id)} initialSort={{ key: 'start', dir: 'asc' }} searchPlaceholder="Search addresses, ports, protocols"
+          onRowClick={openConversation} initialSort={{ key: 'start', dir: 'asc' }} searchPlaceholder="Search addresses, ports, protocols"
           toolbar={
             <div className="connection-filters">
               <select className="select" value={app} onChange={(e) => setApp(e.target.value)} aria-label="Filter by protocol">
@@ -143,7 +152,7 @@ export function Connections() {
   );
 }
 
-function ConversationDetail({ c, onClose }: { c: Conversation; onClose: () => void }) {
+function ConversationDetail({ c }: { c: Conversation }) {
   const { model, engine, openDrawer } = useApp();
   const [packets, setPackets] = useState<{ rows: PacketRow[]; total: number; page: number } | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -181,13 +190,10 @@ function ConversationDetail({ c, onClose }: { c: Conversation; onClose: () => vo
   ];
 
   return (
-    <Panel title={<span className="mono" style={{ overflowWrap: 'anywhere' }}>{endpoint(c.a, c.aPort)} ↔ {endpoint(c.b, c.bPort)}</span>}
-      sub={`${c.transport}${c.stream !== null ? ` stream ${c.stream}` : ''}, ${c.appProtocol}`}
-      right={<>
-        {canFollow && <button className="btn small" aria-pressed={follow} onClick={() => setFollow(!follow)}>{follow ? 'Hide stream' : 'Follow stream'}</button>}
-        <button className="btn small ghost" onClick={onClose}>Close</button>
-      </>}>
-      <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'minmax(0, 1fr)' }}>
+    <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'minmax(0, 1fr)' }}>
+      <section aria-label="Summary">
+        <p className="muted">{c.transport}{c.stream !== null ? ` stream ${c.stream}` : ''}, {c.appProtocol}</p>
+        {canFollow && <div className="actions" style={{ marginTop: 8 }}><button className="btn small" aria-pressed={follow} onClick={() => setFollow(!follow)}>{follow ? 'Hide stream' : 'Follow stream'}</button></div>}
         <div className="grid-2">
           <dl className="kv">
             <dt>A → B</dt><dd>{plural(c.packetsAB, 'packet')}, {bytes(c.bytesAB)}{t ? `, ${bytes(t.payloadBytesAB)} TCP payload` : ''}</dd>
@@ -204,36 +210,37 @@ function ConversationDetail({ c, onClose }: { c: Conversation; onClose: () => vo
             <dt>Decoded records</dt><dd>{num(dns.length)} DNS, {num(http.length)} HTTP, {num(tls.length)} TLS</dd>
           </dl>
         </div>
+      </section>
         {(dns.length > 0 || http.length > 0 || tls.length > 0) && (
-          <div style={{ display: 'grid', gap: 6 }}>
+          <section aria-label="Records" style={{ display: 'grid', gap: 6 }}>
             <h3>Protocol records</h3>
             {dns.slice(0, 50).map((d) => (
               <button key={'d' + d.id} className="btn small" style={{ justifySelf: 'start' }}
-                onClick={() => openDrawer({ title: `${d.proto} ${d.qtype ?? ''} ${d.qname ?? ''}`, frames: d.frames })}>
+                onClick={() => openDrawer({ title: `${d.proto} ${d.qtype ?? ''} ${d.qname ?? ''}`, frames: d.frames }, 'nest')}>
                 {d.proto} {d.qtype} {d.qname} — {d.status}
               </button>
             ))}
             {http.slice(0, 50).map((h) => (
               <button key={'h' + h.id} className="btn small" style={{ justifySelf: 'start', maxWidth: '100%', overflow: 'hidden' }}
-                onClick={() => openDrawer({ title: `HTTP ${h.method ?? ''} ${h.uri ?? ''}`, frames: h.frames })}>
+                onClick={() => openDrawer({ title: `HTTP ${h.method ?? ''} ${h.uri ?? ''}`, frames: h.frames }, 'nest')}>
                 HTTP {h.method ?? '(no request)'} {h.uri} — {h.status ?? 'no response'}
               </button>
             ))}
             {tls.map((s) => (
               <button key={'t' + s.id} className="btn small" style={{ justifySelf: 'start' }}
-                onClick={() => openDrawer({ title: `TLS ${s.sni ?? ''}`, frames: s.frames })}>
+                onClick={() => openDrawer({ title: `TLS ${s.sni ?? ''}`, frames: s.frames }, 'nest')}>
                 TLS {s.sni ?? '(no SNI)'} — {s.negotiated?.version ?? 'no ServerHello seen'}
               </button>
             ))}
-          </div>
+          </section>
         )}
         {canFollow && follow && (
-          <div>
+          <section aria-label="Stream">
             <h3 style={{ marginBottom: 6 }}>Follow {c.transport} stream {c.stream}</h3>
             <FollowStream c={c} />
-          </div>
+          </section>
         )}
-        <div>
+        <section aria-label="Packets">
           <h3 style={{ marginBottom: 6 }}>Packets</h3>
           {err && <div className="note crit" role="alert">{err} <button className="btn small" onClick={() => setRetry((value) => value + 1)}>Retry page</button></div>}
           {!packets && !err ? <p className="muted" role="status">Loading packet page {num(page + 1)}…</p> : null}
@@ -261,11 +268,10 @@ function ConversationDetail({ c, onClose }: { c: Conversation; onClose: () => vo
                   disabled={(page + 1) * PACKET_ROW_PAGE_SIZE >= visiblePackets.total}>Last</button>
               </div>
               <DataTable stateId={`connections.packets:${c.id}`} label="Conversation packets" exportName={`conversation-${c.id}-packets-page-${page + 1}`} rows={visiblePackets.rows} columns={pcols} rowKey={(p) => p.frame}
-                onRowClick={(p) => openDrawer({ title: `Packet #${p.frame}`, frames: [p.frame] })} height={360} />
+                onRowClick={(p) => openDrawer({ title: `Packet #${p.frame}`, frames: [p.frame] }, 'nest')} height={360} />
             </div>
           )}
-        </div>
-      </div>
-    </Panel>
+        </section>
+    </div>
   );
 }

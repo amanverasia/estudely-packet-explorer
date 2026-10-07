@@ -55,6 +55,8 @@ test('chart data is readable without hover and selectable bars support Space', a
     await timeTable.locator('summary').click();
 
     await view(page, 'dns');
+    const charts = page.locator('.summary-fold');
+    if (!(await charts.evaluate((el) => (el as HTMLDetailsElement).open))) await charts.locator('> summary').click();
     const pairTable = page.locator('.chart-data');
     await pairTable.locator('summary').focus();
     await page.keyboard.press('Space');

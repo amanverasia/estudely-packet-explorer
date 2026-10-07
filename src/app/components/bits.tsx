@@ -57,6 +57,15 @@ export function Unavailable({ why }: { why?: string }) {
   return <span className="muted" title={why}>unavailable</span>;
 }
 
+export function SummaryCharts({ children }: { children: ReactNode }) {
+  return (
+    <details className="summary-fold">
+      <summary>Summary charts</summary>
+      <div className="summary-fold-body">{children}</div>
+    </details>
+  );
+}
+
 export function ViewHead({ title, children, right }: { title: string; children?: ReactNode; right?: ReactNode }) {
   return (
     <div className="view-head">

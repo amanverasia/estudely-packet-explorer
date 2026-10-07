@@ -5,7 +5,7 @@ import { DNS_MATCH_WINDOW } from '../../engine/analyze';
 import type { DnsProto, DnsTransaction } from '../../engine/types';
 import { BarList, FlowChart } from '../components/charts';
 import { DataTable, type Column } from '../components/DataTable';
-import { Addr, Fact, FramesLink, Note, Panel, Seg, ViewHead } from '../components/bits';
+import { Addr, Fact, FramesLink, Note, Panel, Seg, SummaryCharts, ViewHead } from '../components/bits';
 import { useApp, useViewState } from '../context';
 import { absTime, duration, endpoint, num, plural } from '../format';
 
@@ -77,19 +77,19 @@ export function Dns() {
   });
 
   const columns: Column<DnsTransaction>[] = [
-    { key: 't', header: 'Time (UTC)', width: '210px', value: (d) => d.queryTime ?? d.responseTime, noSearch: true,
+    { key: 'name', header: 'Queried name', width: 'minmax(140px, 2fr)', value: (d) => d.qname },
+    { key: 'client', header: multicast ? 'Sender' : 'Client', width: 'minmax(110px, 1fr)', value: (d) => d.client, render: (d) => <Addr addr={d.client} /> },
+    { key: 'server', header: multicast ? 'Destination' : 'Resolver', width: 'minmax(110px, 1fr)', value: (d) => d.server, render: (d) => <Addr addr={d.server} /> },
+    { key: 'answers', header: 'Answers', width: 'minmax(120px, 1.4fr)', value: (d) => d.answers.filter((a) => a.section === 'answer').map((a) => a.value).join(', ') },
+    { key: 'rcode', header: 'Response', width: '88px', value: (d) => d.rcode, render: (d) => d.rcode ? <span className={`tag ${d.rcode === 'NoError' || d.rcode === 'OK' ? '' : 'bad'}`}>{d.rcode}</span> : <span className="muted">none</span> },
+    { key: 'rtt', header: 'Response time', width: '96px', align: 'right', value: (d) => d.rtt, noSearch: true, render: (d) => (d.rtt === null ? '' : duration(d.rtt)) },
+    { key: 'status', header: 'Status', width: '150px', value: (d) => d.status, render: (d) => <span className={`tag ${STATUS_TAG[d.status]}`}>{d.status}</span> },
+    { key: 't', header: 'Time (UTC)', width: '210px', choosable: true, defaultHidden: true, value: (d) => d.queryTime ?? d.responseTime, noSearch: true,
       render: (d) => <span className="mono">{absTime(model.capture.startEpoch, d.queryTime ?? d.responseTime, Math.min(6, model.capture.timestampDigits))}</span> },
-    { key: 'client', header: multicast ? 'Sender' : 'Client', width: 'minmax(150px, 1.2fr)', value: (d) => d.client, render: (d) => <Addr addr={d.client} /> },
-    { key: 'server', header: multicast ? 'Destination' : 'Server', width: 'minmax(140px, 1fr)', value: (d) => d.server, render: (d) => <Addr addr={d.server} /> },
-    { key: 'name', header: 'Queried name', width: 'minmax(200px, 2fr)', value: (d) => d.qname },
-    { key: 'type', header: 'Type', width: '70px', value: (d) => d.qtype },
-    { key: 'rcode', header: 'Response', width: '96px', value: (d) => d.rcode, render: (d) => d.rcode ? <span className={`tag ${d.rcode === 'NoError' || d.rcode === 'OK' ? '' : 'bad'}`}>{d.rcode}</span> : <span className="muted">none</span> },
-    { key: 'answers', header: 'Answers', width: 'minmax(180px, 2fr)', value: (d) => d.answers.filter((a) => a.section === 'answer').map((a) => a.value).join(', ') },
-    { key: 'status', header: 'Status', width: '170px', value: (d) => d.status, render: (d) => <span className={`tag ${STATUS_TAG[d.status]}`}>{d.status}</span> },
-    { key: 'rtt', header: 'Response time', width: '110px', align: 'right', value: (d) => d.rtt, noSearch: true, render: (d) => (d.rtt === null ? '' : duration(d.rtt)) },
-    { key: 'transport', header: 'Transport', width: '84px', value: (d) => d.transport },
-    { key: 'txid', header: 'ID', width: '72px', value: (d) => (d.txid === null ? null : '0x' + d.txid.toString(16).padStart(4, '0')) },
-    { key: 'frames', header: 'Packets', width: '90px', value: (d) => d.frames.join(' '), render: (d) => <FramesLink frames={d.frames} onOpen={() => open(d)} /> },
+    { key: 'type', header: 'Type', width: '70px', choosable: true, defaultHidden: true, value: (d) => d.qtype },
+    { key: 'transport', header: 'Transport', width: '84px', choosable: true, defaultHidden: true, value: (d) => d.transport },
+    { key: 'txid', header: 'ID', width: '72px', choosable: true, defaultHidden: true, value: (d) => (d.txid === null ? null : '0x' + d.txid.toString(16).padStart(4, '0')) },
+    { key: 'frames', header: 'Packets', width: '90px', choosable: true, defaultHidden: true, value: (d) => d.frames.join(' '), render: (d) => <FramesLink frames={d.frames} onOpen={() => open(d)} /> },
   ];
 
   const unanswered = stats.statuses.get('unanswered') ?? 0;
@@ -98,7 +98,7 @@ export function Dns() {
       <ViewHead title="Name resolution"
         right={<Seg label="Protocol" value={proto} onChange={(p) => { setProto(p); setStatus('all'); }}
           options={(['DNS', 'mDNS', 'LLMNR', 'NBNS'] as DnsProto[]).map((p) => ({ value: p, label: `${p} ${num(counts[p])}` }))} />}>
-        Each query packet is its own row; repeated queries are kept and linked to the original. Queries and responses are matched by transaction ID, client address and port, transport, and server; a response must arrive within {DNS_MATCH_WINDOW} s of its query, otherwise it is listed as a response without query.
+        Queries and responses matched within {DNS_MATCH_WINDOW} s. Repeated queries stay as their own rows.
       </ViewHead>
       {!model.dns.length ? (
         <div className="panel empty"><strong>No DNS, mDNS, LLMNR or NBNS messages were decoded.</strong>DNS over HTTPS (DoH) and DNS over TLS/QUIC are encrypted and appear under TLS instead.</div>
@@ -111,30 +111,10 @@ export function Dns() {
               <dl className="facts" style={{ margin: 0 }}>
                 <Fact label={multicast ? 'Messages' : 'Transactions'} value={num(rows.length)} />
                 <Fact label="Queries sent" value={num(stats.queries)} />
-                <Fact label="Unique names" value={num(stats.names.length)} />
-                {!multicast && <Fact label="Answered" value={num(stats.statuses.get('answered') ?? 0)} />}
                 {!multicast && <Fact label="Unanswered" value={num(unanswered)} title={`Query with no matching response in the capture (within ${DNS_MATCH_WINDOW} s)`} />}
                 {!multicast && <Fact label="Repeated queries" value={num(stats.statuses.get('retransmitted') ?? 0)} />}
-                {!multicast && <Fact label="Responses without query" value={num(stats.statuses.get('response without query') ?? 0)} title={`Response with no matching query in the preceding ${DNS_MATCH_WINDOW} s`} />}
-                {!multicast && <Fact label="Median response time" value={duration(stats.medianRtt)} />}
+                {multicast && <Fact label="Unique names" value={num(stats.names.length)} />}
               </dl>
-              <div className="grid-3">
-                <Panel title="Most queried names" sub="Query packets per name">
-                  <BarList items={stats.names} limit={8} />
-                </Panel>
-                <Panel title="Record types" sub="Query packets per type">
-                  <BarList items={stats.types} limit={8} color="var(--s7)" />
-                </Panel>
-                <Panel title="Response codes" sub="Per response">
-                  <BarList items={stats.rcodes} limit={8} color="var(--s3)" emptyText="No responses decoded." />
-                  {!multicast && unanswered > 0 && <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>{plural(unanswered, 'query', 'queries')} received no response.</p>}
-                </Panel>
-              </div>
-              {!multicast && (
-                <Panel title={proto === 'NBNS' ? 'Clients and responders' : 'Clients and resolvers'} sub="Line width shows the number of queries sent">
-                  <FlowChart links={stats.links} leftLabel="Client" rightLabel={proto === 'NBNS' ? 'Queried address' : 'Resolver'} />
-                </Panel>
-              )}
               <section className="panel">
                 <DataTable stateId={`dns.transactions.${proto}`} key={`dns.transactions.${proto}`} label={`${proto} transactions`} exportName={`${proto.toLowerCase()}-transactions`} rows={shown} columns={columns}
                   rowKey={(d) => d.id} onRowClick={open} searchPlaceholder="Search names, addresses, answers"
@@ -145,6 +125,26 @@ export function Dns() {
                     </select>
                   } />
               </section>
+              <SummaryCharts>
+                {!multicast && <p className="muted">Answered {num(stats.statuses.get('answered') ?? 0)}, unanswered {num(unanswered)}, repeated queries {num(stats.statuses.get('retransmitted') ?? 0)}, responses without a query {num(stats.statuses.get('response without query') ?? 0)}. Matching uses the transaction ID, client address and port, transport and server.</p>}
+                <div className="grid-3">
+                  <Panel title="Most queried names" sub="Query packets per name">
+                    <BarList items={stats.names} limit={8} />
+                  </Panel>
+                  <Panel title="Record types" sub="Query packets per type">
+                    <BarList items={stats.types} limit={8} color="var(--s7)" />
+                  </Panel>
+                  <Panel title="Response codes" sub="Per response">
+                    <BarList items={stats.rcodes} limit={8} color="var(--s3)" emptyText="No responses decoded." />
+                    {!multicast && unanswered > 0 && <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>{plural(unanswered, 'query', 'queries')} received no response.</p>}
+                  </Panel>
+                </div>
+                {!multicast && (
+                  <Panel title={proto === 'NBNS' ? 'Clients and responders' : 'Clients and resolvers'} sub="Line width shows the number of queries sent">
+                    <FlowChart links={stats.links} leftLabel="Client" rightLabel={proto === 'NBNS' ? 'Queried address' : 'Resolver'} />
+                  </Panel>
+                )}
+              </SummaryCharts>
             </>
           )}
         </>

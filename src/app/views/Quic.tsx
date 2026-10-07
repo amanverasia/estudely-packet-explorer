@@ -4,7 +4,7 @@ import { useMemo } from 'react';
 import type { QuicConnection } from '../../engine/types';
 import { BarList } from '../components/charts';
 import { DataTable, type Column } from '../components/DataTable';
-import { Addr, Fact, FramesLink, Note, Panel, ViewHead } from '../components/bits';
+import { Addr, Fact, FramesLink, Note, Panel, SummaryCharts, ViewHead } from '../components/bits';
 import { useApp } from '../context';
 import { absTime, endpoint, num } from '../format';
 
@@ -54,7 +54,7 @@ export function Quic() {
   return (
     <>
       <ViewHead title="QUIC">
-        QUIC versions from long-header packets, and the server name and ALPN from the client's Initial packet. Rows are UDP conversations; the Packets column lists the long-header packets.
+        Long-header versions, plus SNI and ALPN from the client's Initial packet.
       </ViewHead>
       <Note>Initial packets are protected with keys derived from public values, so Wireshark decodes the ClientHello without any secrets. Everything after the handshake, including the certificate, is encrypted.</Note>
       {!model.quic.length ? (
@@ -67,14 +67,16 @@ export function Quic() {
             <Fact label="Versions seen" value={num(stats.versions.length)} small="distinct" />
             <Fact label="Version negotiation" value={num(stats.vn)} small="conversations" />
           </dl>
-          <div className="grid-2">
-            <Panel title="Versions" sub="Conversations per version in long headers"><BarList items={stats.versions} limit={6} /></Panel>
-            <Panel title="Server names requested" sub="SNI in the Initial ClientHello"><BarList items={stats.sni} limit={8} color="var(--s7)" emptyText="No decodable ClientHello." /></Panel>
-          </div>
           <section className="panel">
             <DataTable stateId="quic.conversations" label="QUIC conversations" exportName="quic" rows={model.quic} columns={columns} rowKey={(q) => q.id} onRowClick={open}
               searchPlaceholder="Search SNI, addresses, versions" />
           </section>
+          <SummaryCharts>
+            <div className="grid-2">
+              <Panel title="Versions" sub="Conversations per version in long headers"><BarList items={stats.versions} limit={6} /></Panel>
+              <Panel title="Server names requested" sub="SNI in the Initial ClientHello"><BarList items={stats.sni} limit={8} color="var(--s7)" emptyText="No decodable ClientHello." /></Panel>
+            </div>
+          </SummaryCharts>
         </>
       )}
     </>

@@ -11,6 +11,8 @@ export interface DrawerSpec {
   focus?: number;
   /** Record-level summary shown above the packet details. */
   summary?: ReactNode;
+  /** The summary already pages packets, so the source-frame picker is omitted. */
+  showSourcePackets?: boolean;
 }
 
 export interface AppCtx {
@@ -20,7 +22,8 @@ export interface AppCtx {
   filter: SharedFilter;
   stats: FilterStats;
   engine: EngineClient;
-  openDrawer: (spec: DrawerSpec) => void;
+  openDrawer: (spec: DrawerSpec, mode?: 'replace' | 'nest') => void;
+  closeDrawer: () => void;
   go: (view: string, params?: Record<string, string>) => void;
   patchRouteParams: (params: Record<string, string | null>) => void;
   setHostFilter: (host: string | null) => void;
