@@ -76,6 +76,7 @@ export function joinRuns(runs: FollowRun[]): Uint8Array<ArrayBuffer> {
 // C0/C1 controls (except tab and newline) and bidirectional overrides, which
 // could make captured text display as something it is not.
 const UNSAFE_CHAR = /^[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]$/u;
+const UNSAFE_CHARS = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
 
 /** Maps rendered UTF-16 code units back to the bytes that produced them. */
 export interface MappedPayloadText {
@@ -164,7 +165,7 @@ export function mappedPayloadText(bytes: Uint8Array): MappedPayloadText {
 
 /** UTF-8 text with invalid sequences as U+FFFD and unsafe characters as '.'. */
 export function payloadText(bytes: Uint8Array): string {
-  return mappedPayloadText(bytes).text;
+  return new TextDecoder('utf-8').decode(bytes).replace(/\r\n/g, '\n').replace(UNSAFE_CHARS, '.');
 }
 
 export interface FollowSearchMatch {

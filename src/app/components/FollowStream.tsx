@@ -7,7 +7,7 @@ import type { Conversation, FollowStream as FollowData } from '../../engine/type
 import { downloadBlob, safeBase } from '../download';
 import {
   directionBytes, findFollowByteMatches, findFollowTextMatches, FOLLOW_SAVE_BYTES, FOLLOW_SEARCH_MATCH_LIMIT,
-  FOLLOW_VIEW_BYTES, FOLLOW_VIEW_SEGMENTS, followRuns, joinRuns, mappedPayloadText, parseHexQuery,
+  FOLLOW_VIEW_BYTES, FOLLOW_VIEW_SEGMENTS, followRuns, hexDump, joinRuns, mappedPayloadText, parseHexQuery, payloadText,
   type FollowDirection, type FollowRun, type FollowSearchMatch,
 } from '../follow';
 import { useApp } from '../context';
@@ -99,22 +99,36 @@ function renderCellGroup(bytesValue: Uint8Array, mask: Uint8Array, activeMask: U
   return out;
 }
 
+function renderHexRow(run: FollowRun, mask: Uint8Array, activeMask: Uint8Array, start: number): ReactNode {
+  const end = Math.min(start + 16, run.bytes.length);
+  const leftEnd = Math.min(start + 8, end);
+  const rightStart = Math.min(start + 8, end);
+  const line: ReactNode[] = [
+    `${(run.dirOffset + start).toString(16).padStart(8, '0')}  `,
+    ...renderCellGroup(run.bytes, mask, activeMask, start, leftEnd, false, 23),
+    '  ',
+    ...renderCellGroup(run.bytes, mask, activeMask, rightStart, end, false, 23),
+    '  ',
+    ...renderCellGroup(run.bytes, mask, activeMask, start, end, true),
+  ];
+  return <Fragment key={start}>{line}{'\n'}</Fragment>;
+}
+
 function renderHexRun(run: FollowRun, mask: Uint8Array, activeMask: Uint8Array): ReactNode[] {
   const rows: ReactNode[] = [];
+  let plainStart = 0;
   for (let start = 0; start < run.bytes.length; start += 16) {
     const end = Math.min(start + 16, run.bytes.length);
-    const leftEnd = Math.min(start + 8, end);
-    const rightStart = Math.min(start + 8, end);
-    const line: ReactNode[] = [
-      `${(run.dirOffset + start).toString(16).padStart(8, '0')}  `,
-      ...renderCellGroup(run.bytes, mask, activeMask, start, leftEnd, false, 23),
-      '  ',
-      ...renderCellGroup(run.bytes, mask, activeMask, rightStart, end, false, 23),
-      '  ',
-      ...renderCellGroup(run.bytes, mask, activeMask, start, end, true),
-    ];
-    rows.push(<Fragment key={start}>{line}{'\n'}</Fragment>);
+    let highlighted = false;
+    for (let i = start; i < end; i++) {
+      if (mask[i]) { highlighted = true; break; }
+    }
+    if (!highlighted) continue;
+    if (plainStart < start) rows.push(`${hexDump(run.bytes.subarray(plainStart, start), run.dirOffset + plainStart)}\n`);
+    rows.push(renderHexRow(run, mask, activeMask, start));
+    plainStart = end;
   }
+  if (plainStart < run.bytes.length) rows.push(`${hexDump(run.bytes.subarray(plainStart), run.dirOffset + plainStart)}\n`);
   return rows;
 }
 
@@ -166,19 +180,21 @@ export function FollowStream({ c }: { c: Conversation }) {
   const data = matchesRequest ? request.data : null;
   const err = matchesRequest ? request.error : null;
   const runs = useMemo(() => (data ? followRuns(data, dir) : []), [data, dir]);
-  const texts = useMemo(() => runs.map((r) => mappedPayloadText(r.bytes)), [runs]);
+  const plainTexts = useMemo(() => runs.map((r) => payloadText(r.bytes)), [runs]);
+  const mappedTexts = useMemo(() => query ? runs.map((r) => mappedPayloadText(r.bytes)) : [], [runs, query]);
   const search = useMemo(() => {
     if (!query) return { matches: [] as FollowSearchMatch[], capped: false, error: null as string | null };
-    if (searchMode === 'text') return { ...findFollowTextMatches(runs, texts, query), error: null };
+    if (searchMode === 'text') return { ...findFollowTextMatches(runs, mappedTexts, query), error: null };
     try {
-      return { ...findFollowByteMatches(runs, texts, parseHexQuery(query)), error: null };
+      return { ...findFollowByteMatches(runs, mappedTexts, parseHexQuery(query)), error: null };
     } catch (e) {
       return { matches: [] as FollowSearchMatch[], capped: false, error: e instanceof Error ? e.message : String(e) };
     }
-  }, [runs, texts, searchMode, query]);
+  }, [runs, mappedTexts, searchMode, query]);
   const activeIndex = search.matches.length ? ((activeResult % search.matches.length) + search.matches.length) % search.matches.length : -1;
   const activeMatch = activeIndex >= 0 ? search.matches[activeIndex] : null;
-  const masks = useMemo(() => byteMasks(runs, search.matches, activeIndex), [runs, search.matches, activeIndex]);
+  const masks = useMemo(() => search.matches.length ? byteMasks(runs, search.matches, activeIndex) : null,
+    [runs, search.matches, activeIndex]);
 
   useEffect(() => {
     if (activeIndex >= 0) bodyRef.current?.querySelector('[data-active-match="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
@@ -304,8 +320,8 @@ export function FollowStream({ c }: { c: Conversation }) {
             <div key={i} className={`follow-run ${r.fromServer ? 'server' : 'client'}`}>
               <div className="follow-label">{directionName(r.fromServer)}, {frameRange(r.frames)}, {plural(r.bytes.length, 'byte')}</div>
               <pre className={format === 'hex' ? 'dump' : undefined}>{format === 'hex'
-                ? renderHexRun(r, masks.all[i], masks.active[i])
-                : renderHighlightedText(texts[i].text, highlights, activeIndex)}</pre>
+                ? masks ? renderHexRun(r, masks.all[i], masks.active[i]) : hexDump(r.bytes, r.dirOffset)
+                : search.matches.length ? renderHighlightedText(plainTexts[i], highlights, activeIndex) : plainTexts[i]}</pre>
             </div>
           );
         })}
