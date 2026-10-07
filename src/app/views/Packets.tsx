@@ -170,14 +170,34 @@ export function Packets({ captureSession }: { captureSession: number }) {
   // virtual body's real height exists before restoring an offset beyond page 1.
   useLayoutEffect(() => {
     if (busy || matched === null || !scrollRef.current) return;
+    const el = scrollRef.current;
     const saved = viewState?.get(scrollKey);
-    if (typeof saved === 'number' && Number.isFinite(saved)) virt.scrollToOffset(saved);
+    if (typeof saved === 'number' && Number.isFinite(saved)) {
+      // Writing the offset before the rows are laid out makes the browser clamp
+      // it, and the clamping scroll event then overwrites the saved value. Only
+      // scroll once the element can actually hold the offset.
+      let frames = 0;
+      const apply = () => {
+        if (el.isConnected && frames++ < 120 && el.scrollHeight - el.clientHeight < saved - 1) { requestAnimationFrame(apply); return; }
+        virt.scrollToOffset(saved);
+      };
+      apply();
+    }
     const pending = viewState?.get('workspace.pendingPageScroll') as { hash: string; restore: () => void } | undefined;
     if (pending && (columns.length > 0 || matched === 0)) {
       viewState?.set('workspace.pendingPageScroll', undefined);
       if (pending.hash === location.hash) pending.restore();
     }
-  }, [busy, matched, columns.length, scrollKey, viewState]);
+    return () => {
+      // The scroll event that normally records this offset is asynchronous and
+      // is lost when the view unmounts before it fires (for example when
+      // entering comparison): persist the live offset here. Skipped when this
+      // capture was replaced or closed, so a fresh capture inherits nothing.
+      if (matched !== null && scrollRef.current && viewState?.session() === sessionRef.current) {
+        viewState?.set(scrollKey, scrollRef.current.scrollTop);
+      }
+    };
+  }, [busy, matched, columns.length, scrollKey, viewState, virt]);
   const items = virt.getVirtualItems();
   useEffect(() => {
     if (!items.length) return;

@@ -74,6 +74,7 @@ export function App() {
   const viewState = useMemo<ViewStateStore>(() => ({
     get: (key) => viewStateRef.current.get(key),
     set: (key, value) => { viewStateRef.current.set(key, value); },
+    session: () => captureSessionRef.current,
   }), []);
   const setHistoryCaptureSession = useCallback((session: number, hash?: string) => {
     const oldState = history.state;
@@ -197,6 +198,10 @@ export function App() {
       requestAnimationFrame(() => {
         restorePageScroll();
         for (const table of document.querySelectorAll('.dt-scroll')) {
+          // The packet list restores its own offset once its virtual rows are
+          // laid out; writing here would clamp against its empty body and the
+          // clamping scroll event would overwrite the saved offset.
+          if (table.getAttribute('aria-label') === 'Packets') continue;
           const saved = snapshot.tables.find((entry) => entry.label === table.getAttribute('aria-label'));
           if (saved) table.scrollTop = saved.top;
         }
