@@ -6,6 +6,8 @@ import { AnalysisProgress } from './components/AnalysisProgress';
 import { BuildTag } from './components/BuildTag';
 import { Strip } from './components/charts';
 import { Drawer } from './components/Drawer';
+import { CAPTURE_ACCEPT, FileChoice } from './components/FileChoice';
+import sampleCaptureUrl from '../../fixtures/dns.pcap?url';
 import { OfflineStatus, UpdateBanner } from './components/Offline';
 import { ThemeButton, type Theme } from './components/ThemeButton';
 import { ComparePage } from './Compare';
@@ -57,13 +59,13 @@ export function App() {
   if (!engineRef.current) engineRef.current = new EngineClient(setState);
   const engine = engineRef.current;
   const [route, setRoute] = useState(parseHash);
-  const [drawer, setDrawer] = useState<DrawerSpec | null>(null);
+  const [drawers, setDrawers] = useState<DrawerSpec[]>([]);
   const [theme, setTheme] = useState<Theme>(loadTheme);
   const currentFileRef = useRef<File | null>(null);
   const [activeKeyLog, setActiveKeyLog] = useState<File | null>(null);
   const pendingKeysRef = useRef<File | null>(null);
   const [returnOperation, setReturnOperation] = useState<'restore' | 'keys' | null>(null);
-  const snapshotRef = useRef<{ hash: string; drawer: DrawerSpec | null; scroll: number; workspaceScroll: number; tables: { label: string | null; top: number }[] } | null>(null);
+  const snapshotRef = useRef<{ hash: string; drawers: DrawerSpec[]; scroll: number; workspaceScroll: number; tables: { label: string | null; top: number }[] } | null>(null);
   const [compareMode, setCompareMode] = useState(false);
   const [compareSeed, setCompareSeed] = useState<AnalysisModel | null>(null);
   const [captureSession, setCaptureSession] = useState(0);
@@ -137,19 +139,19 @@ export function App() {
     const session = resetViewState();
     if (replacingCapture) replaceRoute('#/overview', session);
     else setHistoryCaptureSession(session);
-    setDrawer(null);
+    setDrawers([]);
     engine.open(file, keyLog);
   }, [engine, replaceRoute, resetViewState, setHistoryCaptureSession]);
 
   const saveSnapshot = useCallback(() => {
-    snapshotRef.current = { hash: location.hash, drawer, scroll: window.scrollY, workspaceScroll: document.querySelector('.content')?.scrollTop ?? 0, tables: Array.from(document.querySelectorAll('.dt-scroll')).map((element) => ({ label: element.getAttribute('aria-label'), top: element.scrollTop })) };
-  }, [drawer]);
+    snapshotRef.current = { hash: location.hash, drawers, scroll: window.scrollY, workspaceScroll: document.querySelector('.content')?.scrollTop ?? 0, tables: Array.from(document.querySelectorAll('.dt-scroll')).map((element) => ({ label: element.getAttribute('aria-label'), top: element.scrollTop })) };
+  }, [drawers]);
   const enterCompare = useCallback((seed: AnalysisModel | null) => {
     if (seed) saveSnapshot();
     else { currentFileRef.current = null; pendingKeysRef.current = null; setActiveKeyLog(null); snapshotRef.current = null; }
     engine.close();
     setState({ kind: 'idle' });
-    setDrawer(null);
+    setDrawers([]);
     setCompareSeed(seed);
     setCompareMode(true);
   }, [engine, saveSnapshot]);
@@ -158,7 +160,7 @@ export function App() {
     if (!file) return;
     pendingKeysRef.current = keys;
     setReturnOperation(operation);
-    setDrawer(null);
+    setDrawers([]);
     engine.open(file, keys);
   }, [engine]);
   const leaveCompare = useCallback(() => {
@@ -167,6 +169,11 @@ export function App() {
     if (currentFileRef.current) reanalyze(activeKeyLog, 'restore');
   }, [activeKeyLog, reanalyze]);
   const clearCompareSeed = useCallback(() => setCompareSeed(null), []);
+  const openDrawer = useCallback((spec: DrawerSpec, mode: 'replace' | 'nest' = 'replace') => {
+    setDrawers((stack) => (mode === 'nest' ? [...stack, spec] : [spec]));
+  }, []);
+  const closeDrawer = useCallback(() => setDrawers((stack) => stack.slice(0, -1)), []);
+  const closeAllDrawers = useCallback(() => setDrawers([]), []);
   const closeCapture = useCallback(() => {
     currentFileRef.current = null;
     pendingKeysRef.current = null;
@@ -177,7 +184,7 @@ export function App() {
     const session = resetViewState();
     replaceRoute('#/overview', session);
     engine.cancel();
-    setDrawer(null);
+    setDrawers([]);
   }, [engine, replaceRoute, resetViewState]);
   useEffect(() => {
     if (state.kind !== 'ready') return;
@@ -186,7 +193,7 @@ export function App() {
     const snapshot = snapshotRef.current;
     if (snapshot) {
       replaceRoute(snapshot.hash, captureSessionRef.current);
-      setDrawer(snapshot.drawer);
+      setDrawers(snapshot.drawers);
       const restorePageScroll = () => {
         window.scrollTo(0, snapshot.scroll);
         const main = document.querySelector('.content');
@@ -245,9 +252,9 @@ export function App() {
       {compareMode ? (
         <ComparePage seed={compareSeed} onClearSeed={clearCompareSeed} onClose={leaveCompare} theme={theme} setTheme={setTheme} />
       ) : model ? (
-        <Workspace key={captureSession} model={model} engine={engine} view={route.view} params={route.params} go={go} openDrawer={setDrawer}
+        <Workspace key={captureSession} model={model} engine={engine} view={route.view} params={route.params} go={go} openDrawer={openDrawer} closeTopDrawer={closeDrawer} closeAllDrawers={closeAllDrawers}
           patchRouteParams={patchRouteParams}
-          onOpen={openFile} onClose={closeCapture} onCompare={() => enterCompare(model)} theme={theme} setTheme={setTheme} drawer={drawer} closeDrawer={() => setDrawer(null)}
+          onOpen={openFile} onClose={closeCapture} onCompare={() => enterCompare(model)} theme={theme} setTheme={setTheme} drawers={drawers}
           viewState={viewState} captureSession={captureSession} activeKeyLog={activeKeyLog}
           onApplyKeys={(keys) => { saveSnapshot(); reanalyze(keys, 'keys'); }} onRemoveKeys={() => { saveSnapshot(); reanalyze(null, 'keys'); }} />
       ) : returnOperation ? (
@@ -266,32 +273,23 @@ export function App() {
   );
 }
 
-function OpenButton({ onOpen, primary, label = 'Open capture', keyLog: controlledKeyLog, onKeyLogChange, captureOnly }: {
-  onOpen: (f: File, keyLog?: File | null) => void; primary?: boolean; label?: string;
-  captureOnly?: boolean; keyLog?: File | null; onKeyLogChange?: (file: File | null) => void;
-}) {
-  const ref = useRef<HTMLInputElement>(null);
-  const keyRef = useRef<HTMLInputElement>(null);
-  const [localKeyLog, setLocalKeyLog] = useState<File | null>(null);
-  const keyLog = controlledKeyLog === undefined ? localKeyLog : controlledKeyLog;
-  const selectKeyLog = (file: File | null) => {
-    setLocalKeyLog(file);
-    onKeyLogChange?.(file);
-  };
-  return (
-    <div style={{ display: 'grid', justifyItems: 'start', gap: 8 }}>
-      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-        <button className={`btn${primary ? ' primary' : ''}`} onClick={() => ref.current?.click()}>{label}</button>
-        <input ref={ref} type="file" hidden accept=".pcap,.pcapng,.cap,.pcap.gz,.pcapng.gz,.ntar,.dmp,.erf,.snoop,application/vnd.tcpdump.pcap"
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) { onOpen(f, keyLog); selectKeyLog(null); } e.target.value = ''; }} />
-        {!captureOnly && <><button className="btn" onClick={() => keyRef.current?.click()}>{keyLog ? 'Change TLS key log' : 'Choose TLS key log (optional)'}</button>
-        <input ref={keyRef} type="file" hidden accept=".txt,text/plain"
-          onChange={(e) => { selectKeyLog(e.target.files?.[0] ?? null); e.target.value = ''; }} />
-        {keyLog && <><span className="muted" title={keyLog.name}>{keyLog.name}</span><button className="btn small ghost" onClick={() => selectKeyLog(null)}>Clear key log</button></>}</>}
-      </div>
-      {!captureOnly && <span className="muted" style={{ fontSize: 12 }}>Key logs contain session secrets. They are read locally and held only while this capture is open.</span>}
-    </div>
-  );
+// Small fixtures are inlined as data URLs. Fetching those is blocked by
+// connect-src 'self', so decode them in the page. A same-origin file URL is
+// fetched only when the bundler emits a separate asset.
+async function bundledSample(url: string): Promise<Blob> {
+  if (!url.startsWith('data:')) {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`The sample capture could not be loaded (${response.status}).`);
+    return response.blob();
+  }
+  const comma = url.indexOf(',');
+  if (comma < 0) throw new Error('The sample capture is not bundled with this page.');
+  const meta = url.slice(5, comma);
+  const payload = url.slice(comma + 1);
+  const bytes = meta.includes('base64')
+    ? Uint8Array.from(atob(payload), (char) => char.charCodeAt(0))
+    : new TextEncoder().encode(decodeURIComponent(payload));
+  return new Blob([bytes], { type: 'application/vnd.tcpdump.pcap' });
 }
 
 function ShieldIcon() {
@@ -301,12 +299,36 @@ function ShieldIcon() {
 function Landing({ state, onOpen, onCancel, onCompare, theme, setTheme }: { state: EngineState; onOpen: (f: File, keyLog?: File | null) => void; onCancel: () => void; onCompare: () => void; theme: Theme; setTheme: (t: Theme) => void }) {
   const [over, setOver] = useState(false);
   const [keyLog, setKeyLog] = useState<File | null>(null);
+  const [dropError, setDropError] = useState<string | null>(null);
+  const [sampleError, setSampleError] = useState<string | null>(null);
+  const [sampleBusy, setSampleBusy] = useState(false);
   const working = state.kind === 'working' ? state : null;
+  const openSample = async () => {
+    setSampleError(null);
+    setSampleBusy(true);
+    try {
+      const blob = await bundledSample(sampleCaptureUrl);
+      onOpen(new File([blob], 'synthetic-sample.pcap', { type: 'application/vnd.tcpdump.pcap' }), null);
+    } catch (error) {
+      setSampleError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSampleBusy(false);
+    }
+  };
   return (
     <main className="landing"
       onDragOver={(e) => { e.preventDefault(); setOver(true); }}
       onDragLeave={() => setOver(false)}
-      onDrop={(e) => { e.preventDefault(); setOver(false); const f = e.dataTransfer.files?.[0]; if (f && !working) { onOpen(f, keyLog); setKeyLog(null); } }}>
+      onDrop={(e) => {
+        e.preventDefault();
+        setOver(false);
+        if (working) return;
+        const file = e.dataTransfer.files?.[0];
+        if (!file) { setDropError('Drop a capture file to open it.'); return; }
+        setDropError(null);
+        onOpen(file, keyLog);
+        setKeyLog(null);
+      }}>
       <div className="landing-card">
         <header className="landing-header">
           <div className="landing-brand">
@@ -323,10 +345,6 @@ function Landing({ state, onOpen, onCancel, onCompare, theme, setTheme }: { stat
             <p className="landing-kicker"><span aria-hidden="true" />BROWSER-BASED PACKET ANALYSIS</p>
             <h1>Make sense of every packet.</h1>
             <p className="landing-lede">Explore protocols, hosts, conversations and timelines in clear dashboards, powered by Wireshark and running right here in your browser.</p>
-            <div className="landing-assurance">
-              <span className="landing-assurance-icon"><ShieldIcon /></span>
-              <span><strong>Private by design</strong><br />Your capture stays on this device.</span>
-            </div>
           </div>
           <div className="landing-action-column">
             {working ? (
@@ -346,13 +364,22 @@ function Landing({ state, onOpen, onCancel, onCompare, theme, setTheme }: { stat
                 </div>
                 <div>
                   <h2>Open a packet capture</h2>
-                  <p className="ink2">Choose a .pcap or .pcapng file, or drop it here. Wireshark's dissectors run in this page, so your file is opened, not uploaded.</p>
+                  <p className="ink2">Choose a .pcap or .pcapng file, or drop it here.</p>
                 </div>
-                <div className="landing-upload-controls">
-                  <OpenButton onOpen={onOpen} primary label="Choose capture file" keyLog={keyLog} onKeyLogChange={setKeyLog} />
-                  <button className="btn" onClick={onCompare}>Compare two captures</button>
-                </div>
+                <FileChoice label="Choose capture file" file={null} primary showStatus={false} accept={CAPTURE_ACCEPT} onChange={(file) => { if (file) { onOpen(file, keyLog); setKeyLog(null); } }} />
                 <p className="local-note landing-local-note"><ShieldIcon />{LOCAL_NOTICE}</p>
+                <details className="landing-advanced">
+                  <summary>Advanced: TLS key log</summary>
+                  <FileChoice label="Choose TLS key log (optional)" file={keyLog} accept=".txt,text/plain" onChange={setKeyLog} />
+                  <p className="muted">Key logs contain session secrets. They are read locally and held only while this capture is open.</p>
+                </details>
+                <div className="landing-secondary">
+                  <button className="btn" onClick={onCompare}>Compare two captures</button>
+                  <button className="btn" onClick={() => void openSample()} disabled={sampleBusy}>{sampleBusy ? 'Loading sample…' : 'Try a sample capture'}</button>
+                </div>
+                <p className="muted landing-sample-note">The sample is synthetic DNS traffic bundled with this page. It is practice data, not a capture from a real network, and it is not a security finding.</p>
+                {dropError && <p className="note crit" role="alert">{dropError}</p>}
+                {sampleError && <p className="note crit" role="alert">{sampleError}</p>}
               </section>
             )}
             {state.kind === 'error' && (
@@ -367,7 +394,7 @@ function Landing({ state, onOpen, onCancel, onCompare, theme, setTheme }: { stat
             )}
           </div>
         </div>
-        <section className="landing-details" aria-label="Capture support and privacy">
+        <section className="landing-details" aria-label="Capture support">
           <article className="landing-detail">
             <span className="landing-detail-label">FORMATS</span>
             <h3>Bring your capture</h3>
@@ -378,18 +405,12 @@ function Landing({ state, onOpen, onCancel, onCompare, theme, setTheme }: { stat
             <h3>Large captures still open</h3>
             <p>The first {bytes(HARD_LIMIT_BYTES)} of capture data is analyzed; if there is more, results are marked partial. Tested up to 350 MB and 400,000 packets; expect slower analysis above {bytes(SOFT_LIMIT_BYTES)}.</p>
           </article>
-          <article className="landing-detail">
-            <span className="landing-detail-label">PRIVACY</span>
-            <h3>Capture stays local</h3>
-            <p>No uploads or analytics. Optional DB-IP files are only downloaded when you choose; capture addresses are never sent.</p>
-          </article>
           <article className="landing-detail landing-detail-offline">
             <span className="landing-detail-label">AVAILABILITY</span>
             <OfflineStatus />
           </article>
         </section>
         <footer className="landing-footer">
-          <span>When opened, a capture stays in this tab's memory only and is never written to storage.</span>
           <BuildTag className="corner" />
         </footer>
       </div>
@@ -398,8 +419,8 @@ function Landing({ state, onOpen, onCancel, onCompare, theme, setTheme }: { stat
 }
 
 function Workspace(props: {
-  model: AnalysisModel; engine: EngineClient; view: View; params: URLSearchParams; go: AppCtx['go']; patchRouteParams: (p: Record<string, string | null>) => void; openDrawer: (d: DrawerSpec) => void;
-  onOpen: (f: File, keyLog?: File | null) => void; onClose: () => void; onCompare: () => void; theme: Theme; setTheme: (t: Theme) => void; drawer: DrawerSpec | null; closeDrawer: () => void;
+  model: AnalysisModel; engine: EngineClient; view: View; params: URLSearchParams; go: AppCtx['go']; patchRouteParams: (p: Record<string, string | null>) => void; openDrawer: AppCtx['openDrawer']; closeTopDrawer: () => void; closeAllDrawers: () => void;
+  onOpen: (f: File, keyLog?: File | null) => void; onClose: () => void; onCompare: () => void; theme: Theme; setTheme: (t: Theme) => void; drawers: DrawerSpec[];
   viewState: ViewStateStore; captureSession: number;
   activeKeyLog: File | null; onApplyKeys: (keys: File) => void; onRemoveKeys: () => void;
 }) {
@@ -437,11 +458,17 @@ function Workspace(props: {
     return m;
   }, [sourceModel.hosts]);
   const ctx: AppCtx = useMemo(() => ({
-    model, sourceModel, engine: props.engine, openDrawer: props.openDrawer, go: props.go, patchRouteParams: props.patchRouteParams, params: props.params, nameOf: (a: string) => names.get(a) ?? null,
+    model, sourceModel, engine: props.engine, openDrawer: props.openDrawer, closeDrawer: props.closeTopDrawer, go: props.go, patchRouteParams: props.patchRouteParams, params: props.params, nameOf: (a: string) => names.get(a) ?? null,
     filter, stats, setHostFilter, setTimeRange, clearTimeRange, clearFilters,
-  }), [model, sourceModel, props.engine, props.openDrawer, props.go, props.patchRouteParams, props.params, names, filter, stats, setHostFilter, setTimeRange, clearTimeRange, clearFilters]);
+  }), [model, sourceModel, props.engine, props.openDrawer, props.closeTopDrawer, props.go, props.patchRouteParams, props.params, names, filter, stats, setHostFilter, setTimeRange, clearTimeRange, clearFilters]);
 
   useEffect(() => { document.title = `${c.fileName} — Estudely Packet Explorer`; return () => { document.title = 'Estudely Packet Explorer'; }; }, [c.fileName]);
+  const seenView = useRef(view);
+  useEffect(() => {
+    if (seenView.current === view) return;
+    seenView.current = view;
+    props.closeAllDrawers();
+  }, [view, props.closeAllDrawers]);
   useEffect(() => { document.querySelector('.main')?.scrollTo?.(0, 0); window.scrollTo(0, 0); }, [view]);
 
   const nav: { id: View; label: string; count?: number; total?: number }[] = [
@@ -505,7 +532,7 @@ function Workspace(props: {
               <button className="btn ghost small" onClick={clearFilters}>Clear filters</button>
             </div>} />
           <main className="content" id="content">
-            {model.tls.length > 0 && <TlsStatusBanner sessions={model.tls} />}
+            {(view === 'overview' || view === 'http' || view === 'tls') && model.tls.length > 0 && <TlsStatusBanner sessions={model.tls} />}
             {c.partial && <div className="note warn" role="status" style={{ marginBottom: 14 }}>
               <b>Partial analysis.</b> Only the first {bytes(c.analyzedBytes)} of capture data was analyzed. Packets after this prefix are omitted from every view and export.
             </div>}
@@ -517,7 +544,9 @@ function Workspace(props: {
           </main>
         </div>
       </div>
-      {props.drawer && <Drawer spec={props.drawer} onClose={props.closeDrawer} />}
+      {props.drawers.map((spec, index) => (
+        <Drawer key={index} spec={spec} active={index === props.drawers.length - 1} onClose={props.closeTopDrawer} />
+      ))}
     </Ctx.Provider>
     </ViewStateCtx.Provider>
   );
@@ -532,9 +561,12 @@ function TlsStatusBanner({ sessions }: { sessions: AnalysisModel['tls'] }) {
   const decrypted = sessions.filter((s) => s.decryptionStatus === 'decrypted').length;
   const encrypted = sessions.filter((s) => s.decryptionStatus === 'encrypted').length;
   const noData = sessions.length - decrypted - encrypted;
+  const parts = [`${num(decrypted)} of ${num(sessions.length)} sessions decrypted`];
+  if (encrypted > 0) parts.push(`${num(encrypted)} with application data remain encrypted`);
+  if (noData > 0) parts.push(`${num(noData)} had no application data to assess`);
   return (
     <div className="note info" role="status" style={{ marginBottom: 14 }}>
-      <b>TLS decryption:</b> {num(decrypted)} of {num(sessions.length)} sessions decrypted; {num(encrypted)} with application data remain encrypted; {num(noData)} had no application data to assess.
+      <b>TLS decryption:</b> {parts.join('; ')}.
     </div>
   );
 }

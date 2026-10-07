@@ -305,11 +305,25 @@ const errors = (page: Page) => {
   return list;
 };
 
+test('a bundled synthetic sample opens through the local analysis flow', async ({ page }) => {
+  const reqs = watchRequests(page);
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Try a sample capture' }).click();
+  await expect(page.locator('.cap-title h1')).toHaveText('synthetic-sample.pcap');
+  await expect(page.getByRole('heading', { name: 'Make sense of every packet.' })).toHaveCount(0);
+  await view(page, 'dns');
+  await expect(page.getByRole('grid', { name: 'DNS transactions' })).toBeVisible();
+  expect(reqs.offenders()).toEqual([]);
+});
+
 test('shows the local-processing notice before any file is chosen', async ({ page }) => {
   await page.goto('./');
-  await expect(page.getByText('Your capture is processed locally in your browser.')).toBeVisible();
+  await expect(page.getByText('Your capture is processed locally in your browser.')).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'Choose capture file' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Choose TLS key log (optional)' })).toBeHidden();
+  await page.locator('.landing-advanced summary').click();
   await expect(page.getByRole('button', { name: 'Choose TLS key log (optional)' })).toBeVisible();
+  await expect(page.getByText('No file selected')).toBeVisible();
 });
 
 test('compares two local captures sequentially and labels capture changes', async ({ page }) => {
@@ -828,6 +842,7 @@ test('HTTP/2 h2c capture: table rows and request/status aggregates', async ({ pa
   const facts = page.locator('.facts');
   await expect(facts.getByText('Requests', { exact: true }).locator('..')).toContainText('2');
   await expect(facts.getByText('Hosts requested', { exact: true }).locator('..')).toContainText('1');
+  await page.locator('summary').filter({ hasText: 'Summary charts' }).click();
   const methods = page.locator('.panel').filter({ has: page.getByRole('heading', { name: 'Methods' }) });
   await expect(methods).toContainText('GET');
   await expect(methods).toContainText('POST');
@@ -837,6 +852,9 @@ test('HTTP/2 h2c capture: table rows and request/status aggregates', async ({ pa
 
   const table = page.getByRole('grid', { name: 'HTTP messages' });
   await expect(table.getByRole('row')).toHaveCount(3);
+  const columns = page.locator('.dt').filter({ has: table });
+  await columns.locator('summary', { hasText: 'Columns' }).click();
+  await columns.getByRole('checkbox', { name: 'Version' }).check();
   await expect(table).toContainText('HTTP/2');
   await expect(table).toContainText('h2.example.test');
   await expect(table).toContainText('/first');
@@ -903,9 +921,16 @@ test('TLS key logs expose decrypted HTTP/2 rows with version and stream ID', asy
 
   await view(page, 'http');
   const table = page.getByRole('grid', { name: 'HTTP messages' });
+  await expect(table.getByRole('columnheader', { name: 'Status' })).toBeVisible();
+  await expect(table.getByRole('columnheader', { name: 'Response time' })).toBeVisible();
+  await expect(table.getByRole('columnheader', { name: 'Version' })).toHaveCount(0);
+  const columns = page.locator('.dt').filter({ has: table });
+  await columns.locator('summary', { hasText: 'Columns' }).click();
+  await columns.getByRole('checkbox', { name: 'Version' }).check();
+  await columns.getByRole('checkbox', { name: 'H2 stream' }).check();
   await expect(table.getByRole('columnheader', { name: 'Version' })).toBeVisible();
   await expect(table).toContainText('HTTP/2');
-  await expect(table).toContainText('1');
+  await expect(table.getByRole('columnheader', { name: 'H2 stream' })).toBeVisible();
   await expect(table).toContainText('h2-keylog.example.test');
   await expect(table).toContainText('/decrypted-h2');
   await expect(table).toContainText('Decrypted');
@@ -983,7 +1008,7 @@ test('opening another capture replaces the first one entirely', async ({ page })
   await view(page, 'packets');
   await expect(page.getByText('31 of 31 packets')).toBeVisible();
 
-  await clickCaptureAction(page, 'Close');
+  await clickCaptureAction(page, 'Close capture');
   await expect(page.getByRole('button', { name: 'Choose capture file' })).toBeVisible();
 });
 
@@ -1360,6 +1385,7 @@ test('HTTP response chart groups mixed HTTP/1 and HTTP/2 by numeric status', asy
   await page.goto('./');
   await openMixedCapture(page);
   await view(page, 'http');
+  await page.locator('summary').filter({ hasText: 'Summary charts' }).click();
   const statusPanel = page.locator('.panel').filter({ has: page.getByRole('heading', { name: 'Status codes' }) });
   const statusRows = statusPanel.locator('.barlist-row');
   await expect(statusRows).toHaveCount(4);
@@ -1375,6 +1401,7 @@ test('HTTP response chart groups mixed HTTP/1 and HTTP/2 by numeric status', asy
   await page.getByRole('button', { name: 'Apply time range' }).click();
   await expect(page.getByRole('button', { name: 'Clear all filters' })).toBeVisible();
   await viewKeepingFilters(page, 'http');
+  await page.locator('summary').filter({ hasText: 'Summary charts' }).click();
   await expect(statusRows).toHaveCount(2);
   expect(await countMap()).toEqual({ '200': '1', '404': '1' });
 });

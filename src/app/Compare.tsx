@@ -6,9 +6,8 @@ import { compareCaptures, comparisonSource, countChanges, type CaptureComparison
 import { EngineClient, type EngineState } from './engine';
 import { bytes, duration, num } from './format';
 import { DataTable, type Column } from './components/DataTable';
+import { CAPTURE_ACCEPT, FileChoice } from './components/FileChoice';
 import { ThemeButton, type Theme } from './components/ThemeButton';
-
-const ACCEPT = '.pcap,.pcapng,.cap,.pcap.gz,.pcapng.gz,.ntar,.dmp,.erf,.snoop,application/vnd.tcpdump.pcap';
 
 export function ComparePage({ seed, onClearSeed, onClose, theme, setTheme }: {
   seed: AnalysisModel | null;
@@ -133,20 +132,14 @@ export function ComparePage({ seed, onClearSeed, onClose, theme, setTheme }: {
             {seeded ? <div className="compare-baseline">
               <p className="mono">{modelA?.capture.fileName ?? seed?.capture.fileName ?? 'Already analyzed'}</p>
               <button className="btn small" disabled={running} onClick={() => { setSeeded(false); setModelA(null); firstModelRef.current = null; setFileA(null); setComparison(null); }}>Choose different capture A</button>
-            </div> : <label>
-              <span className="sr-only">Choose capture A</span>
-              <input type="file" aria-label="Choose capture A" accept={ACCEPT} disabled={running} onChange={(e) => { selectA(e.target.files?.[0] ?? null); e.target.value = ''; }} />
-            </label>}
-            {!seeded && fileA && <p className="muted">{fileA.name} · {bytes(fileA.size)}</p>}
+            </div> : <FileChoice label="Choose capture A" file={fileA} accept={CAPTURE_ACCEPT} disabled={running} onChange={selectA} />}
+            {fileA && <p className="muted">{bytes(fileA.size)}</p>}
             {modelA && modelA.capture.partial && <p className="note warn">Capture A is a partial analysis of the first {bytes(modelA.capture.analyzedBytes)}.</p>}
           </section>
           <section className="panel compare-picker">
             <h2>Capture B</h2>
-            <label>
-              <span className="sr-only">Choose capture B</span>
-              <input type="file" aria-label="Choose capture B" accept={ACCEPT} disabled={running} onChange={(e) => { selectB(e.target.files?.[0] ?? null); e.target.value = ''; }} />
-            </label>
-            {fileB && <p className="muted">{fileB.name} · {bytes(fileB.size)}</p>}
+            <FileChoice label="Choose capture B" file={fileB} accept={CAPTURE_ACCEPT} disabled={running} onChange={selectB} />
+            {fileB && <p className="muted">{bytes(fileB.size)}</p>}
             {comparison?.after.partial && <p className="note warn">Capture B is a partial analysis of the first {bytes(comparison.after.analyzedBytes)}.</p>}
           </section>
         </div>

@@ -266,7 +266,27 @@ p { margin: 0; }
 .dt-grid { min-width: max-content; }
 .dt-row { display: grid; align-items: center; border-bottom: 1px solid var(--rule); min-height: 34px; }
 .dt-row > div { padding: 6px 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.dt-row > :first-child { position: sticky; left: 0; z-index: 1; background: var(--panel); }
 .dt-head { position: sticky; top: 0; z-index: 2; background: var(--panel-2); font-size: 12px; color: var(--ink-2); font-weight: 500; }
+.dt-head > :first-child { z-index: 3; background: var(--panel-2); }
+.dt-body .dt-row.clickable:hover > :first-child { background: var(--hover); }
+.dt-body .dt-row[aria-selected='true'] > :first-child { background: var(--select); }
+.column-chooser { position: relative; }
+.column-chooser[open] { flex-basis: 100%; }
+.column-chooser summary { cursor: pointer; color: var(--accent); font-size: 13px; }
+.column-chooser-menu { display: grid; gap: 6px; min-width: 220px; max-height: 280px; overflow: auto; margin-top: 8px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--rule-strong); border-radius: 8px; }
+.column-chooser-menu label { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+.column-chooser-menu p { margin: 4px 0 0; color: var(--ink-3); font-size: 12px; }
+.summary-fold { border: 1px solid var(--rule); border-radius: 8px; background: var(--panel); }
+.summary-fold > summary { cursor: pointer; padding: 12px 16px; font-weight: 500; }
+.summary-fold-body { display: grid; gap: 16px; padding: 0 16px 16px; }
+.file-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.file-choice-name { overflow-wrap: anywhere; }
+.landing-advanced { margin-top: 8px; }
+.landing-advanced summary { cursor: pointer; color: var(--accent); }
+.landing-advanced p { margin: 8px 0 0; font-size: 12px; }
+.landing-secondary { display: flex; flex-wrap: wrap; gap: 8px; }
+.landing-sample-note { font-size: 12px; margin: 0; }
 .dt-head button { all: unset; cursor: pointer; display: inline-flex; gap: 4px; align-items: center; max-width: 100%; }
 .dt-head button:focus-visible { outline: 2px solid var(--focus); }
 .dt-body .dt-row { cursor: default; }
@@ -309,6 +329,13 @@ p { margin: 0; }
   position: fixed; top: 0; right: 0; bottom: 0; width: min(760px, 100vw); background: var(--panel);
   border-left: 1px solid var(--rule); z-index: 21; display: flex; flex-direction: column; box-shadow: -8px 0 30px rgba(0, 0, 0, 0.15);
 }
+/* Wide screens keep the capture toolbar, navigation and tables usable beside an open record. */
+@media (min-width: 1200px) {
+  body:has(.drawer:not([hidden])) .shell { margin-right: 640px; }
+  .drawer, .drawer-backdrop { width: 640px; }
+  .drawer-backdrop { left: auto; right: 0; }
+}
+.drawer[hidden], .drawer-backdrop[hidden] { display: none !important; }
 .drawer-head { padding: 14px 18px; border-bottom: 1px solid var(--rule); display: flex; gap: 12px; align-items: flex-start; }
 .drawer-body { overflow: auto; flex: 1; padding: 14px 18px 30px; display: grid; gap: 16px; align-content: start; }
 .frames-pick { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -377,7 +404,7 @@ p { margin: 0; }
 .drop.landing-processing { align-content: start; }
 .landing-processing .landing-kicker { margin-bottom: -5px; }
 .landing-processing > p:not(.landing-kicker) { color: var(--ink-2); }
-.landing-details { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.landing-details { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .landing-detail { min-width: 0; padding: 17px 18px; border: 1px solid var(--rule); border-radius: 10px; background: var(--panel); }
 .landing-detail-label { display: block; margin-bottom: 10px; color: var(--accent); font-size: 10px; font-weight: 600; letter-spacing: .12em; }
 .landing-detail h3 { margin-bottom: 6px; font-size: 14px; }

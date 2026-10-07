@@ -6,7 +6,7 @@ import { useApp, type DrawerSpec } from '../context';
 import { absTime, bytes, decimalLiteral, endpoint, epochText, num, rel } from '../format';
 import { SOURCE_PACKET_PAGE_SIZE, sourceFramePage } from '../sourceFrames';
 
-export function Drawer({ spec, onClose }: { spec: DrawerSpec; onClose: () => void }) {
+export function Drawer({ spec, active, onClose }: { spec: DrawerSpec; active: boolean; onClose: () => void }) {
   const { engine, model, filter, go } = useApp();
   const frames = useMemo(() => [...new Set(spec.frames)].sort((a, b) => a - b), [spec.frames]);
   const initialFrame = spec.focus !== undefined && frames.includes(spec.focus) ? spec.focus : frames[0];
@@ -51,7 +51,13 @@ export function Drawer({ spec, onClose }: { spec: DrawerSpec; onClose: () => voi
     setShowingMatches(false);
   }, [spec, frames]);
   useEffect(() => {
-    closeRef.current?.focus();
+    const returnTo = returnFocusRef.current;
+    return () => { if (returnTo?.isConnected) returnTo.focus(); };
+  }, []);
+  useEffect(() => {
+    if (!active) return;
+    const dialog = dialogRef.current;
+    if (dialog && !dialog.contains(document.activeElement)) closeRef.current?.focus();
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCloseRef.current(); };
     const onTab = (e: KeyboardEvent) => {
       if (e.key !== 'Tab') return;
@@ -81,9 +87,8 @@ export function Drawer({ spec, onClose }: { spec: DrawerSpec; onClose: () => voi
     return () => {
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('keydown', onTab);
-      returnFocusRef.current?.focus();
     };
-  }, []);
+  }, [active]);
   useEffect(() => {
     if (current === undefined) {
       setDetails(null);
@@ -183,10 +188,11 @@ export function Drawer({ spec, onClose }: { spec: DrawerSpec; onClose: () => voi
     setFramePage(last ? Math.floor((frames.length - 1) / SOURCE_PACKET_PAGE_SIZE) : 0);
     selectSourceFrame(frame);
   };
+  const showPackets = spec.showSourcePackets !== false;
   return (
     <>
-      <div className="drawer-backdrop" onClick={onClose} />
-      <aside ref={dialogRef} className="drawer" role="dialog" aria-modal="true" aria-label={`Packet details: ${spec.title}`} aria-describedby="drawer-description" tabIndex={-1}>
+      <div className="drawer-backdrop" hidden={!active} onClick={active ? onClose : undefined} />
+      <aside ref={dialogRef} className="drawer" hidden={!active} role={active ? 'dialog' : undefined} aria-modal={active ? true : undefined} aria-label={`Packet details: ${spec.title}`} aria-describedby="drawer-description" tabIndex={-1}>
         <div className="drawer-head">
           <div style={{ minWidth: 0, flex: 1 }}>
             <h2 style={{ fontSize: 16, overflowWrap: 'anywhere' }}>{spec.title}</h2>
@@ -197,8 +203,18 @@ export function Drawer({ spec, onClose }: { spec: DrawerSpec; onClose: () => voi
           <button ref={closeRef} className="btn" onClick={onClose}>Close</button>
         </div>
         <div className="drawer-body">
-          {spec.summary}
-          <section>
+          {spec.summary && (showPackets ? <section aria-label="Summary">{spec.summary}</section> : spec.summary)}
+          {showPackets && (frames.length <= 1 ? (
+            <section aria-label="Packets">
+              <h3 style={{ marginBottom: 8 }}>Packet</h3>
+              {frames.length === 1 ? (
+                <button className="btn small" type="button" aria-pressed={frames[0] === current} onClick={() => selectSourceFrame(frames[0])}>Decode packet #{frames[0]}</button>
+              ) : (
+                <p className="muted">No source packet was recorded for this row.</p>
+              )}
+            </section>
+          ) : (
+          <section aria-label="Packets">
             <h3 style={{ marginBottom: 8 }}>Packets ({num(frames.length)})</h3>
             <label className="muted" style={{ display: 'block', fontSize: 12, marginBottom: 6 }}>
               Search source packets by frame number
@@ -243,7 +259,8 @@ export function Drawer({ spec, onClose }: { spec: DrawerSpec; onClose: () => voi
               ))}
             </div>
           </section>
-          {current !== undefined && (
+          ))}
+          {showPackets && current !== undefined && (
             <section>
               <dl className="kv">
                 <dt>Packet</dt><dd className="mono">#{current}</dd>

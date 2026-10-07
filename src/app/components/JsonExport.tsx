@@ -24,7 +24,10 @@ export function JsonExport({ model, selectionAvailable, selectionDescription, on
 
   useEffect(() => {
     const dismissOutside = (event: PointerEvent) => {
-      if (menu.current?.open && event.target instanceof Node && !menu.current.contains(event.target)) close(false);
+      if (!(menu.current?.open && event.target instanceof Node && !menu.current.contains(event.target))) return;
+      close(false);
+      const triggerEl = trigger.current;
+      requestAnimationFrame(() => triggerEl?.focus());
     };
     const dismissEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && menu.current?.open) {
@@ -57,7 +60,6 @@ export function JsonExport({ model, selectionAvailable, selectionDescription, on
       <summary ref={trigger} className="btn">Export</summary>
       <div className="json-export-panel">
         <h2>Choose export scope and format</h2>
-        <button className="btn" onClick={() => close(true)}>Close export menu</button>
         <p className="json-export-exclusions">Whole capture: {model.capture.packetCount.toLocaleString()} analyzed packets. Shared time and host filters do not change whole-capture downloads.</p>
         <section className="json-export-choice" aria-labelledby="html-export-heading">
           <h3 id="html-export-heading">HTML report</h3>

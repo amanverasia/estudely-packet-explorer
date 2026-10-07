@@ -244,7 +244,7 @@ export function FollowStream({ c }: { c: Conversation }) {
       title: `${transport} stream ${stream} match`,
       frames: activeMatch.frames,
       focus: activeMatch.frames[0],
-    });
+    }, 'nest');
   };
 
   const status = search.error

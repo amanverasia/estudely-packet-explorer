@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Host } from '../../engine/types';
 import { DataTable, type Column } from '../components/DataTable';
 import { LocalIpDataPanel } from '../components/LocalIpData';
-import { Note, Panel, Seg, ViewHead } from '../components/bits';
+import { Note, Seg, ViewHead } from '../components/bits';
 import { useApp, useViewState } from '../context';
 import { absTime, bytes, num, plural } from '../format';
 import { lookupLocalIp, type LocalIpDataKind, type LocalIpDatabase, type LocalIpMatch } from '../localIpData';
@@ -14,19 +14,31 @@ export function Hosts() {
   const [family, setFamily] = useViewState<'all' | '4' | '6'>('hosts.family', 'all', (value): value is 'all' | '4' | '6' => value === 'all' || value === '4' || value === '6');
   const [selected, setSelected] = useViewState<string | null>('hosts.selected', null, (value): value is string | null => value === null || typeof value === 'string');
   const lastRouteHost = useRef<string | null>(null);
-  useEffect(() => {
-    if (!params.has('host')) { lastRouteHost.current = null; return; }
-    const requested = params.get('host') || '';
-    if (requested !== lastRouteHost.current) {
-      lastRouteHost.current = requested;
-      setSelected(requested && sourceModel.hosts.some((h) => h.addr === requested) ? requested : null);
-    }
-  }, [params, sourceModel.hosts, setSelected]);
   const [databases, setDatabases] = useState<Record<LocalIpDataKind, LocalIpDatabase | null>>({ country: null, asn: null });
   const [showIpColumns, setShowIpColumns] = useViewState<boolean>('hosts.ipColumns', false, (value): value is boolean => typeof value === 'boolean');
   const rows = useMemo(() => model.hosts.filter((h) => family === 'all' || String(h.ipVersion) === family), [model.hosts, family]);
-  const host = selected ? model.hosts.find((h) => h.addr === selected) ?? null : null;
   const digits = Math.min(6, model.capture.timestampDigits);
+  const openHost = (h: Host) => {
+    setSelected(h.addr);
+    openDrawer({
+      title: h.addr,
+      frames: [...new Set(h.names.map((name) => name.frame))],
+      summary: <HostDetail host={h} ipData={ipMatches.get(h.addr) ?? { country: null, asn: null }} go={go} digits={digits}
+        onFilter={() => setHostFilter(h.addr)} isFiltered={filter.host === h.addr}
+        openFrame={(frame, title) => openDrawer({ title, frames: [frame] }, 'nest')} startEpoch={model.capture.startEpoch} />,
+    });
+  };
+  useEffect(() => {
+    if (!params.has('host')) { lastRouteHost.current = null; return; }
+    const requested = params.get('host') || '';
+    if (requested === lastRouteHost.current) return;
+    lastRouteHost.current = requested;
+    const found = sourceModel.hosts.find((h) => h.addr === requested);
+    setSelected(found ? found.addr : null);
+    if (found) openHost(found);
+    // Route changes open the detail once; later renders keep the same host key.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params, sourceModel.hosts]);
   const onDatabaseChange = useCallback((kind: LocalIpDataKind, database: LocalIpDatabase | null) => {
     setDatabases((current) => ({ ...current, [kind]: database }));
   }, []);
@@ -80,12 +92,9 @@ export function Hosts() {
         <Note>Names are observed or inferred from capture evidence; select a host to see their source packets. MAC vendors identify registered address-prefix owners, not devices. Ports listed are observed in this capture, not proof that a port is open now. No operating-system or device identification is attempted.</Note>
       </details>
       {(filter.start !== null || filter.host) && <Note>Sent/received packet and byte totals are recalculated for the selected traffic. MAC addresses, names, ports, peers, and protocol labels remain whole-capture metadata.</Note>}
-      {host && <HostDetail host={host} ipData={ipMatches.get(host.addr) ?? { country: null, asn: null }} onClose={() => setSelected(null)} go={go} digits={digits}
-        onFilter={() => setHostFilter(host.addr)} isFiltered={filter.host === host.addr}
-        openFrame={(f, title) => openDrawer({ title, frames: [f] })} startEpoch={model.capture.startEpoch} />}
       <section className="panel">
         <DataTable stateId="hosts.list" label="Hosts" exportName="hosts" rows={rows} columns={columns} rowKey={(h) => h.addr} selectedKey={selected}
-          onRowClick={(h) => setSelected(h.addr)} initialSort={{ key: 'txb', dir: 'desc' }} searchPlaceholder="Search addresses, names, MACs, ports"
+          onRowClick={openHost} initialSort={{ key: 'txb', dir: 'desc' }} searchPlaceholder="Search addresses, names, MACs, ports"
           toolbar={<label><input type="checkbox" checked={showIpColumns} onChange={(event) => setShowIpColumns(event.currentTarget.checked)} /> Show country/ASN columns</label>}
           empty={<><strong>No IP hosts.</strong>This capture has no IPv4 or IPv6 packets that Wireshark could decode.</>} />
       </section>
@@ -93,20 +102,20 @@ export function Hosts() {
   );
 }
 
-function HostDetail({ host: h, ipData, onClose, go, onFilter, isFiltered, openFrame, startEpoch, digits }: {
+function HostDetail({ host: h, ipData, go, onFilter, isFiltered, openFrame, startEpoch, digits }: {
   ipData: { country: LocalIpMatch | null; asn: LocalIpMatch | null };
-  host: Host; onClose: () => void; go: (v: string, p?: Record<string, string>) => void;
+  host: Host; go: (v: string, p?: Record<string, string>) => void;
   onFilter: () => void; isFiltered: boolean;
   openFrame: (f: number, title: string) => void; startEpoch: string | null; digits: number;
 }) {
   return (
-    <Panel title={<span className="mono">{h.addr}</span>} sub={`IPv${h.ipVersion}, ${h.scope} address range`}
-      right={<>
+    <section aria-label="Summary">
+      <p className="muted">IPv{h.ipVersion}, {h.scope} address range</p>
+      <div className="actions" style={{ margin: '8px 0 12px' }}>
         <button className="btn small" onClick={() => go('connections', { host: h.addr })}>Connections ({num(h.conversations)})</button>
         <button className="btn small" onClick={() => go('network', { host: h.addr })}>Show in graph</button>
         <button className="btn small" onClick={onFilter} aria-pressed={isFiltered}>{isFiltered ? 'Filtered across views' : 'Filter all views to host'}</button>
-        <button className="btn small ghost" onClick={onClose}>Close</button>
-      </>}>
+      </div>
       <div className="grid-2">
         <div style={{ display: 'grid', gap: 14, alignContent: 'start' }}>
           <dl className="kv">
@@ -173,7 +182,7 @@ function HostDetail({ host: h, ipData, onClose, go, onFilter, isFiltered, openFr
           </div>
         </div>
       </div>
-    </Panel>
+    </section>
   );
 }
 

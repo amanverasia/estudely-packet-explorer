@@ -4,7 +4,7 @@ import { useMemo } from 'react';
 import type { TlsSession } from '../../engine/types';
 import { BarList } from '../components/charts';
 import { DataTable, type Column } from '../components/DataTable';
-import { Addr, Fact, FramesLink, Note, Panel, ViewHead } from '../components/bits';
+import { Addr, Fact, FramesLink, Note, Panel, SummaryCharts, ViewHead } from '../components/bits';
 import { useApp } from '../context';
 import { absTime, endpoint, num } from '../format';
 
@@ -57,9 +57,9 @@ export function Tls() {
   return (
     <>
       <ViewHead title="TLS">
-        “Offered” values come from the client's ClientHello; “negotiated” values come from the server's ServerHello. An optional TLS key log can decrypt matching sessions locally.
+        ClientHello offers and ServerHello results. A key log decrypts matching sessions locally.
       </ViewHead>
-      <Note>Session status is based on whether Wireshark decoded TLS application data. A session with no matching key stays encrypted. TLS 1.3 certificates are encrypted on the wire and may only appear if Wireshark can decode their handshake. Keys stay in this browser and certificate trust is not checked.</Note>
+      <Note>Decryption status follows Wireshark’s application data. TLS 1.3 certificates stay encrypted unless the handshake is decoded. Keys stay in this browser and certificate trust is not checked.</Note>
       {!model.tls.length ? (
         <div className="panel empty"><strong>No TLS handshakes were decoded.</strong>Handshakes that happened before the capture started, or on ports Wireshark does not associate with TLS, will not appear.</div>
       ) : (
@@ -69,20 +69,24 @@ export function Tls() {
             <Fact label="Sessions decrypted" value={num(stats.decrypted)} />
             <Fact label="Still encrypted" value={num(stats.stillEncrypted)} />
             <Fact label="No app data" value={num(stats.noAppData)} />
-            <Fact label="Distinct SNI names" value={num(stats.sni.filter((s) => !s.key.startsWith('(')).length)} />
-            <Fact label="No ServerHello seen" value={num(stats.noSh)} />
-            <Fact label="Certificates decoded" value={num(stats.certs)} small="sessions" />
-            <Fact label="Certificate encrypted" value={num(stats.encryptedCerts)} small="sessions" />
           </dl>
-          <div className="grid-2">
-            <Panel title="Server names requested" sub="SNI in ClientHello"><BarList items={stats.sni} limit={10} /></Panel>
-            <Panel title="Negotiated versions" sub="From ServerHello"><BarList items={stats.versions} limit={6} color="var(--s7)" emptyText="No ServerHello decoded." /></Panel>
-            <Panel title="Negotiated cipher suites" sub="From ServerHello"><BarList items={stats.ciphers} limit={8} color="var(--s3)" emptyText="No ServerHello decoded." /></Panel>
-            <Panel title="Application protocol selected" sub="ALPN in ServerHello"><BarList items={stats.alpn} limit={6} color="var(--s2)" emptyText="No ServerHello decoded." /></Panel>
-          </div>
           <section className="panel">
             <DataTable stateId="tls.handshakes" label="TLS handshakes" exportName="tls" rows={model.tls} columns={columns} rowKey={(t) => t.id} onRowClick={open} searchPlaceholder="Search SNI, addresses, versions, ciphers" />
           </section>
+          <SummaryCharts>
+            <dl className="facts" style={{ margin: 0 }}>
+              <Fact label="Distinct SNI names" value={num(stats.sni.filter((s) => !s.key.startsWith('(')).length)} />
+              <Fact label="No ServerHello seen" value={num(stats.noSh)} />
+              <Fact label="Certificates decoded" value={num(stats.certs)} small="sessions" />
+              <Fact label="Certificate encrypted" value={num(stats.encryptedCerts)} small="sessions" />
+            </dl>
+            <div className="grid-2">
+              <Panel title="Server names requested" sub="SNI in ClientHello"><BarList items={stats.sni} limit={10} /></Panel>
+              <Panel title="Negotiated versions" sub="From ServerHello"><BarList items={stats.versions} limit={6} color="var(--s7)" emptyText="No ServerHello decoded." /></Panel>
+              <Panel title="Negotiated cipher suites" sub="From ServerHello"><BarList items={stats.ciphers} limit={8} color="var(--s3)" emptyText="No ServerHello decoded." /></Panel>
+              <Panel title="Application protocol selected" sub="ALPN in ServerHello"><BarList items={stats.alpn} limit={6} color="var(--s2)" emptyText="No ServerHello decoded." /></Panel>
+            </div>
+          </SummaryCharts>
         </>
       )}
     </>
