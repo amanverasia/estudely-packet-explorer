@@ -652,6 +652,88 @@ test('shared filters brush traffic, round-trip in the URL, and apply from a host
   await expect(page.getByRole('button', { name: 'Remove host filter for 10.0.0.80' })).toHaveCount(0);
 });
 
+test('packet filters survive navigation, browser history and capture replacement', async ({ page }) => {
+  await page.goto('./');
+  await openCapture(page, 'http.pcap');
+  await view(page, 'packets');
+  const input = page.getByLabel('Wireshark display filter');
+
+  await input.fill('http.response.code == 404');
+  await page.getByRole('button', { name: 'Apply' }).click();
+  await expect(page.getByText('1 of 31 packets')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => new URLSearchParams(location.hash.split('?')[1]).get('filter'))).toBe('http.response.code == 404');
+
+  await input.fill('http.response.code == 200');
+  await page.getByRole('button', { name: 'Apply' }).click();
+  await expect(page.getByText('1 of 31 packets')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => new URLSearchParams(location.hash.split('?')[1]).get('filter'))).toBe('http.response.code == 200');
+  await page.goBack();
+  await expect.poll(() => page.evaluate(() => new URLSearchParams(location.hash.split('?')[1]).get('filter'))).toBe('http.response.code == 404');
+  await expect(input).toHaveValue('http.response.code == 404');
+  await expect(page.getByText('1 of 31 packets')).toBeVisible();
+  await page.goForward();
+  await expect(input).toHaveValue('http.response.code == 200');
+  await expect(page.getByText('1 of 31 packets')).toBeVisible();
+
+  await input.fill('not a filter ((');
+  await page.getByRole('button', { name: 'Apply' }).click();
+  await expect(page.getByText(/Invalid display filter/)).toBeVisible();
+  await expect(page.getByText('1 of 31 packets')).toBeVisible();
+  await view(page, 'http');
+  await page.locator('.nav a[href="#/packets"]').click();
+  await expect(input).toHaveValue('not a filter ((');
+  await expect(page.getByText('1 of 31 packets')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Clear' }).click();
+  await expect(input).toHaveValue('');
+  await expect(page.getByText('31 of 31 packets')).toBeVisible();
+  await page.goBack();
+  await expect(input).toHaveValue('http.response.code == 200');
+  await expect(page.getByText('1 of 31 packets')).toBeVisible();
+  await page.goForward();
+  await expect(input).toHaveValue('');
+  await expect(page.getByText('31 of 31 packets')).toBeVisible();
+
+  await view(page, 'http');
+  await page.locator('.nav a[href="#/packets"]').click();
+  await expect(input).toHaveValue('');
+  await expect.poll(() => page.evaluate(() => new URLSearchParams(location.hash.split('?')[1]).has('filter'))).toBe(true);
+
+  await page.locator('input[type=file]').first().setInputFiles(fixture('http.pcap'));
+  await expect(page.locator('.cap-title h1')).toHaveText('http.pcap');
+  await view(page, 'packets');
+  await expect(input).toHaveValue('');
+  await expect(page.getByText('31 of 31 packets')).toBeVisible();
+  await page.goBack(); // New capture's overview entry.
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe('#/overview');
+  await page.goBack(); // Old capture history must not restore its filter into this capture.
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe('#/overview');
+  await page.locator('.nav a[href="#/packets"]').click();
+  await expect(input).toHaveValue('');
+  await expect(page.getByText('31 of 31 packets')).toBeVisible();
+});
+
+test('view filters and table search/sort restore in-session, while deep-link protocol wins', async ({ page }) => {
+  await page.goto('./');
+  await openCapture(page, 'dns.pcap');
+  await view(page, 'dns');
+  let table = page.getByRole('grid', { name: 'DNS transactions' });
+  await page.getByRole('searchbox', { name: 'Search DNS transactions' }).fill('tcp.example');
+  await table.getByRole('columnheader', { name: /Queried name/ }).getByRole('button').click();
+  await expect(table.getByRole('columnheader', { name: /Queried name/ })).toHaveAttribute('aria-sort', 'descending');
+  await page.getByRole('button', { name: /NBNS 1/ }).click();
+  await expect(page.getByRole('grid', { name: 'NBNS transactions' })).toContainText('FILESERVER<00>');
+  await view(page, 'http');
+  await page.locator('.nav a[href="#/dns"]').click();
+  await expect(page.getByRole('grid', { name: 'NBNS transactions' })).toBeVisible();
+  await page.evaluate(() => { location.hash = '#/dns?proto=DNS'; });
+  table = page.getByRole('grid', { name: 'DNS transactions' });
+  await expect(table).toBeVisible();
+  await expect(page.getByRole('button', { name: 'DNS 10' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('searchbox', { name: 'Search DNS transactions' })).toHaveValue('tcp.example');
+  await expect(table.getByRole('columnheader', { name: /Queried name/ })).toHaveAttribute('aria-sort', 'descending');
+});
+
 test('HTTP/2 h2c capture: table rows and request/status aggregates', async ({ page }) => {
   await page.goto('./');
   await openCapture(page, 'http2.pcap');
@@ -840,6 +922,37 @@ test('Follow stream: text and hex, directions distinguished, captured HTML inert
     body.locator(`.follow-run.${k}`).first().evaluate((el) => getComputedStyle(el).borderLeftColor)));
   expect(clientColor).not.toBe(serverColor);
 
+  const find = page.getByLabel('Find', { exact: true });
+  const searchStatus = page.locator('.follow-search [role="status"]');
+  await find.fill('HTTP/1.1');
+  await expect(searchStatus).toContainText(/Match 1 of \d+/);
+  const matchCount = Number((await searchStatus.innerText()).match(/Match 1 of (\d+)/)?.[1]);
+  expect(matchCount).toBeGreaterThan(1);
+  await expect(body.locator('mark')).not.toHaveCount(0);
+  const search = page.getByRole('group', { name: 'Find in Follow Stream' });
+  await search.getByRole('button', { name: 'Previous' }).click();
+  await expect(searchStatus).toContainText(`Match ${matchCount} of ${matchCount}`);
+  await search.getByRole('button', { name: 'Next' }).click();
+  await expect(searchStatus).toContainText(`Match 1 of ${matchCount}`);
+
+  await find.fill('GET /index.html HTTP/1.1');
+  await expect(searchStatus).toContainText('Client → server, byte offset 0');
+  const jump = page.getByRole('button', { name: /Open packet/ });
+  const frame = (await jump.innerText()).match(/#(\d+)/)?.[1];
+  expect(frame).toBeTruthy();
+  await jump.click();
+  const drawer = page.getByRole('dialog');
+  await expect(drawer).toContainText('TCP stream 0 match');
+  if (frame) await expect(drawer).toContainText(`Decoded packet: #${frame}`);
+  await page.keyboard.press('Escape');
+
+  await page.getByLabel('Search as').selectOption('bytes');
+  await find.fill('47 45 54');
+  await expect(searchStatus).toContainText('Client → server, byte offset 0');
+  await expect(body.locator('mark').first()).toContainText('GET');
+  await find.fill('');
+  await page.getByLabel('Search as').selectOption('text');
+
   await page.getByRole('group', { name: 'Directions shown' }).getByRole('button', { name: /Server → client/ }).click();
   await expect(body.locator('.follow-run.client')).toHaveCount(0);
   await page.getByRole('group', { name: 'Format' }).getByRole('button', { name: 'Hex' }).click();
@@ -860,6 +973,9 @@ test('Follow stream: text and hex, directions distinguished, captured HTML inert
   await page.getByRole('button', { name: 'Follow stream' }).click();
   await expect(page.getByText('Showing part of the stream.')).toBeVisible();
   await expect(page.getByRole('region', { name: 'Stream content' })).toContainText('line 00000 of the large');
+  await page.getByLabel('Find', { exact: true }).fill('line 11999 of the large follow-stream fixture body');
+  await expect(page.locator('.follow-search [role="status"]')).toHaveText('No matches in the displayed runs.');
+  await expect(page.getByText('Searching displayed data only; unshown stream bytes are not searched.')).toBeVisible();
   const big = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Save raw' }).click();
   const bd = await big;

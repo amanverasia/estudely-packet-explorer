@@ -1,18 +1,27 @@
 // Copyright (C) 2026 Estudely and contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Host } from '../../engine/types';
 import { DataTable, type Column } from '../components/DataTable';
 import { LocalIpDataPanel } from '../components/LocalIpData';
 import { Note, Panel, Seg, ViewHead } from '../components/bits';
-import { useApp } from '../context';
+import { useApp, useViewState } from '../context';
 import { absTime, bytes, num, plural } from '../format';
 import { lookupLocalIp, type LocalIpDataKind, type LocalIpDatabase, type LocalIpMatch } from '../localIpData';
 
 export function Hosts() {
-  const { model, params, go, openDrawer, filter, setHostFilter } = useApp();
-  const [family, setFamily] = useState<'all' | '4' | '6'>('all');
-  const [selected, setSelected] = useState<string | null>(params.get('host'));
+  const { model, sourceModel, params, go, openDrawer, filter, setHostFilter } = useApp();
+  const [family, setFamily] = useViewState<'all' | '4' | '6'>('hosts.family', 'all', (value): value is 'all' | '4' | '6' => value === 'all' || value === '4' || value === '6');
+  const [selected, setSelected] = useViewState<string | null>('hosts.selected', null, (value): value is string | null => value === null || typeof value === 'string');
+  const lastRouteHost = useRef<string | null>(null);
+  useEffect(() => {
+    if (!params.has('host')) { lastRouteHost.current = null; return; }
+    const requested = params.get('host') || '';
+    if (requested !== lastRouteHost.current) {
+      lastRouteHost.current = requested;
+      setSelected(requested && sourceModel.hosts.some((h) => h.addr === requested) ? requested : null);
+    }
+  }, [params, sourceModel.hosts, setSelected]);
   const [databases, setDatabases] = useState<Record<LocalIpDataKind, LocalIpDatabase | null>>({ country: null, asn: null });
   const rows = useMemo(() => model.hosts.filter((h) => family === 'all' || String(h.ipVersion) === family), [model.hosts, family]);
   const host = selected ? model.hosts.find((h) => h.addr === selected) ?? null : null;
@@ -71,7 +80,7 @@ export function Hosts() {
         onFilter={() => setHostFilter(host.addr)} isFiltered={filter.host === host.addr}
         openFrame={(f, title) => openDrawer({ title, frames: [f] })} startEpoch={model.capture.startEpoch} />}
       <section className="panel">
-        <DataTable label="Hosts" exportName="hosts" rows={rows} columns={columns} rowKey={(h) => h.addr} selectedKey={selected}
+        <DataTable stateId="hosts.list" label="Hosts" exportName="hosts" rows={rows} columns={columns} rowKey={(h) => h.addr} selectedKey={selected}
           onRowClick={(h) => setSelected(h.addr)} initialSort={{ key: 'txb', dir: 'desc' }} searchPlaceholder="Search addresses, names, MACs, ports"
           empty={<><strong>No IP hosts.</strong>This capture has no IPv4 or IPv6 packets that Wireshark could decode.</>} />
       </section>

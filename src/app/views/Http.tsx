@@ -1,11 +1,11 @@
 // Copyright (C) 2026 Estudely and contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import type { HttpExchange } from '../../engine/types';
 import { BarList } from '../components/charts';
 import { DataTable, type Column } from '../components/DataTable';
 import { Addr, Fact, FramesLink, Note, Panel, ViewHead } from '../components/bits';
-import { useApp } from '../context';
+import { useApp, useViewState } from '../context';
 import { absTime, duration, endpoint, num, plural } from '../format';
 
 function statusTag(s: number | null) {
@@ -15,8 +15,9 @@ function statusTag(s: number | null) {
 }
 
 export function Http() {
-  const { model, openDrawer, go } = useApp();
-  const [host, setHost] = useState('all');
+  const { model, sourceModel, openDrawer, go } = useApp();
+  const [host, setHost] = useViewState<string>('http.host', 'all', (value): value is string =>
+    value === 'all' || (typeof value === 'string' && sourceModel.http.some((exchange) => (exchange.host ?? '(no Host header)') === value && Boolean(exchange.method))));
   const u = model.unsupported;
   const rows = useMemo(() => (host === 'all' ? model.http : model.http.filter((h) => (h.host ?? '(no Host header)') === host)), [model.http, host]);
   const stats = useMemo(() => {
@@ -36,6 +37,9 @@ export function Http() {
     };
   }, [model.http]);
   const digits = Math.min(6, model.capture.timestampDigits);
+  const hostOptions = host !== 'all' && !stats.hosts.some((item) => item.key === host)
+    ? [...stats.hosts, { key: host, value: 0 }]
+    : stats.hosts;
 
   const open = (h: HttpExchange) => openDrawer({ title: `${h.version ?? 'HTTP'} ${h.method ?? ''} ${h.uri ?? '(response only)'}`.trim(), frames: h.frames, focus: h.requestFrame ?? h.responseFrame ?? undefined, summary: <HttpSummary h={h} /> });
   const columns: Column<HttpExchange>[] = [
@@ -76,7 +80,7 @@ export function Http() {
       <ViewHead title="HTTP" right={
         <select className="select" value={host} onChange={(e) => setHost(e.target.value)} aria-label="Filter by host">
           <option value="all">All hosts</option>
-          {stats.hosts.map((h) => <option key={h.key} value={h.key}>{h.key} ({num(h.value)})</option>)}
+          {hostOptions.map((h) => <option key={h.key} value={h.key}>{h.key} ({num(h.value)})</option>)}
         </select>}>
         Cleartext HTTP/1.x and HTTP/2 requests and responses, reassembled by Wireshark. Wireshark’s request and response frame links are used when available; stream order is the fallback for HTTP/1.x, while HTTP/2 uses its TCP stream and HTTP/2 stream ID.
       </ViewHead>
@@ -98,7 +102,7 @@ export function Http() {
             <Panel title="Status codes" sub="Responses"><BarList items={stats.statuses} limit={8} color="var(--s3)" emptyText="No responses decoded." /></Panel>
           </div>
           <section className="panel">
-            <DataTable label="HTTP messages" exportName="http" rows={rows} columns={columns} rowKey={(h) => h.id} onRowClick={open}
+            <DataTable stateId="http.messages" label="HTTP messages" exportName="http" rows={rows} columns={columns} rowKey={(h) => h.id} onRowClick={open}
               searchPlaceholder="Search hosts, paths, user agents, status" />
           </section>
         </>

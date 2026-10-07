@@ -85,7 +85,7 @@ export function Files() {
         <section className="panel empty"><strong>No files match the shared filters.</strong> Clear the time or host filter to see all exported objects.</section>
       ) : (
         <section className="panel">
-          <DataTable label="Exported files" exportName="exported-files" rows={rows} columns={columns} rowKey={(row) => row.token} searchPlaceholder="Search protocol, host, name or type" />
+          <DataTable stateId="files.exported" label="Exported files" exportName="exported-files" rows={rows} columns={columns} rowKey={(row) => row.token} searchPlaceholder="Search protocol, host, name or type" />
         </section>
       )}
     </>

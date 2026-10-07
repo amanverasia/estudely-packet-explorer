@@ -1,17 +1,17 @@
 // Copyright (C) 2026 Estudely and contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { BarList, Legend, TimeChart, colorMap } from '../components/charts';
 import { DataTable } from '../components/DataTable';
 import { Addr, Fact, Note, Panel, Seg, ViewHead } from '../components/bits';
-import { useApp } from '../context';
+import { useApp, useViewState } from '../context';
 import { absTime, bytes, duration, endpoint, num, pct, plural } from '../format';
 
 export function Overview() {
   const { model, go, filter, stats, setTimeRange, setHostFilter } = useApp();
   const c = model.capture;
-  const [metric, setMetric] = useState<'packets' | 'bytes'>('bytes');
-  const [protoMetric, setProtoMetric] = useState<'packets' | 'bytes'>('packets');
+  const [metric, setMetric] = useViewState<'packets' | 'bytes'>('overview.time.metric', 'bytes', (value): value is 'packets' | 'bytes' => value === 'packets' || value === 'bytes');
+  const [protoMetric, setProtoMetric] = useViewState<'packets' | 'bytes'>('overview.protocol.metric', 'packets', (value): value is 'packets' | 'bytes' => value === 'packets' || value === 'bytes');
   const keys = model.timeline.series.filter((s) => s.key !== 'All').map((s) => s.key);
   const colors = useMemo(() => colorMap(keys), [keys.join('|')]); // eslint-disable-line react-hooks/exhaustive-deps
   const end = c.startEpoch ? absTime(c.startEpoch, model.timeline.origin + c.duration, Math.min(c.timestampDigits, 6)) : null;
@@ -93,7 +93,7 @@ export function Overview() {
         <BarList items={convItems} format={bytes} limit={8} onSelect={(id) => go('connections', { conv: id })} />
       </Panel>
       <Panel title="Protocol hierarchy" sub={`Packets containing each protocol at any layer; a packet counts once per protocol${filter.start !== null || filter.host ? ' · whole-capture totals' : ''}`} flush>
-        <DataTable label="Protocol hierarchy" exportName="protocol-hierarchy" rows={model.protocolHierarchy} rowKey={(r) => r.proto} height={360}
+        <DataTable stateId="overview.protocol-hierarchy" label="Protocol hierarchy" exportName="protocol-hierarchy" rows={model.protocolHierarchy} rowKey={(r) => r.proto} height={360}
           initialSort={{ key: 'packets', dir: 'desc' }}
           columns={[
             { key: 'proto', header: 'Protocol', width: 'minmax(160px, 2fr)', value: (r) => r.proto },
@@ -110,8 +110,8 @@ function TimeFilterControls() {
   const { model, filter, setTimeRange, setHostFilter, clearFilters } = useApp();
   const min = model.timeline.origin;
   const max = model.timeline.end;
-  const [start, setStart] = useState(String(filter.start ?? min));
-  const [end, setEnd] = useState(String(filter.end ?? max));
+  const [start, setStart] = useViewState<string>('overview.time.start', String(filter.start ?? min), (value): value is string => typeof value === 'string');
+  const [end, setEnd] = useViewState<string>('overview.time.end', String(filter.end ?? max), (value): value is string => typeof value === 'string');
   useEffect(() => {
     setStart(String(filter.start ?? min));
     setEnd(String(filter.end ?? max));

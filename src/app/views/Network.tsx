@@ -6,7 +6,7 @@ import { zoom, zoomIdentity } from 'd3-zoom';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Legend, colorMap } from '../components/charts';
 import { Panel, ViewHead } from '../components/bits';
-import { useApp } from '../context';
+import { useApp, useViewState } from '../context';
 import { placeLabels, type LabelPlacement } from '../labels';
 import { bytes, num, plural } from '../format';
 
@@ -16,20 +16,35 @@ interface GEdge extends SimulationLinkDatum<GNode> { key: string; a: string; b: 
 const OTHER_NODE = 'Other hosts';
 
 export function Network() {
-  const { model, params, go, nameOf, filter } = useApp();
-  const [proto, setProto] = useState('all');
-  const [focus, setFocus] = useState<string>(params.get('host') ?? '');
-  const [limit, setLimit] = useState(60);
-  const [sel, setSel] = useState<{ kind: 'node'; id: string } | { kind: 'edge'; key: string } | null>(params.get('host') ? { kind: 'node', id: params.get('host')! } : null);
+  const { model, sourceModel, params, go, nameOf, filter } = useApp();
+  const [proto, setProto] = useViewState<string>('network.protocol', 'all', (value): value is string =>
+    value === 'all' || (typeof value === 'string' && sourceModel.conversations.some((conversation) => conversation.transport !== 'Non-IP' && conversation.appProtocol === value)));
+  const [focus, setFocus] = useViewState<string>('network.focus', '', (value): value is string => typeof value === 'string');
+  const [limit, setLimit] = useViewState<number>('network.limit', 60, (value): value is number => value === 20 || value === 40 || value === 60 || value === 100 || value === 150 || value === 250);
+  const [sel, setSel] = useViewState<{ kind: 'node'; id: string } | { kind: 'edge'; key: string } | null>('network.selection', null,
+    (value): value is { kind: 'node'; id: string } | { kind: 'edge'; key: string } | null => value === null || (typeof value === 'object' && value !== null &&
+      ((value as { kind?: unknown }).kind === 'node' && typeof (value as { id?: unknown }).id === 'string' ||
+       (value as { kind?: unknown }).kind === 'edge' && typeof (value as { key?: unknown }).key === 'string')));
+  const lastRouteHost = useRef<string | null>(null);
+  useEffect(() => {
+    if (!params.has('host')) { lastRouteHost.current = null; return; }
+    const requested = params.get('host') || '';
+    if (requested !== lastRouteHost.current) {
+      lastRouteHost.current = requested;
+      const host = requested && sourceModel.hosts.some((h) => h.addr === requested) ? requested : '';
+      setFocus(host);
+      setSel(host ? { kind: 'node', id: host } : null);
+    }
+  }, [params, sourceModel.hosts, setFocus, setSel]);
   const svgRef = useRef<SVGSVGElement>(null);
   const gRef = useRef<SVGGElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   const protoOptions = useMemo(() => {
     const m = new Map<string, number>();
-    for (const c of model.conversations) if (c.transport !== 'Non-IP') m.set(c.appProtocol, (m.get(c.appProtocol) ?? 0) + c.bytesAB + c.bytesBA);
+    for (const c of sourceModel.conversations) if (c.transport !== 'Non-IP') m.set(c.appProtocol, (m.get(c.appProtocol) ?? 0) + c.bytesAB + c.bytesBA);
     return [...m.entries()].sort((a, b) => b[1] - a[1]).map((e) => e[0]);
-  }, [model.conversations]);
+  }, [sourceModel.conversations]);
   const colors = useMemo(() => colorMap([...protoOptions.slice(0, 7), 'Other']), [protoOptions]);
   const colorOf = (p: string) => colors.get(p) ?? colors.get('Other')!;
 

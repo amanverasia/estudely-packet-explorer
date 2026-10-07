@@ -8,7 +8,7 @@ import { Drawer } from './components/Drawer';
 import { OfflineStatus, UpdateBanner } from './components/Offline';
 import { ThemeButton, type Theme } from './components/ThemeButton';
 import { ComparePage } from './Compare';
-import { Ctx, type AppCtx, type DrawerSpec } from './context';
+import { Ctx, ViewStateCtx, type AppCtx, type DrawerSpec, type ViewStateStore } from './context';
 import { applySharedFilter, type SharedFilter } from './filtering';
 import { downloadBlob, safeBase } from './download';
 import { JsonExport } from './components/JsonExport';
@@ -57,12 +57,58 @@ export function App() {
   const [theme, setTheme] = useState<Theme>(loadTheme);
   const [compareMode, setCompareMode] = useState(false);
   const [compareSeed, setCompareSeed] = useState<AnalysisModel | null>(null);
+  const [captureSession, setCaptureSession] = useState(0);
+  const captureSessionRef = useRef(0);
+  const captureAttempted = useRef(false);
+  const lastRouteEventKey = useRef('');
+  const viewStateRef = useRef(new Map<string, unknown>());
+  const viewState = useMemo<ViewStateStore>(() => ({
+    get: (key) => viewStateRef.current.get(key),
+    set: (key, value) => { viewStateRef.current.set(key, value); },
+  }), []);
+  const setHistoryCaptureSession = useCallback((session: number, hash?: string) => {
+    const oldState = history.state;
+    const stateObject = oldState && typeof oldState === 'object' ? oldState as Record<string, unknown> : {};
+    const nextState = { ...stateObject, __epxCaptureSession: session };
+    const url = hash === undefined ? location.href : `${location.pathname}${location.search}${hash}`;
+    history.replaceState(nextState, '', url);
+    lastRouteEventKey.current = `${location.href}\u0000${session}`;
+  }, []);
+  const replaceRoute = useCallback((hash: string, session: number) => {
+    setHistoryCaptureSession(session, hash);
+    setRoute(parseHash());
+  }, [setHistoryCaptureSession]);
+  const resetViewState = useCallback(() => {
+    viewStateRef.current.clear();
+    const next = captureSessionRef.current + 1;
+    captureSessionRef.current = next;
+    setCaptureSession(next);
+    return next;
+  }, []);
 
   useEffect(() => {
-    const on = () => setRoute(parseHash());
+    const on = () => {
+      const state = history.state;
+      const taggedSession = state && typeof state === 'object' ? (state as Record<string, unknown>).__epxCaptureSession : undefined;
+      const eventKey = `${location.href}\u0000${String(taggedSession)}`;
+      if (eventKey === lastRouteEventKey.current) return;
+      lastRouteEventKey.current = eventKey;
+      if (captureAttempted.current && typeof taggedSession === 'number' && taggedSession !== captureSessionRef.current) {
+        // Back/Forward can reach an entry from the previous capture. Replace its
+        // stale capture-specific route before that state is applied to this one.
+        replaceRoute('#/overview', captureSessionRef.current);
+        return;
+      }
+      if (captureAttempted.current && taggedSession !== captureSessionRef.current) setHistoryCaptureSession(captureSessionRef.current);
+      setRoute(parseHash());
+    };
     window.addEventListener('hashchange', on);
-    return () => window.removeEventListener('hashchange', on);
-  }, []);
+    window.addEventListener('popstate', on);
+    return () => {
+      window.removeEventListener('hashchange', on);
+      window.removeEventListener('popstate', on);
+    };
+  }, [replaceRoute, setHistoryCaptureSession]);
   useEffect(() => {
     if (theme === 'system') document.documentElement.removeAttribute('data-theme');
     else document.documentElement.setAttribute('data-theme', theme);
@@ -71,17 +117,27 @@ export function App() {
   useEffect(() => () => engine.close(), [engine]);
 
   const openFile = useCallback((file: File, keyLog?: File | null) => {
+    const replacingCapture = captureAttempted.current;
+    captureAttempted.current = true;
+    const session = resetViewState();
+    if (replacingCapture) replaceRoute('#/overview', session);
+    else setHistoryCaptureSession(session);
     setDrawer(null);
     engine.open(file, keyLog);
-  }, [engine]);
+  }, [engine, replaceRoute, resetViewState, setHistoryCaptureSession]);
 
   const enterCompare = useCallback((seed: AnalysisModel | null) => {
+    const hadCapture = captureAttempted.current;
+    captureAttempted.current = true;
+    const session = resetViewState();
+    if (hadCapture && seed) replaceRoute('#/overview', session);
+    else setHistoryCaptureSession(session);
     engine.close();
     setState({ kind: 'idle' });
     setDrawer(null);
     setCompareSeed(seed);
     setCompareMode(true);
-  }, [engine]);
+  }, [engine, replaceRoute, resetViewState, setHistoryCaptureSession]);
   const leaveCompare = useCallback(() => {
     setCompareMode(false);
     setCompareSeed(null);
@@ -106,6 +162,13 @@ export function App() {
       if (value !== null) next.set(key, value);
     }
     for (const [key, value] of Object.entries(params ?? {})) next.set(key, value);
+    if (view === 'packets' && !Object.prototype.hasOwnProperty.call(params ?? {}, 'filter')) {
+      const savedFilter = viewStateRef.current.get('packets.filter.applied');
+      if (typeof savedFilter === 'string') {
+        next.set('filter', savedFilter);
+        viewStateRef.current.set('packets.filter.routeRestore', savedFilter);
+      }
+    }
     const q = next.toString();
     location.hash = `#/${view}${q ? `?${q}` : ''}`;
   }, []);
@@ -116,11 +179,12 @@ export function App() {
       {compareMode ? (
         <ComparePage seed={compareSeed} onClearSeed={clearCompareSeed} onClose={leaveCompare} theme={theme} setTheme={setTheme} />
       ) : model ? (
-        <Workspace model={model} engine={engine} view={route.view} params={route.params} go={go} openDrawer={setDrawer}
+        <Workspace key={captureSession} model={model} engine={engine} view={route.view} params={route.params} go={go} openDrawer={setDrawer}
           patchRouteParams={patchRouteParams}
-          onOpen={openFile} onClose={() => { engine.cancel(); setDrawer(null); }} onCompare={() => enterCompare(model)} theme={theme} setTheme={setTheme} drawer={drawer} closeDrawer={() => setDrawer(null)} />
+          onOpen={openFile} onClose={() => { captureAttempted.current = true; const session = resetViewState(); replaceRoute('#/overview', session); engine.cancel(); setDrawer(null); }} onCompare={() => enterCompare(model)} theme={theme} setTheme={setTheme} drawer={drawer} closeDrawer={() => setDrawer(null)}
+          viewState={viewState} captureSession={captureSession} />
       ) : (
-        <Landing state={state} onOpen={openFile} onCancel={() => engine.cancel()} onCompare={() => enterCompare(null)} theme={theme} setTheme={setTheme} />
+        <Landing state={state} onOpen={openFile} onCancel={() => { resetViewState(); engine.cancel(); }} onCompare={() => enterCompare(null)} theme={theme} setTheme={setTheme} />
       )}
       <UpdateBanner captureOpen={state.kind !== 'idle' && state.kind !== 'error'} />
     </>
@@ -289,6 +353,7 @@ function Landing({ state, onOpen, onCancel, onCompare, theme, setTheme }: { stat
 function Workspace(props: {
   model: AnalysisModel; engine: EngineClient; view: View; params: URLSearchParams; go: AppCtx['go']; patchRouteParams: (p: Record<string, string | null>) => void; openDrawer: (d: DrawerSpec) => void;
   onOpen: (f: File, keyLog?: File | null) => void; onClose: () => void; onCompare: () => void; theme: Theme; setTheme: (t: Theme) => void; drawer: DrawerSpec | null; closeDrawer: () => void;
+  viewState: ViewStateStore; captureSession: number;
 }) {
   const { model: sourceModel, view } = props;
   const c = sourceModel.capture;
@@ -324,9 +389,9 @@ function Workspace(props: {
     return m;
   }, [sourceModel.hosts]);
   const ctx: AppCtx = useMemo(() => ({
-    model, engine: props.engine, openDrawer: props.openDrawer, go: props.go, params: props.params, nameOf: (a: string) => names.get(a) ?? null,
+    model, sourceModel, engine: props.engine, openDrawer: props.openDrawer, go: props.go, patchRouteParams: props.patchRouteParams, params: props.params, nameOf: (a: string) => names.get(a) ?? null,
     filter, stats, setHostFilter, setTimeRange, clearTimeRange, clearFilters,
-  }), [model, props.engine, props.openDrawer, props.go, props.params, names, filter, stats, setHostFilter, setTimeRange, clearTimeRange, clearFilters]);
+  }), [model, sourceModel, props.engine, props.openDrawer, props.go, props.patchRouteParams, props.params, names, filter, stats, setHostFilter, setTimeRange, clearTimeRange, clearFilters]);
 
   useEffect(() => { document.title = `${c.fileName} — Estudely Packet Explorer`; return () => { document.title = 'Estudely Packet Explorer'; }; }, [c.fileName]);
   useEffect(() => { document.querySelector('.main')?.scrollTo?.(0, 0); window.scrollTo(0, 0); }, [view]);
@@ -348,14 +413,14 @@ function Workspace(props: {
   ];
   let body: ReactNode;
   switch (view) {
-    case 'dns': body = <Dns key={props.params.toString()} />; break;
+    case 'dns': body = <Dns />; break;
     case 'http': body = <Http />; break;
     case 'files': body = <Files />; break;
     case 'tls': body = <Tls />; break;
-    case 'hosts': body = <Hosts key={props.params.toString()} />; break;
-    case 'connections': body = <Connections key={props.params.toString()} />; break;
+    case 'hosts': body = <Hosts />; break;
+    case 'connections': body = <Connections />; break;
     case 'network': body = <Network />; break;
-    case 'packets': body = <Packets key={props.params.toString()} />; break;
+    case 'packets': body = <Packets captureSession={props.captureSession} />; break;
     case 'dhcp': body = <Dhcp />; break;
     case 'arp': body = <Arp />; break;
     case 'icmp': body = <Icmp />; break;
@@ -364,6 +429,7 @@ function Workspace(props: {
     default: body = <Overview />;
   }
   return (
+    <ViewStateCtx.Provider value={props.viewState}>
     <Ctx.Provider value={ctx}>
       <div className="shell">
         <aside className="sidebar" aria-label="Views">
@@ -434,6 +500,7 @@ function Workspace(props: {
       </div>
       {props.drawer && <Drawer spec={props.drawer} onClose={props.closeDrawer} />}
     </Ctx.Provider>
+    </ViewStateCtx.Provider>
   );
 }
 

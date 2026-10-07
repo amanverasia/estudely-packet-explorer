@@ -59,11 +59,11 @@ export function Arp() {
             <Fact label="With more than one MAC" value={num(stats.multi)} />
           </dl>
           <Panel title="IP-to-MAC mappings" sub="Addresses whose stated MAC changed are listed first" flush>
-            <DataTable label="ARP mappings" exportName="arp-mappings" rows={model.arpBindings} columns={bindingColumns} rowKey={(b) => b.ip}
+            <DataTable stateId="arp.mappings" label="ARP mappings" exportName="arp-mappings" rows={model.arpBindings} columns={bindingColumns} rowKey={(b) => b.ip}
               onRowClick={openBinding} searchPlaceholder="Search addresses and MACs" />
           </Panel>
           <Panel title="ARP messages" sub="Every decoded request and reply" flush>
-            <DataTable label="ARP messages" exportName="arp" rows={model.arp} columns={msgColumns} rowKey={(a) => a.frame} onRowClick={openMsg}
+            <DataTable stateId="arp.messages" label="ARP messages" exportName="arp" rows={model.arp} columns={msgColumns} rowKey={(a) => a.frame} onRowClick={openMsg}
               searchPlaceholder="Search addresses and MACs" />
           </Panel>
         </>

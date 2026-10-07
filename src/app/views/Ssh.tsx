@@ -64,7 +64,7 @@ export function Ssh() {
             <Panel title="Server version strings" sub="Per session"><BarList items={stats.servers} limit={8} color="var(--s7)" emptyText="No server strings captured." /></Panel>
           </div>
           <section className="panel">
-            <DataTable label="SSH sessions" exportName="ssh" rows={model.ssh} columns={columns} rowKey={(s) => s.id} onRowClick={open}
+            <DataTable stateId="ssh.sessions" label="SSH sessions" exportName="ssh" rows={model.ssh} columns={columns} rowKey={(s) => s.id} onRowClick={open}
               searchPlaceholder="Search addresses and version strings" />
           </section>
         </>

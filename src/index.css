@@ -485,6 +485,12 @@ p { margin: 0; }
 .follow { display: grid; gap: 10px; min-width: 0; }
 .follow-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; }
 .follow-tools .seg { flex-wrap: wrap; max-width: 100%; }
+.follow-search { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; }
+.follow-search input { flex: 1 1 220px; min-width: min(220px, 100%); max-width: 420px; }
+.follow-search [role="status"] { flex: 1 1 100%; overflow-wrap: anywhere; }
+.follow-search-help { margin: 0; font-size: 12px; }
+.follow-search-result { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+.follow-search-result .muted { min-width: 0; font-size: 12px; overflow-wrap: anywhere; }
 .follow-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--ink-2); align-items: center; }
 .follow-legend > span { display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
 .follow-swatch.client, .follow-run.client { --dir: var(--s1); }

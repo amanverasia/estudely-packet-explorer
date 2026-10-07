@@ -3,16 +3,17 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Note, ViewHead } from '../components/bits';
-import { useApp } from '../context';
+import { useApp, useViewState } from '../context';
 import { num } from '../format';
 
 const PAGE = 500;
 const ROW = 30;
 
-export function Packets() {
-  const { engine, params, openDrawer, model, filter: sharedFilter } = useApp();
-  const [draft, setDraft] = useState(params.get('filter') ?? '');
-  const [filter, setFilter] = useState(params.get('filter') ?? '');
+export function Packets({ captureSession }: { captureSession: number }) {
+  const { engine, params, patchRouteParams, openDrawer, model, filter: sharedFilter } = useApp();
+  const [draft, setDraft] = useViewState<string>('packets.filter.draft', params.get('filter') ?? '', (value): value is string => typeof value === 'string');
+  const [filter, setFilter] = useViewState<string>('packets.filter.applied', params.get('filter') ?? '', (value): value is string => typeof value === 'string');
+  const [restoredFilter, setRestoredFilter] = useViewState<string | null>('packets.filter.routeRestore', null, (value): value is string | null => value === null || typeof value === 'string');
   const [error, setError] = useState<string | null>(null);
   const [pageErrors, setPageErrors] = useState<Map<number, string>>(() => new Map());
   const [busy, setBusy] = useState(false);
@@ -24,6 +25,14 @@ export function Packets() {
   const [, force] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const gen = useRef(0);
+  const validation = useRef(0);
+  const lastRouteFilter = useRef<string | null>(null);
+  const draftRevision = useRef(0);
+  const routeRef = useRef(params.toString());
+  const sharedRef = useRef('');
+  const sessionRef = useRef(captureSession);
+  routeRef.current = params.toString();
+  sessionRef.current = captureSession;
   const sharedDisplay = useMemo(() => {
     const terms: string[] = [];
     if (sharedFilter.start !== null && sharedFilter.end !== null) {
@@ -32,6 +41,7 @@ export function Packets() {
     if (sharedFilter.host) terms.push(`(${sharedFilter.host.includes(':') ? 'ipv6.addr' : 'ip.addr'} == ${sharedFilter.host})`);
     return terms.join(' && ');
   }, [sharedFilter.start, sharedFilter.end, sharedFilter.host]);
+  sharedRef.current = sharedDisplay;
   const queryFilter = useMemo(() => [filter.trim() ? `(${filter.trim()})` : '', sharedDisplay].filter(Boolean).join(' && '), [filter, sharedDisplay]);
 
   const setPageError = useCallback((p: number, message: string | null) => {
@@ -93,14 +103,64 @@ export function Packets() {
     };
   }, [fetchPage]);
 
-  const apply = async () => {
-    const f = draft.trim();
+  useEffect(() => {
+    if (!params.has('filter')) { lastRouteFilter.current = null; return; }
+    const routeFilter = params.get('filter') ?? '';
+    const routeFilterChanged = lastRouteFilter.current !== routeFilter;
+    lastRouteFilter.current = routeFilter;
+    const wasRestoredByNavigation = restoredFilter === routeFilter;
+    if (wasRestoredByNavigation) setRestoredFilter(null);
+    const routeText = params.toString();
+    const sharedText = sharedDisplay;
+    const session = captureSession;
+    const draftVersion = draftRevision.current;
+    const token = ++validation.current;
+    const composed = [routeFilter.trim() ? `(${routeFilter.trim()})` : '', sharedText].filter(Boolean).join(' && ');
+    let cancelled = false;
+    const loadRouteFilter = async () => {
+      try {
+        if (composed) {
+          const result = await engine.request({ kind: 'checkFilter', filter: composed });
+          if (!result.ok) {
+            if (!cancelled && token === validation.current) setError(`Invalid display filter: ${result.error}`);
+            return;
+          }
+        }
+        if (cancelled || token !== validation.current || routeRef.current !== routeText || sharedRef.current !== sharedText || sessionRef.current !== session) return;
+        setFilter(routeFilter);
+        if (routeFilterChanged && !wasRestoredByNavigation && draftRevision.current === draftVersion) setDraft(routeFilter);
+        setError(null);
+      } catch (e) {
+        if (!cancelled && token === validation.current) setError(e instanceof Error ? e.message : String(e));
+      }
+    };
+    void loadRouteFilter();
+    return () => { cancelled = true; };
+  }, [params, sharedDisplay, captureSession, engine, restoredFilter, setFilter, setDraft, setRestoredFilter]);
+
+  const apply = async (candidate = draft) => {
+    const f = candidate.trim();
     const composed = [f ? `(${f})` : '', sharedDisplay].filter(Boolean).join(' && ');
-    if (composed) {
-      const r = await engine.request({ kind: 'checkFilter', filter: composed });
-      if (!r.ok) { setError(`Invalid display filter: ${r.error}`); return; }
+    const routeText = params.toString();
+    const sharedText = sharedDisplay;
+    const session = captureSession;
+    const draftVersion = draftRevision.current;
+    const token = ++validation.current;
+    try {
+      if (composed) {
+        const result = await engine.request({ kind: 'checkFilter', filter: composed });
+        if (token !== validation.current || draftRevision.current !== draftVersion || routeRef.current !== routeText || sharedRef.current !== sharedText || sessionRef.current !== session) return;
+        if (!result.ok) { setError(`Invalid display filter: ${result.error}`); return; }
+      }
+    } catch (e) {
+      if (token === validation.current && draftRevision.current === draftVersion && routeRef.current === routeText && sharedRef.current === sharedText && sessionRef.current === session) setError(e instanceof Error ? e.message : String(e));
+      return;
     }
+    if (token !== validation.current || draftRevision.current !== draftVersion || routeRef.current !== routeText || sharedRef.current !== sharedText || sessionRef.current !== session) return;
     setFilter(f);
+    setDraft(f);
+    setError(null);
+    patchRouteParams({ filter: f });
   };
 
   const virt = useVirtualizer({ count: matched ?? 0, getScrollElement: () => scrollRef.current, estimateSize: () => ROW, overscan: 20 });
@@ -123,9 +183,9 @@ export function Packets() {
       {sharedDisplay && <Note>Shared time and host filters are combined with the Wireshark display filter for this list.</Note>}
       <section className="panel">
         <form className="dt-tools" onSubmit={(e) => { e.preventDefault(); void apply(); }}>
-          <input className="input mono" style={{ maxWidth: 520 }} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Display filter, e.g. dns.flags.rcode != 0 or tcp.stream == 3" aria-label="Wireshark display filter" spellCheck={false} />
+          <input className="input mono" style={{ maxWidth: 520 }} value={draft} onChange={(e) => { draftRevision.current++; validation.current++; setDraft(e.target.value); }} placeholder="Display filter, e.g. dns.flags.rcode != 0 or tcp.stream == 3" aria-label="Wireshark display filter" spellCheck={false} />
           <button className="btn primary" type="submit">Apply</button>
-          {filter && <button className="btn" type="button" onClick={() => { setDraft(''); setFilter(''); }}>Clear</button>}
+          {(filter || draft) && <button className="btn" type="button" onClick={() => { void apply(''); }}>Clear</button>}
           <span className="dt-count">{busy ? 'Filtering…' : matched === null ? '' : `${num(matched)} of ${num(model.capture.packetCount)} packets`}</span>
         </form>
         {error && <div style={{ padding: '10px 16px' }}><Note kind="crit">{error}</Note></div>}
