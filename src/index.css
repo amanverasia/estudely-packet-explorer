@@ -279,6 +279,13 @@ p { margin: 0; }
 .chart-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--ink-2); }
 .chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .chart-wrap { position: relative; }
+.chart-data { margin-top: 10px; font-size: 12px; }
+.chart-data summary { cursor: pointer; color: var(--accent); padding: 4px 0; }
+.chart-data-scroll { max-height: 320px; overflow: auto; margin-top: 6px; }
+.chart-data table { border-collapse: collapse; width: 100%; }
+.chart-data caption { text-align: left; color: var(--ink-2); padding: 4px 8px 8px; }
+.chart-data th, .chart-data td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+.chart-data thead th { background: var(--panel-2); position: sticky; top: 0; }
 .chart-tip {
   position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--rule-strong);
   border-radius: 6px; padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12); z-index: 3; min-width: 160px;

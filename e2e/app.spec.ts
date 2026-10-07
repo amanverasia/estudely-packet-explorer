@@ -280,7 +280,7 @@ test('axe WCAG 2.1 AA audit: start screen, every view and drawer in light and da
         const list = page.locator('.network-list');
         await list.locator('summary').focus();
         await page.keyboard.press('Enter');
-        await expect(list.locator('table')).toBeVisible();
+        await expect(list.getByRole('table', { name: 'Network graph links with endpoints, traffic totals, main protocol, and conversations' })).toBeVisible();
         await auditA11y(page, `network host links list (${theme})`);
         await list.locator('summary').click();
       }

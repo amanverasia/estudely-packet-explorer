@@ -209,7 +209,7 @@ export function Network() {
             </svg>
           )}
           {(selNode || selEdge) && (
-            <div className="graph-side">
+            <div className="graph-side" role="region" aria-label="Selected graph item details" aria-live="polite">
               {selNode && <NodeDetail id={selNode.id} n={selNode} edges={graph.edges} onFocus={() => setFocus(selNode.id === OTHER_NODE ? '' : selNode.id)} go={go} />}
               {selEdge && (
                 <>
@@ -234,6 +234,18 @@ export function Network() {
       <details className="panel network-list">
         <summary>Host links as a list ({num(orderedEdges.length)})</summary>
         <p className="muted">This list follows the graph’s protocol and host filters. Smaller hosts may be grouped under “{OTHER_NODE}”.</p>
+        {graph.nodes.length > 0 && <div className="network-table-wrap">
+          <table className="network-table">
+            <caption>Graph hosts. Inspect a host to access its traffic details, focus and filter actions.</caption>
+            <thead><tr><th scope="col">Host</th><th scope="col">Traffic</th><th scope="col">Packets</th><th scope="col">Action</th></tr></thead>
+            <tbody>{graph.nodes.map((node) => (
+              <tr key={node.id}>
+                <th scope="row">{edgeLabel(node.id)}</th><td>{bytes(node.bytes)}</td><td>{num(node.packets)}</td>
+                <td><button className="btn small" aria-label={`Inspect host ${edgeLabel(node.id)}`} aria-pressed={selNode?.id === node.id} onClick={() => setSel({ kind: 'node', id: node.id })}>Inspect host</button></td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>}
         {orderedEdges.length ? (
           <div className="network-table-wrap">
             <table className="network-table">
@@ -243,7 +255,10 @@ export function Network() {
                 <tr key={e.key}>
                   <th scope="row">{edgeLabel(e.a)} ↔ {edgeLabel(e.b)}</th>
                   <td>{bytes(e.bytes)}</td><td>{num(e.packets)}</td><td>{e.top}</td><td>{num(e.convs.length)}</td>
-                  <td><button className="btn small" aria-label={`View conversations between ${edgeLabel(e.a)} and ${edgeLabel(e.b)}`} onClick={() => openEdge(e)}>{e.convs.length === 1 ? 'View conversation' : 'View conversations'}</button></td>
+                  <td><div className="actions">
+                    <button className="btn small" aria-label={`View conversations between ${edgeLabel(e.a)} and ${edgeLabel(e.b)}`} onClick={() => openEdge(e)}>{e.convs.length === 1 ? 'View conversation' : 'View conversations'}</button>
+                    <button className="btn small" aria-label={`Inspect link between ${edgeLabel(e.a)} and ${edgeLabel(e.b)}`} aria-pressed={selEdge?.key === e.key} onClick={() => setSel({ kind: 'edge', key: e.key })}>Inspect link</button>
+                  </div></td>
                 </tr>
               ))}</tbody>
             </table>

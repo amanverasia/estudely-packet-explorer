@@ -1,0 +1,164 @@
+[
+  {
+    "mode": "before",
+    "baseline": "02d8d0adb86b00ac3d88a3ea12a930a66273fca7",
+    "browser": "153.0.8010.12",
+    "input": {
+      "decodedBytes": 31457256,
+      "compressedBytes": 3100604,
+      "rows": 452052,
+      "ipv4Rows": 361641,
+      "ipv6Rows": 90411,
+      "reversed": false
+    },
+    "initial": {
+      "rss": 464875520,
+      "pss": 187837440
+    },
+    "peak": {
+      "rss": 679415808,
+      "pss": 398740480
+    },
+    "samples": 106,
+    "elapsedMs": 1605.5,
+    "rows": 452052,
+    "numericBytes": 9402696,
+    "values": 64,
+    "longestLabel": 38
+  },
+  {
+    "mode": "after",
+    "baseline": "02d8d0adb86b00ac3d88a3ea12a930a66273fca7",
+    "browser": "153.0.8010.12",
+    "input": {
+      "decodedBytes": 31457256,
+      "compressedBytes": 3100604,
+      "rows": 452052,
+      "ipv4Rows": 361641,
+      "ipv6Rows": 90411,
+      "reversed": false
+    },
+    "initial": {
+      "rss": 464650240,
+      "pss": 187584512
+    },
+    "peak": {
+      "rss": 556818432,
+      "pss": 276062208
+    },
+    "samples": 103,
+    "elapsedMs": 1367.8999999985099,
+    "rows": 452052,
+    "numericBytes": 9402696,
+    "values": 64,
+    "longestLabel": 38
+  },
+  {
+    "mode": "before",
+    "baseline": "02d8d0adb86b00ac3d88a3ea12a930a66273fca7",
+    "browser": "153.0.8010.12",
+    "input": {
+      "decodedBytes": 156237785,
+      "compressedBytes": 15162553,
+      "rows": 2202899,
+      "ipv4Rows": 1762319,
+      "ipv6Rows": 440580,
+      "reversed": false
+    },
+    "initial": {
+      "rss": 464945152,
+      "pss": 187229184
+    },
+    "peak": {
+      "rss": 1237557248,
+      "pss": 956527616
+    },
+    "samples": 445,
+    "elapsedMs": 7824.89999999851,
+    "rows": 2202899,
+    "numericBytes": 45820304,
+    "values": 64,
+    "longestLabel": 38
+  },
+  {
+    "mode": "after",
+    "baseline": "02d8d0adb86b00ac3d88a3ea12a930a66273fca7",
+    "browser": "153.0.8010.12",
+    "input": {
+      "decodedBytes": 156237785,
+      "compressedBytes": 15162553,
+      "rows": 2202899,
+      "ipv4Rows": 1762319,
+      "ipv6Rows": 440580,
+      "reversed": false
+    },
+    "initial": {
+      "rss": 465010688,
+      "pss": 188019712
+    },
+    "peak": {
+      "rss": 702492672,
+      "pss": 420552704
+    },
+    "samples": 385,
+    "elapsedMs": 5794.89999999851,
+    "rows": 2202899,
+    "numericBytes": 45820304,
+    "values": 64,
+    "longestLabel": 38
+  },
+  {
+    "mode": "before",
+    "baseline": "02d8d0adb86b00ac3d88a3ea12a930a66273fca7",
+    "browser": "153.0.8010.12",
+    "input": {
+      "decodedBytes": 31457262,
+      "compressedBytes": 2962898,
+      "rows": 439098,
+      "ipv4Rows": 351278,
+      "ipv6Rows": 87820,
+      "reversed": true
+    },
+    "initial": {
+      "rss": 463413248,
+      "pss": 188416000
+    },
+    "peak": {
+      "rss": 655781888,
+      "pss": 377505792
+    },
+    "samples": 112,
+    "elapsedMs": 1710.8999999985099,
+    "rows": 439098,
+    "numericBytes": 9133248,
+    "values": 64,
+    "longestLabel": 38
+  },
+  {
+    "mode": "after",
+    "baseline": "02d8d0adb86b00ac3d88a3ea12a930a66273fca7",
+    "browser": "153.0.8010.12",
+    "input": {
+      "decodedBytes": 31457262,
+      "compressedBytes": 2962898,
+      "rows": 439098,
+      "ipv4Rows": 351278,
+      "ipv6Rows": 87820,
+      "reversed": true
+    },
+    "initial": {
+      "rss": 466313216,
+      "pss": 188089344
+    },
+    "peak": {
+      "rss": 557170688,
+      "pss": 275469312
+    },
+    "samples": 137,
+    "elapsedMs": 1588.0999999940395,
+    "rows": 439098,
+    "numericBytes": 9133248,
+    "values": 64,
+    "longestLabel": 38
+  }
+]

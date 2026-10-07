@@ -6,8 +6,8 @@ import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from '
 import type { Conversation, FollowStream as FollowData } from '../../engine/types';
 import { downloadBlob, safeBase } from '../download';
 import {
-  directionBytes, findFollowByteMatches, findFollowTextMatches, FOLLOW_SAVE_BYTES, FOLLOW_SEARCH_MATCH_LIMIT,
-  FOLLOW_VIEW_BYTES, FOLLOW_VIEW_SEGMENTS, followRuns, hexDump, joinRuns, mappedPayloadText, parseHexQuery, payloadText,
+  directionBytes, findFollowByteMatches, findFollowTextMatches, FOLLOW_SAVE_BYTES, FOLLOW_SAVE_SEGMENTS, FOLLOW_SEARCH_MATCH_LIMIT,
+  FOLLOW_VIEW_BYTES, FOLLOW_VIEW_SEGMENTS, followRuns, followSaveData, hexDump, mappedPayloadText, parseHexQuery, payloadText,
   type FollowDirection, type FollowRun, type FollowSearchMatch,
 } from '../follow';
 import { useApp } from '../context';
@@ -225,12 +225,14 @@ export function FollowStream({ c }: { c: Conversation }) {
     setSaving('Preparing…');
     try {
       // Saving reassembles again with the larger cap, so the file is not limited to what is shown.
-      const full = await engine.request({ kind: 'follow', transport, stream, maxBytes: FOLLOW_SAVE_BYTES, maxSegments: Infinity });
-      const out = joinRuns(followRuns(full, dir));
+      const full = await engine.request({ kind: 'follow', transport, stream, maxBytes: FOLLOW_SAVE_BYTES, maxSegments: FOLLOW_SAVE_SEGMENTS });
+      const out = followSaveData(full, dir);
       downloadBlob(fileName, new Blob([out], { type: 'application/octet-stream' }));
       // The cap counts both directions, so compare what was written with the selected directions' total.
       const wanted = directionBytes(full, dir);
-      setSaving(out.length < wanted ? `Saved the first ${bytes(out.length)} of ${bytes(wanted)}.` : null);
+      setSaving(out.length < wanted
+        ? `Saved the first ${bytes(out.length)} of ${bytes(wanted)}. The combined stream reached the byte or segment save limit.`
+        : full.truncated ? 'Saved all selected-direction bytes. The combined stream reached the byte or segment save limit.' : null);
     } catch (e) {
       setSaving(`Could not save: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -305,7 +307,7 @@ export function FollowStream({ c }: { c: Conversation }) {
       </div>
       {data.truncated && (
         <Note kind="warn">
-          <b>Showing part of the stream.</b> The view is limited to the first {bytes(FOLLOW_VIEW_BYTES)} and {num(FOLLOW_VIEW_SEGMENTS)} segments; it shows {bytes(shownBytes)} in {num(data.segments.length)} of {num(data.totalSegments)} segments. "Save raw" writes up to {bytes(FOLLOW_SAVE_BYTES)}.
+          <b>Showing part of the stream.</b> The view is limited to the first {bytes(FOLLOW_VIEW_BYTES)} and {num(FOLLOW_VIEW_SEGMENTS)} segments; it shows {bytes(shownBytes)} in {num(data.segments.length)} of {num(data.totalSegments)} segments. "Save raw" writes up to {bytes(FOLLOW_SAVE_BYTES)} and {num(FOLLOW_SAVE_SEGMENTS)} segments across both directions.
         </Note>
       )}
       <div ref={bodyRef} className="follow-body" role="region" aria-label="Stream content" tabIndex={0}>

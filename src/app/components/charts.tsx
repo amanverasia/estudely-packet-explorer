@@ -170,6 +170,22 @@ export function TimeChart({ timeline, metric, height = 220, colors, selection = 
           <div className="row" style={{ borderTop: '1px solid var(--rule)', marginTop: 4, paddingTop: 4 }}><span>Total</span><b className="num">{metric === 'packets' ? num(values[hover]) : bytes(values[hover])}</b></div>
         </div>
       )}
+      <details className="chart-data">
+        <summary>Traffic over time as a table</summary>
+        <div className="chart-data-scroll" tabIndex={0} role="region" aria-label="Traffic over time data">
+          <table>
+            <caption>{metric === 'packets' ? 'Packets' : 'Bytes on wire'} per interval, by protocol. Times are seconds relative to the first packet.</caption>
+            <thead><tr><th scope="col">Interval (s)</th>{series.map((s) => <th scope="col" key={s.key}>{s.key}</th>)}<th scope="col">Total</th></tr></thead>
+            <tbody>{Array.from({ length: n }, (_, i) => (
+              <tr key={i}>
+                <th scope="row">{timeline.origin + i * timeline.binSeconds} – {Math.min(timeline.end, timeline.origin + (i + 1) * timeline.binSeconds)}</th>
+                {series.map((s) => <td key={s.key}>{num((metric === 'packets' ? s.packets : s.bytes)[i])}</td>)}
+                <td>{num(values[i])}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      </details>
     </div>
   );
 }
@@ -234,7 +250,7 @@ export function BarList({ items, total, format = num, onSelect, limit = 10, colo
         <div key={i.key} className={`barlist-row${onSelect ? ' clickable' : ''}`}
           onClick={onSelect ? () => onSelect(i.key) : undefined}
           role={onSelect ? 'button' : undefined} tabIndex={onSelect ? 0 : undefined}
-          onKeyDown={onSelect ? (e) => { if (e.key === 'Enter') onSelect(i.key); } : undefined}
+          onKeyDown={onSelect ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(i.key); } } : undefined}
           title={i.detail}>
           <span className="label">{i.label ?? i.key}</span>
           <span className="val">{format(i.value)} <span className="muted">{pct(i.value, sum)}</span></span>
@@ -256,6 +272,12 @@ export function FlowChart({ links, leftLabel, rightLabel, onPick }: {
 }) {
   const [ref, width] = useWidth<HTMLDivElement>();
   const [hover, setHover] = useState<string | null>(null);
+  const [dataOpen, setDataOpen] = useState(false);
+  const [dataPage, setDataPage] = useState(0);
+  const pageSize = 50;
+  const pageCount = Math.ceil(links.length / pageSize);
+  const page = Math.max(0, Math.min(dataPage, pageCount - 1));
+  const pageLinks = dataOpen ? links.slice(page * pageSize, (page + 1) * pageSize) : [];
   const MAXN = 14;
   const lefts = useMemo(() => rank(links.map((l) => [l.left, l.value])), [links]);
   const rights = useMemo(() => rank(links.map((l) => [l.right, l.value])), [links]);
@@ -310,6 +332,28 @@ export function FlowChart({ links, leftLabel, rightLabel, onPick }: {
           ))}
         </svg>
       )}
+      <details className="chart-data" onToggle={(event) => setDataOpen(event.currentTarget.open)}>
+        <summary>{leftLabel} to {rightLabel.toLowerCase()} relationships as a table</summary>
+        {dataOpen && <>
+        <div className="actions" role="group" aria-label="Relationship data pages">
+          <button className="btn small" disabled={page === 0} onClick={() => setDataPage(page - 1)}>Previous relationships</button>
+          <button className="btn small" disabled={page >= pageCount - 1} onClick={() => setDataPage(page + 1)}>Next relationships</button>
+          <span role="status">Showing {num(page * pageSize + 1)}–{num(Math.min((page + 1) * pageSize, links.length))} of {num(links.length)} relationships</span>
+        </div>
+        <div className="chart-data-scroll" tabIndex={0} role="region" aria-label={`${leftLabel} to ${rightLabel.toLowerCase()} data`}>
+          <table>
+            <caption>All query relationships, including endpoints grouped in the chart.</caption>
+            <thead><tr><th scope="col">{leftLabel}</th><th scope="col">{rightLabel}</th><th scope="col">Queries</th>{onPick && <th scope="col">Action</th>}</tr></thead>
+            <tbody>{pageLinks.map((link) => (
+              <tr key={link.left + '\u0000' + link.right}>
+                <th scope="row">{link.left}</th><td>{link.right}</td><td>{num(link.value)}</td>
+                {onPick && <td><button className="btn small" onClick={() => onPick(link.left, link.right)} aria-label={`Select ${link.left} to ${link.right}`}>Select pair</button></td>}
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+        </>}
+      </details>
     </div>
   );
 }
