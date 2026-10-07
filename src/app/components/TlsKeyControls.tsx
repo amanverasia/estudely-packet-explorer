@@ -30,7 +30,7 @@ export function TlsKeyControls({ activeKeyLog, model, onApplyKeys, onRemoveKeys 
   }}>
     <summary className="btn" title={`TLS keys · ${summary}`}><span>TLS keys</span><span className="capture-action-value">{summary}</span></summary>
     <div className="capture-action-panel">
-      <button className="btn" onClick={() => ref.current?.click()}>Choose TLS key log (optional)</button>
+      <button type="button" className="menu-row" onClick={() => ref.current?.click()}>Choose TLS key log (optional)</button>
       <input ref={ref} type="file" hidden accept=".keys,.txt,text/plain" aria-label="Choose current capture TLS key log" onChange={(event) => { setStaged(event.target.files?.[0] ?? null); event.target.value = ''; if (disclosure.current) disclosure.current.open = true; }} />
       {staged && <div role="status">Staged: {staged.name} · results unchanged <button className="btn small" onClick={() => onApplyKeys(staged)}>Apply keys to current capture</button><button className="btn small ghost" onClick={() => setStaged(null)}>Discard staged keys</button></div>}
       {activeKeyLog ? <div role="status">Active key log: {activeKeyLog.name} · {decrypted} sessions decrypted{decrypted === 0 ? ' · no matching decrypted sessions' : ''} <button className="btn small" onClick={onRemoveKeys}>Remove active keys</button></div> : <span className="muted">No active key log</span>}

@@ -119,10 +119,11 @@ order and all exportable columns, including columns hidden on screen.
 The compact capture toolbar contains filename/counts, Export, Capture actions, Theme,
 Help, a labelled traffic/time strip, TLS key status and removable shared-filter chips.
 Capture actions, Help, Export and TLS keys dismiss from their trigger, Escape, or a
-pointer outside the panel, and focus returns to the trigger. Close capture is the
-action that leaves the investigation; opening another capture is the action that
-clears it and its TLS keys.
-It scrolls with the page so it cannot cover focused table controls or packet drawers.
+pointer outside the panel, and focus returns to the trigger. Capture actions is a
+short menu: Open another carries the note that replacement clears the investigation
+and its TLS keys, Compare captures is a separate row, and Close capture sits below
+a divider as the action that leaves the investigation.
+The toolbar scrolls with the page so it cannot cover focused table controls or packet drawers.
 Help exposes the full filename, local-processing statement and licence limitations.
 
 Navigation groups Overview, Hosts, Connections, Network and Packet list under

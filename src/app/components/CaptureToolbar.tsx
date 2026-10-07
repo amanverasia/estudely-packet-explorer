@@ -43,10 +43,11 @@ export function CaptureToolbar({ fileName, facts, exports, keys, timeline, filte
           if (event.key === 'Escape') { event.preventDefault(); dismiss(actions.current); }
         }}>
           <summary className="btn">Capture actions</summary>
-          <div className="capture-action-panel">
-            <button type="button" className="menu-row" onClick={() => action(() => file.current?.click())}>Open another</button>
-            <p className="menu-note">Opening another capture clears this investigation and its TLS keys.</p>
+          <div className="capture-action-panel capture-actions-panel">
+            <button type="button" className="menu-row" aria-describedby="open-another-warning" onClick={() => action(() => file.current?.click())}>Open another</button>
+            <p id="open-another-warning" className="menu-note">Opening another capture clears this investigation and its TLS keys.</p>
             <button type="button" className="menu-row" onClick={() => action(onCompare)}>Compare captures</button>
+            <hr className="menu-rule" />
             <button type="button" className="menu-row danger" onClick={() => action(onClose)}>Close capture</button>
           </div>
         </details>
