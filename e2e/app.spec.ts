@@ -1210,6 +1210,7 @@ test('Hosts can use optional DB-IP CSV indexes locally and keep them for offline
   await page.goto('./');
   await openCapture(page, 'ip-data.pcap');
   await view(page, 'hosts');
+  await page.locator('summary').filter({ hasText: 'Add country/ASN data' }).click();
   const hosts = page.getByRole('grid', { name: 'Hosts' });
   await page.getByLabel('Import Country CSV').setInputFiles({
     name: 'dbip-country-lite-2026-10.csv', mimeType: 'text/csv',

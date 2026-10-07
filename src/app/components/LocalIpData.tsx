@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { LocalIpDataKind, LocalIpDatabase } from '../localIpData';
 import { deleteLocalIpDatabase, readLocalIpDatabase, writeLocalIpDatabase } from '../localIpStorage';
 import { num } from '../format';
-import { Note, Panel } from './bits';
+import { Note } from './bits';
 
 type Databases = Record<LocalIpDataKind, LocalIpDatabase | null>;
 type Progress = Partial<Record<LocalIpDataKind, string>>;
@@ -13,6 +13,7 @@ type Props = { databases: Databases; onChange: (kind: LocalIpDataKind, database:
 export function LocalIpDataPanel({ databases, onChange }: Props) {
   const [progress, setProgress] = useState<Progress>({});
   const [busy, setBusy] = useState<LocalIpDataKind | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const workerRef = useRef<Worker | null>(null);
 
@@ -22,7 +23,7 @@ export function LocalIpDataPanel({ databases, onChange }: Props) {
       if (active) { onChange('country', country); onChange('asn', asn); }
     }).catch((reason: unknown) => {
       if (active) setError(reason instanceof Error ? reason.message : String(reason));
-    });
+    }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; workerRef.current?.terminate(); };
   }, [onChange]);
 
@@ -45,8 +46,8 @@ export function LocalIpDataPanel({ databases, onChange }: Props) {
       }
       worker.terminate();
       workerRef.current = null;
-      setBusy(null);
       if (message.type === 'error' || !message.database) {
+        setBusy(null);
         setError(message.message ?? 'The selected database could not be imported.');
         setProgress((old) => ({ ...old, [kind]: '' }));
         return;
@@ -58,6 +59,8 @@ export function LocalIpDataPanel({ databases, onChange }: Props) {
       } catch (reason) {
         setProgress((old) => ({ ...old, [kind]: '' }));
         setError(reason instanceof Error ? reason.message : String(reason));
+      } finally {
+        setBusy(null);
       }
     };
     worker.onerror = (event) => {
@@ -81,25 +84,36 @@ export function LocalIpDataPanel({ databases, onChange }: Props) {
   };
 
   return (
-    <Panel title="Optional offline IP data" sub="Local DB-IP Lite files">
-      <p style={{ marginTop: 0 }}>
-        Add approximate country and network-owner details using DB-IP Lite CSV files (currently around 30 MB each). Download either file from DB-IP, then import it here; the app compacts the selected file into a range index stored in this browser for offline use. Capture addresses are matched locally and are never sent to DB-IP.
-      </p>
-      <div className="actions" style={{ justifyContent: 'flex-start', flexWrap: 'wrap' }}>
-        <a className="btn small" href="https://db-ip.com/db/download/ip-to-country-lite" target="_blank" rel="noreferrer">Get Country CSV from DB-IP</a>
-        <a className="btn small" href="https://db-ip.com/db/download/ip-to-asn-lite" target="_blank" rel="noreferrer">Get ASN CSV from DB-IP</a>
-        <FileImport kind="country" busy={busy !== null} onFile={(file) => importFile('country', file)} />
-        <FileImport kind="asn" busy={busy !== null} onFile={(file) => importFile('asn', file)} />
-      </div>
-      <dl className="kv" style={{ marginBottom: 0 }}>
-        <DatabaseStatus kind="country" database={databases.country} progress={progress.country} onRemove={() => remove('country')} />
-        <DatabaseStatus kind="asn" database={databases.asn} progress={progress.asn} onRemove={() => remove('asn')} />
-      </dl>
+    <section style={{ marginBottom: 12 }}>
+      <details>
+        <summary>
+          {databases.country || databases.asn ? 'Manage country/ASN data' : 'Add country/ASN data'}
+          <span className="muted" style={{ marginLeft: 8 }}>
+            {loading ? 'Loading saved data…' : busy ? progress[busy] || 'Importing…' : [databases.country && 'Country ready offline', databases.asn && 'ASN ready offline'].filter(Boolean).join(' · ') || 'Optional · local files only'}
+          </span>
+        </summary>
+        <div className="panel-body">
+          <p style={{ marginTop: 0 }}>
+            Add approximate country and network-owner details using DB-IP Lite CSV files. Download either file from DB-IP, then import it here; the app compacts the selected file into a range index stored in this browser for offline use. Capture addresses are matched locally and are never sent to DB-IP.
+          </p>
+          <div className="actions" style={{ justifyContent: 'flex-start', flexWrap: 'wrap' }}>
+            <a className="btn small" href="https://db-ip.com/db/download/ip-to-country-lite" target="_blank" rel="noreferrer">Get Country CSV from DB-IP</a>
+            <a className="btn small" href="https://db-ip.com/db/download/ip-to-asn-lite" target="_blank" rel="noreferrer">Get ASN CSV from DB-IP</a>
+            <FileImport kind="country" busy={busy !== null} onFile={(file) => importFile('country', file)} />
+            <FileImport kind="asn" busy={busy !== null} onFile={(file) => importFile('asn', file)} />
+          </div>
+          <dl className="kv" style={{ marginBottom: 0 }}>
+            <DatabaseStatus kind="country" database={databases.country} progress={progress.country} busy={busy !== null} onRemove={() => remove('country')} />
+            <DatabaseStatus kind="asn" database={databases.asn} progress={progress.asn} busy={busy !== null} onRemove={() => remove('asn')} />
+          </dl>
+          <Note>
+            DB-IP Lite data is updated monthly and can be incomplete or wrong. Country is only an approximate IP registration location; AS ownership is approximate and does not identify a person, device, or the traffic's physical path. <a href="https://db-ip.com" target="_blank" rel="noreferrer">IP Geolocation by DB-IP</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>.
+          </Note>
+        </div>
+      </details>
+      {busy && <p role="status" style={{ margin: '6px 0' }}>{progress[busy] || 'Importing…'}</p>}
       {error && <p className="note crit" role="alert" style={{ marginBottom: 0 }}>{error}</p>}
-      <Note>
-        DB-IP Lite data is updated monthly and can be incomplete or wrong. Country is only an approximate IP registration location; AS ownership is approximate and does not identify a person, device, or the traffic's physical path. <a href="https://db-ip.com" target="_blank" rel="noreferrer">IP Geolocation by DB-IP</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>.
-      </Note>
-    </Panel>
+    </section>
   );
 }
 
@@ -114,7 +128,7 @@ function FileImport({ kind, busy, onFile }: { kind: LocalIpDataKind; busy: boole
   );
 }
 
-function DatabaseStatus({ kind, database, progress, onRemove }: { kind: LocalIpDataKind; database: LocalIpDatabase | null; progress?: string; onRemove: () => void }) {
+function DatabaseStatus({ kind, database, progress, busy, onRemove }: { kind: LocalIpDataKind; database: LocalIpDatabase | null; progress?: string; busy: boolean; onRemove: () => void }) {
   const label = kind === 'country' ? 'Country' : 'ASN';
   return (
     <div style={{ display: 'contents' }}>
@@ -123,7 +137,7 @@ function DatabaseStatus({ kind, database, progress, onRemove }: { kind: LocalIpD
         {progress || (database
           ? `Ready offline${database.release ? ` · release ${database.release}` : ''} · ${num(database.recordCount)} ranges`
           : 'Not installed')}
-        {database && <button className="btn small ghost" style={{ marginLeft: 8 }} onClick={onRemove}>Remove</button>}
+        {database && <button className="btn small ghost" style={{ marginLeft: 8 }} onClick={onRemove} disabled={busy} aria-label={`Remove ${label} data`}>Remove</button>}
       </dd>
     </div>
   );

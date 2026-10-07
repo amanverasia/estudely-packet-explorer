@@ -63,14 +63,11 @@ async function initEngine(base: string, cachedModule: WebAssembly.Module | null,
     wiregasmVersion = (await (await fetch(base + 'manifest.json')).json()).version ?? 'unknown';
   } catch { /* optional */ }
   const { default: loadWiregasm } = await import(/* @vite-ignore */ base + 'wiregasm.mjs');
-  let wasmModule = cachedModule;
-  if (!wasmModule) {
-    const bytes = await fetchBytes(base + 'wiregasm.wasm.gz', 'Wireshark engine');
-    post({ type: 'progress', progress: { phase: 'engine', fraction: null, message: 'Compiling Wireshark engine…' } });
-    wasmModule = await WebAssembly.compile(bytes);
-  }
+  const wasmBytes = cachedModule ? null : await fetchBytes(base + 'wiregasm.wasm.gz', 'Wireshark engine');
   const data = cachedData ?? (await fetchBytes(base + 'wiregasm.data.gz', 'engine data'));
-  post({ type: 'progress', progress: { phase: 'engine', fraction: null, message: 'Starting Wireshark engine…' } });
+  post({ type: 'progress', progress: { phase: 'init', fraction: null, message: cachedModule ? 'Starting Wireshark engine…' : 'Compiling Wireshark engine…' } });
+  const wasmModule = cachedModule ?? await WebAssembly.compile(wasmBytes!);
+  post({ type: 'progress', progress: { phase: 'init', fraction: null, message: 'Starting Wireshark engine…' } });
   const module = wasmModule;
   lib = await loadWiregasm({
     locateFile: (p: string) => base + p,

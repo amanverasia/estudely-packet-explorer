@@ -23,6 +23,7 @@ export function Hosts() {
     }
   }, [params, sourceModel.hosts, setSelected]);
   const [databases, setDatabases] = useState<Record<LocalIpDataKind, LocalIpDatabase | null>>({ country: null, asn: null });
+  const [showIpColumns, setShowIpColumns] = useViewState<boolean>('hosts.ipColumns', false, (value): value is boolean => typeof value === 'boolean');
   const rows = useMemo(() => model.hosts.filter((h) => family === 'all' || String(h.ipVersion) === family), [model.hosts, family]);
   const host = selected ? model.hosts.find((h) => h.addr === selected) ?? null : null;
   const digits = Math.min(6, model.capture.timestampDigits);
@@ -43,11 +44,11 @@ export function Hosts() {
   const columns: Column<Host>[] = [
     { key: 'addr', header: 'Address', width: 'minmax(170px, 1.4fr)', value: (h) => h.addr, render: (h) => <span className="mono">{h.addr}</span> },
     { key: 'scope', header: 'Address range', width: '120px', value: (h) => h.scope },
-    { key: 'country', header: 'Approx. country', width: '140px', value: (h) => {
+    { key: 'country', hidden: !databases.country && !showIpColumns, header: 'Approx. country', width: '140px', value: (h) => {
       const match = ipMatches.get(h.addr)?.country;
       return match?.kind === 'country' ? match.country : '';
     }, title: 'Approximate country from the locally installed DB-IP Lite database' },
-    { key: 'asn', header: 'Approx. network owner', width: 'minmax(180px, 1.4fr)', value: (h) => {
+    { key: 'asn', hidden: !databases.asn && !showIpColumns, header: 'Approx. network owner', width: 'minmax(180px, 1.4fr)', value: (h) => {
       const match = ipMatches.get(h.addr)?.asn;
       return match?.kind === 'asn' ? `AS${match.asn} ${match.organization}` : '';
     }, title: 'Approximate network owner from the locally installed DB-IP Lite database' },
@@ -73,8 +74,11 @@ export function Hosts() {
         One row per IP address seen as a packet source or destination. Bytes are original frame lengths.
       </ViewHead>
       <LocalIpDataPanel databases={databases} onChange={onDatabaseChange} />
-      <Note>Address range labels use reviewed IANA registry snapshots (special-purpose 2025-10-09; IPv6 address space 2025-10-23; IPv4 multicast 2026-08-20). Optional country and network-owner data is matched only for globally reachable addresses; special-purpose prefixes not marked globally reachable are excluded. A subnet broadcast is labelled when the capture shows an IPv4 packet sent to the Ethernet broadcast address.</Note>
-      <Note>Ports listed are those observed in this capture's traffic, with the evidence seen for each. They do not show whether a port is open now, and no operating-system or device identification is attempted.</Note>
+      <details style={{ marginBottom: 12 }}>
+        <summary>About host evidence and address ranges</summary>
+        <Note>Address range labels use reviewed IANA registry snapshots (special-purpose 2025-10-09; IPv6 address space 2025-10-23; IPv4 multicast 2026-08-20). Optional country and network-owner data is matched only for globally reachable addresses; special-purpose prefixes not marked globally reachable are excluded. A subnet broadcast is labelled when the capture shows an IPv4 packet sent to the Ethernet broadcast address.</Note>
+        <Note>Names are observed or inferred from capture evidence; select a host to see their source packets. MAC vendors identify registered address-prefix owners, not devices. Ports listed are observed in this capture, not proof that a port is open now. No operating-system or device identification is attempted.</Note>
+      </details>
       {(filter.start !== null || filter.host) && <Note>Sent/received packet and byte totals are recalculated for the selected traffic. MAC addresses, names, ports, peers, and protocol labels remain whole-capture metadata.</Note>}
       {host && <HostDetail host={host} ipData={ipMatches.get(host.addr) ?? { country: null, asn: null }} onClose={() => setSelected(null)} go={go} digits={digits}
         onFilter={() => setHostFilter(host.addr)} isFiltered={filter.host === host.addr}
@@ -82,6 +86,7 @@ export function Hosts() {
       <section className="panel">
         <DataTable stateId="hosts.list" label="Hosts" exportName="hosts" rows={rows} columns={columns} rowKey={(h) => h.addr} selectedKey={selected}
           onRowClick={(h) => setSelected(h.addr)} initialSort={{ key: 'txb', dir: 'desc' }} searchPlaceholder="Search addresses, names, MACs, ports"
+          toolbar={<label><input type="checkbox" checked={showIpColumns} onChange={(event) => setShowIpColumns(event.currentTarget.checked)} /> Show country/ASN columns</label>}
           empty={<><strong>No IP hosts.</strong>This capture has no IPv4 or IPv6 packets that Wireshark could decode.</>} />
       </section>
     </>
