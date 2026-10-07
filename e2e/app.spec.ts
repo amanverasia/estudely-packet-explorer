@@ -8,6 +8,70 @@ import { fileURLToPath } from 'node:url';
 const fixture = (name: string) => fileURLToPath(new URL(`../fixtures/${name}`, import.meta.url));
 const axeScript = join(dirname(fileURLToPath(import.meta.url)), '../node_modules/axe-core/axe.min.js');
 
+function mixedCapture(): Buffer {
+  const names = ['dns.pcap', 'http.pcap', 'tls.pcap', 'protocols.pcap', 'http2.pcap', 'ip-data.pcap'];
+  const buffers = names.map((name) => readFileSync(fixture(name)));
+  const header = buffers[0].subarray(0, 24);
+  const records: { time: bigint; bytes: Buffer }[] = [];
+
+  for (const [window, capture] of buffers.entries()) {
+    if (capture.readUInt32LE(0) !== 0xa1b2c3d4 || !capture.subarray(0, 24).equals(header)) {
+      throw new Error(`${names[window]} must use the same little-endian microsecond PCAP header`);
+    }
+    let offset = 24;
+    let firstTime: bigint | null = null;
+    while (offset < capture.length) {
+      const seconds = capture.readUInt32LE(offset);
+      const microseconds = capture.readUInt32LE(offset + 4);
+      const included = capture.readUInt32LE(offset + 8);
+      const original = capture.readUInt32LE(offset + 12);
+      const sourceTime = BigInt(seconds) * 1_000_000n + BigInt(microseconds);
+      firstTime ??= sourceTime;
+      const targetTime = 1_700_000_000_000_000n + BigInt(window) * 10_000_000n + sourceTime - firstTime;
+      const [targetSeconds, targetMicroseconds] = [targetTime / 1_000_000n, targetTime % 1_000_000n];
+      const record = Buffer.alloc(16 + included);
+      record.writeUInt32LE(Number(targetSeconds), 0);
+      record.writeUInt32LE(Number(targetMicroseconds), 4);
+      record.writeUInt32LE(included, 8);
+      record.writeUInt32LE(original, 12);
+      capture.copy(record, 16, offset + 16, offset + 16 + included);
+      records.push({ time: targetTime, bytes: record });
+      offset += 16 + included;
+    }
+  }
+  records.sort((a, b) => a.time < b.time ? -1 : a.time > b.time ? 1 : 0);
+  return Buffer.concat([header, ...records.map((record) => record.bytes)]);
+}
+
+async function openMixedCapture(page: Page) {
+  await page.locator('input[type=file]').first().setInputFiles({
+    name: 'mixed.pcap', mimeType: 'application/vnd.tcpdump.pcap', buffer: mixedCapture(),
+  });
+  await expect(page.locator('.cap-title h1')).toHaveText('mixed.pcap');
+}
+
+async function transportCounts(page: Page) {
+  const group = page.getByRole('group', { name: 'Transport' });
+  await expect(group).toBeVisible();
+  const buttons = group.getByRole('button');
+  await expect(buttons.first()).toBeVisible();
+  const labels = await buttons.allTextContents();
+  const parsed = labels.map((label) => {
+    const match = label.match(/^(All|TCP|UDP|IP|Non-IP)\s+([\d,]+)$/);
+    if (!match) throw new Error(`Unexpected transport count label: ${label}`);
+    return [match[1], Number(match[2].replaceAll(',', ''))] as const;
+  });
+  const all = parsed.find(([key]) => key === 'All');
+  if (!all) throw new Error(`Missing All transport count in: ${labels.join(', ')}`);
+  return { all: all[1], byType: Object.fromEntries(parsed.filter(([key]) => key !== 'All')) as Record<string, number> };
+}
+
+async function expectTransportCountsPartition(page: Page) {
+  const counts = await transportCounts(page);
+  expect(Object.values(counts.byType).reduce((sum, count) => sum + count, 0)).toBe(counts.all);
+  return counts;
+}
+
 async function auditA11y(page: Page, label: string) {
   const violations = await page.evaluate(async (auditLabel) => {
     const axe = (window as unknown as { axe: { run: (target: Document, options: unknown) => Promise<{ violations: { id: string; impact: string; description: string; nodes: { target: string[] }[] }[] }> } }).axe;
@@ -210,6 +274,12 @@ async function installConversationPageFixture(page: Page) {
 async function view(page: Page, id: string) {
   await page.evaluate((v) => { location.hash = '#/' + v; }, id);
   await expect(page.locator('.nav a[aria-current=page]').first()).toBeVisible();
+}
+
+async function viewKeepingFilters(page: Page, id: string) {
+  const link = page.locator(`.nav a[href="#/${id}"]`).first();
+  await link.click();
+  await expect(link).toHaveAttribute('aria-current', 'page');
 }
 
 const errors = (page: Page) => {
@@ -1223,4 +1293,106 @@ test('DHCP, ARP, ICMP, SSH and QUIC views', async ({ page }) => {
 
   expect(reqs.offenders()).toEqual([]);
   expect(errs).toEqual([]);
+});
+
+test('connection transport chips share the filtered scope and retain alternatives', async ({ page }) => {
+  await page.goto('./');
+  await openMixedCapture(page);
+  await view(page, 'connections');
+  const full = await expectTransportCountsPartition(page);
+
+  await view(page, 'overview');
+  const talkers = page.locator('.panel').filter({ has: page.getByRole('heading', { name: 'Top talkers' }) });
+  await talkers.getByText('10.0.0.5', { exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Remove host filter for 10.0.0.5' })).toBeVisible();
+  await viewKeepingFilters(page, 'connections');
+  const hostScoped = await expectTransportCountsPartition(page);
+  expect(hostScoped.all).toBeLessThan(full.all);
+
+  await page.getByLabel('Filter by protocol').selectOption('HTTP');
+  const protocolScoped = await expectTransportCountsPartition(page);
+  expect(protocolScoped.all).toBeLessThanOrEqual(hostScoped.all);
+  const transport = page.getByRole('group', { name: 'Transport' });
+  const chipsBeforeSelection = await transport.getByRole('button').allTextContents();
+  await transport.getByRole('button', { name: /^Non-IP / }).click();
+  await expect(transport.getByRole('button', { name: /^Non-IP 0$/ })).toHaveAttribute('aria-pressed', 'true');
+  expect(await transportCounts(page)).toEqual(protocolScoped);
+  await expect(page.getByText('No conversations.', { exact: true })).toBeVisible();
+
+  await transport.getByRole('button', { name: /^All / }).click();
+  await page.getByLabel('Filter by protocol').selectOption('all');
+  await expect(transport.getByRole('button')).toHaveCount(chipsBeforeSelection.length);
+  await viewKeepingFilters(page, 'overview');
+  await page.getByLabel('Time range start in seconds').fill('10');
+  await page.getByLabel('Time range end in seconds').fill('11');
+  await page.getByRole('button', { name: 'Apply time range' }).click();
+  await expect(page.getByRole('button', { name: 'Clear all filters' })).toBeVisible();
+  await viewKeepingFilters(page, 'connections');
+  await expectTransportCountsPartition(page);
+
+  await viewKeepingFilters(page, 'overview');
+  await page.getByRole('button', { name: 'Clear all filters' }).click();
+  await viewKeepingFilters(page, 'connections');
+  expect(await expectTransportCountsPartition(page)).toEqual(full);
+});
+
+test('HTTP response chart groups mixed HTTP/1 and HTTP/2 by numeric status', async ({ page }) => {
+  await page.goto('./');
+  await openMixedCapture(page);
+  await view(page, 'http');
+  const statusPanel = page.locator('.panel').filter({ has: page.getByRole('heading', { name: 'Status codes' }) });
+  const statusRows = statusPanel.locator('.barlist-row');
+  await expect(statusRows).toHaveCount(4);
+  const countMap = async () => Object.fromEntries(await statusRows.evaluateAll((rows) => rows.map((row) => [
+    row.querySelector('.label')?.textContent?.trim() ?? '',
+    row.querySelector('.val')?.childNodes[0]?.textContent?.trim() ?? '',
+  ])));
+  expect(await countMap()).toEqual({ '200': '2', '404': '2', '304': '1', '401': '1' });
+
+  await viewKeepingFilters(page, 'overview');
+  await page.getByLabel('Time range start in seconds').fill('40');
+  await page.getByLabel('Time range end in seconds').fill('41');
+  await page.getByRole('button', { name: 'Apply time range' }).click();
+  await expect(page.getByRole('button', { name: 'Clear all filters' })).toBeVisible();
+  await viewKeepingFilters(page, 'http');
+  await expect(statusRows).toHaveCount(2);
+  expect(await countMap()).toEqual({ '200': '1', '404': '1' });
+});
+
+test('editable shared time bounds keep precise endpoints and allow narrow nanosecond ranges', async ({ page }) => {
+  await page.goto('./');
+  await openCapture(page, 'cut.pcap');
+  await viewKeepingFilters(page, 'overview');
+  const start = page.getByLabel('Time range start in seconds');
+  const end = page.getByLabel('Time range end in seconds');
+  await expect(start).toHaveValue('0');
+  await expect(end).toHaveValue('0.02');
+  await expect(start).toHaveAttribute('step', 'any');
+  await expect(end).toHaveAttribute('step', 'any');
+  await page.getByRole('button', { name: 'Apply time range' }).click();
+  await viewKeepingFilters(page, 'packets');
+  const packets = page.getByRole('grid', { name: 'Packets' });
+  await expect(packets.getByRole('row')).toHaveCount(4);
+
+  await page.locator('input[type=file]').first().setInputFiles(fixture('multi-iface.pcapng'));
+  await expect(page.locator('.cap-title h1')).toHaveText('multi-iface.pcapng');
+  await view(page, 'overview');
+  await expect(start).toHaveValue('0');
+  await expect(end).toHaveValue('0.000000789');
+  await page.getByRole('button', { name: 'Apply time range' }).click();
+  await view(page, 'packets');
+  await expect(packets.getByRole('row')).toHaveCount(3);
+
+  await view(page, 'overview');
+  await start.fill('0.000000700');
+  await page.getByRole('button', { name: 'Apply time range' }).click();
+  await expect(page.getByRole('button', { name: 'Clear all filters' })).toBeVisible();
+  await viewKeepingFilters(page, 'packets');
+  await expect(packets.getByRole('row')).toHaveCount(2);
+  await expect(packets.getByRole('row').nth(1).getByRole('gridcell').first()).toHaveText('2');
+
+  await viewKeepingFilters(page, 'overview');
+  await page.getByRole('button', { name: 'Clear all filters' }).click();
+  await viewKeepingFilters(page, 'packets');
+  await expect(packets.getByRole('row')).toHaveCount(3);
 });

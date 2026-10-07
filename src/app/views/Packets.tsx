@@ -4,7 +4,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Note, ViewHead } from '../components/bits';
 import { useApp, useViewState } from '../context';
-import { num } from '../format';
+import { decimalLiteral, num } from '../format';
 
 const PAGE = 500;
 const ROW = 30;
@@ -36,7 +36,7 @@ export function Packets({ captureSession }: { captureSession: number }) {
   const sharedDisplay = useMemo(() => {
     const terms: string[] = [];
     if (sharedFilter.start !== null && sharedFilter.end !== null) {
-      terms.push(`(frame.time_relative_capture_start >= ${sharedFilter.start.toPrecision(12)} && frame.time_relative_capture_start <= ${sharedFilter.end.toPrecision(12)})`);
+      terms.push(`(frame.time_relative >= ${decimalLiteral(sharedFilter.start)} && frame.time_relative <= ${decimalLiteral(sharedFilter.end)})`);
     }
     if (sharedFilter.host) terms.push(`(${sharedFilter.host.includes(':') ? 'ipv6.addr' : 'ip.addr'} == ${sharedFilter.host})`);
     return terms.join(' && ');

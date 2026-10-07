@@ -23,13 +23,62 @@ export function duration(s: number | null | undefined): string {
   if (s === null || s === undefined || !Number.isFinite(s)) return '—';
   const a = Math.abs(s);
   if (a === 0) return '0 s';
-  if (a < 1e-6) return `${(s * 1e9).toFixed(0)} ns`;
-  if (a < 1e-3) return `${(s * 1e6).toFixed(a < 1e-5 ? 2 : 0)} µs`;
-  if (a < 1) return `${(s * 1e3).toFixed(a < 0.01 ? 2 : 1)} ms`;
-  if (a < 60) return `${s.toFixed(a < 10 ? 3 : 1)} s`;
-  if (a < 3600) return `${Math.floor(s / 60)} min ${Math.round(s % 60)} s`;
-  if (a < 86400) return `${Math.floor(s / 3600)} h ${Math.round((s % 3600) / 60)} min`;
-  return `${Math.floor(s / 86400)} d ${Math.round((s % 86400) / 3600)} h`;
+  if (a < 1e-6) {
+    const ns = compact(s * 1e9);
+    return Math.abs(Number(ns)) >= 1000 ? `${compact(s * 1e6)} µs` : `${ns} ns`;
+  }
+  if (a < 1e-3) {
+    const us = compact(s * 1e6);
+    return Math.abs(Number(us)) >= 1000 ? `${compact(s * 1e3)} ms` : `${us} µs`;
+  }
+  if (a < 1) {
+    const ms = compact(s * 1e3);
+    return Math.abs(Number(ms)) >= 1000 ? `${compact(s)} s` : `${ms} ms`;
+  }
+  if (a < 60) {
+    const seconds = compact(s);
+    if (Math.abs(Number(seconds)) >= 60) return `${s < 0 ? '-' : ''}1 min 0 s`;
+    return `${seconds} s`;
+  }
+  const totalSeconds = Math.round(a);
+  const sign = s < 0 ? '-' : '';
+  if (totalSeconds < 3600) return `${sign}${Math.floor(totalSeconds / 60)} min ${totalSeconds % 60} s`;
+  if (totalSeconds < 86400) return `${sign}${Math.floor(totalSeconds / 3600)} h ${Math.floor((totalSeconds % 3600) / 60)} min`;
+  return `${sign}${Math.floor(totalSeconds / 86400)} d ${Math.floor((totalSeconds % 86400) / 3600)} h`;
+}
+
+function compact(value: number): string {
+  return Number(value.toPrecision(4)).toString();
+}
+
+/** Stable decimal seconds for editable bounds, without exponent notation or float tails. */
+export function editableSeconds(value: number, digits: number): string {
+  if (!Number.isFinite(value)) return '';
+  const precision = Math.min(9, Math.max(0, Math.trunc(digits)));
+  const fixed = value.toFixed(precision);
+  if (Number(fixed) === 0) return '0';
+  return fixed.includes('.') ? fixed.replace(/0+$/, '').replace(/\.$/, '') : fixed;
+}
+
+/** Keep a displayed default's original boundary exactly when it is submitted unchanged. */
+export function parseEditableSeconds(input: string, displayedDefault: string, exactDefault: number): number {
+  if (!input.trim()) return Number.NaN;
+  const value = Number(input);
+  if (Number.isFinite(value) && value === Number(displayedDefault)) return exactDefault;
+  return value;
+}
+
+/** Expand JavaScript's shortest round-trippable number into a plain decimal literal. */
+export function decimalLiteral(value: number): string {
+  const literal = String(value);
+  const match = /^(-?)(\d+)(?:\.(\d+))?[eE]([+-]?\d+)$/.exec(literal);
+  if (!match) return literal;
+  const [, sign, whole, fraction = '', exponentText] = match;
+  const digits = whole + fraction;
+  const point = whole.length + Number(exponentText);
+  if (point <= 0) return `${sign}0.${'0'.repeat(-point)}${digits}`;
+  if (point >= digits.length) return `${sign}${digits}${'0'.repeat(point - digits.length)}`;
+  return `${sign}${digits.slice(0, point)}.${digits.slice(point)}`;
 }
 
 /** Relative seconds with a fixed number of decimals (capture precision, max 9). */

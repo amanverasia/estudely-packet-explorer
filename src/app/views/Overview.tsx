@@ -5,7 +5,7 @@ import { BarList, Legend, TimeChart, colorMap } from '../components/charts';
 import { DataTable } from '../components/DataTable';
 import { Addr, Fact, Note, Panel, Seg, ViewHead } from '../components/bits';
 import { useApp, useViewState } from '../context';
-import { absTime, bytes, duration, endpoint, num, pct, plural } from '../format';
+import { absTime, bytes, duration, editableSeconds, endpoint, num, parseEditableSeconds, pct, plural } from '../format';
 
 export function Overview() {
   const { model, go, filter, stats, setTimeRange, setHostFilter } = useApp();
@@ -110,19 +110,25 @@ function TimeFilterControls() {
   const { model, filter, setTimeRange, setHostFilter, clearFilters } = useApp();
   const min = model.timeline.origin;
   const max = model.timeline.end;
-  const [start, setStart] = useViewState<string>('overview.time.start', String(filter.start ?? min), (value): value is string => typeof value === 'string');
-  const [end, setEnd] = useViewState<string>('overview.time.end', String(filter.end ?? max), (value): value is string => typeof value === 'string');
+  const digits = model.capture.timestampDigits;
+  const exactStart = filter.start ?? min;
+  const exactEnd = filter.end ?? max;
+  const displayedStart = editableSeconds(exactStart, digits);
+  const displayedEnd = editableSeconds(exactEnd, digits);
+  const [start, setStart] = useViewState<string>('overview.time.start', displayedStart, (value): value is string => typeof value === 'string');
+  const [end, setEnd] = useViewState<string>('overview.time.end', displayedEnd, (value): value is string => typeof value === 'string');
   useEffect(() => {
-    setStart(String(filter.start ?? min));
-    setEnd(String(filter.end ?? max));
-  }, [filter.start, filter.end, min, max]);
-  const a = Number(start), b = Number(end);
+    setStart(displayedStart);
+    setEnd(displayedEnd);
+  }, [displayedStart, displayedEnd, setStart, setEnd]);
+  const a = parseEditableSeconds(start, displayedStart, exactStart);
+  const b = parseEditableSeconds(end, displayedEnd, exactEnd);
   const valid = Number.isFinite(a) && Number.isFinite(b) && a >= min && b <= max && a < b;
   return (
     <Panel title="Shared filters" sub="Choose a window here or drag across either traffic chart. Values are seconds relative to the first packet.">
       <form className="filter-controls" onSubmit={(e) => { e.preventDefault(); if (valid) setTimeRange(a, b); }}>
-        <label>Start (s)<input className="input mono" type="number" step={model.timeline.binSeconds} min={min} max={max} value={start} onChange={(e) => setStart(e.target.value)} aria-label="Time range start in seconds" /></label>
-        <label>End (s)<input className="input mono" type="number" step={model.timeline.binSeconds} min={min} max={max} value={end} onChange={(e) => setEnd(e.target.value)} aria-label="Time range end in seconds" /></label>
+        <label>Start (s)<input className="input mono" type="number" step="any" min={min} max={max} value={start} onChange={(e) => setStart(e.target.value)} aria-label="Time range start in seconds" /></label>
+        <label>End (s)<input className="input mono" type="number" step="any" min={min} max={max} value={end} onChange={(e) => setEnd(e.target.value)} aria-label="Time range end in seconds" /></label>
         <button className="btn primary" type="submit" disabled={!valid}>Apply time range</button>
         {filter.host && <span className="filter-detail">Host: <span className="mono">{filter.host}</span> <button type="button" className="btn small ghost" onClick={() => setHostFilter(null)}>Remove</button></span>}
         {(filter.start !== null || filter.host) && <button type="button" className="btn ghost" onClick={clearFilters}>Clear all filters</button>}
