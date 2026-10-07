@@ -96,3 +96,34 @@ focus resets graph focus and its search, keeping protocol and shared filters. La
 refits after resizing, includes label bounds and packs disconnected components. Automatic
 fit stays capped at 1.2 to keep small captures sensibly sized. Selected hosts have a
 readable label and retain the accessible host/link tables.
+
+## Capture workflow and navigation
+
+Returning from comparison reanalyzes the original capture and restores its view,
+shared filters, table search/sort, selected record and compatible scroll positions.
+The original File and any applied TLS key log are retained only in tab memory;
+comparison closes its worker before restoration opens another. Failed restoration
+has retry and return-to-start actions. Comparison from the landing page returns there.
+
+The TLS keys disclosure distinguishes staged files (results unchanged) from active
+keys and the actual decrypted-session count. Apply keys to current capture and Remove
+active keys reanalyze the current original File. Returning to previous analysis cancels
+an update and restores prior keys/results. Capture replacement and Close clear keys.
+
+One Export menu labels whole-capture HTML, current-selection HTML and whole-capture
+aggregate/detailed JSON. JSON always uses whole-capture data, with detailed redaction
+on by default. Selected HTML uses shared time/host filters while labelling retained
+whole-capture metadata. CSV remains view-local: current searched rows, current sort
+order and all exportable columns, including columns hidden on screen.
+
+The compact capture toolbar contains filename/counts, Export, Capture actions, Theme,
+Help, a labelled traffic/time strip, TLS key status and removable shared-filter chips.
+It scrolls with the page so it cannot cover focused table controls or packet drawers.
+Help exposes the full filename, local-processing statement and licence limitations.
+
+Navigation groups Overview, Hosts, Connections, Network and Packet list under
+Investigation, and protocol views separately. Protocols with no whole-capture records
+have an Absent protocols disclosure on desktop; a filtered zero remains visible when
+the capture contains that protocol. Files remains available without eager inventory
+scanning. Below 861px, a labelled grouped Current view selector exposes every route,
+including absent protocols, without horizontal tab scrolling.

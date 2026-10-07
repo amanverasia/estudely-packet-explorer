@@ -273,13 +273,29 @@ async function installConversationPageFixture(page: Page) {
 
 async function view(page: Page, id: string) {
   await page.evaluate((v) => { location.hash = '#/' + v; }, id);
-  await expect(page.locator('.nav a[aria-current=page]').first()).toBeVisible();
+  const selector = page.getByRole('combobox', { name: 'Current view' });
+  if (await selector.isVisible()) await expect(selector).toHaveValue(id);
+  else await expect(page.locator('.nav a[aria-current=page]').first()).toBeVisible();
 }
 
 async function viewKeepingFilters(page: Page, id: string) {
+  const selector = page.getByRole('combobox', { name: 'Current view' });
+  if (await selector.isVisible()) { await selector.selectOption(id); await expect(selector).toHaveValue(id); return; }
   const link = page.locator(`.nav a[href="#/${id}"]`).first();
+  if (!(await link.isVisible())) await page.locator('.workspace-absent summary').click();
   await link.click();
   await expect(link).toHaveAttribute('aria-current', 'page');
+}
+
+async function clickCaptureAction(page: Page, name: string) {
+  const menu = page.locator('.capture-toolbar .capture-action-menu').filter({ has: page.locator('summary').filter({ hasText: 'Capture actions' }) });
+  if (await menu.count() && !(await menu.getAttribute('open') !== null)) await menu.locator('summary').click();
+  await page.getByRole('button', { name, exact: true }).click();
+}
+
+async function openExport(page: Page) {
+  const menu = page.locator('.json-export-menu');
+  if (await menu.getAttribute('open') === null) await menu.locator('summary').click();
 }
 
 const errors = (page: Page) => {
@@ -307,7 +323,7 @@ test('compares two local captures sequentially and labels capture changes', asyn
   await page.getByRole('button', { name: 'Compare two captures' }).click();
   await page.getByLabel('Choose capture A').setInputFiles(fixture('http.pcap'));
   await page.getByLabel('Choose capture B').setInputFiles(fixture('dns.pcap'));
-  await page.getByRole('button', { name: 'Compare captures' }).click();
+  await clickCaptureAction(page, 'Compare captures');
   await expect(page.getByRole('heading', { name: 'Analyzing capture A of 2' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Capture comparison' })).toBeVisible();
   await expect(page.getByRole('grid', { name: 'Host and name changes' })).toBeVisible();
@@ -319,10 +335,10 @@ test('compares two local captures sequentially and labels capture changes', asyn
 
   await page.getByRole('button', { name: 'Back' }).click();
   await openCapture(page, 'http.pcap');
-  await page.getByRole('button', { name: 'Compare captures' }).click();
+  await clickCaptureAction(page, 'Compare captures');
   await expect(page.locator('.compare-baseline')).toContainText('http.pcap');
   await page.getByLabel('Choose capture B').setInputFiles(fixture('dns.pcap'));
-  await page.getByRole('button', { name: 'Compare captures' }).click();
+  await clickCaptureAction(page, 'Compare captures');
   await expect(page.getByRole('heading', { name: 'Capture comparison' })).toBeVisible();
   expect(reqs.offenders()).toEqual([]);
 });
@@ -562,7 +578,7 @@ test('JSON export offers an aggregate allowlist and redacted or unredacted detai
 
   const menu = page.locator('.json-export-menu');
   await menu.locator('summary').click();
-  await expect(page.getByRole('heading', { name: 'Choose JSON export detail' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Choose export scope and format' })).toBeVisible();
   await expect(menu).toContainText('HTTP paths and headers');
   await auditA11y(page, 'JSON export menu');
   const redaction = menu.getByRole('checkbox', { name: 'Redact known identifying and content-like values' });
@@ -578,7 +594,7 @@ test('JSON export offers an aggregate allowlist and redacted or unredacted detai
     return { name: download.suggestedFilename(), json: readFileSync(path, 'utf8') };
   };
 
-  const aggregateDownload = await readDownloadedJson('Download aggregate JSON');
+  const aggregateDownload = await readDownloadedJson('Download whole capture aggregate JSON');
   const aggregate = JSON.parse(aggregateDownload.json);
   expect(aggregateDownload.name).toBe('capture-summary.json');
   expect(aggregate.export.mode).toBe('aggregate');
@@ -588,7 +604,7 @@ test('JSON export offers an aggregate allowlist and redacted or unredacted detai
   expect(aggregateDownload.json).not.toContain('captured content');
 
   await menu.locator('summary').click();
-  const redactedDownload = await readDownloadedJson('Download detailed JSON');
+  const redactedDownload = await readDownloadedJson('Download whole capture detailed JSON');
   const redacted = JSON.parse(redactedDownload.json);
   expect(redacted.export.redaction).toBe('known sensitive fields replaced with [REDACTED]');
   expect(redactedDownload.json).not.toContain('10.0.0.5');
@@ -597,7 +613,7 @@ test('JSON export offers an aggregate allowlist and redacted or unredacted detai
 
   await menu.locator('summary').click();
   await redaction.uncheck();
-  const detailedDownload = await readDownloadedJson('Download detailed JSON');
+  const detailedDownload = await readDownloadedJson('Download whole capture detailed JSON');
   const detailed = JSON.parse(detailedDownload.json);
   expect(detailed.export.redaction).toBe('not applied');
   expect(detailed.hosts.some((host: { addr: string }) => host.addr === '10.0.0.5')).toBe(true);
@@ -693,7 +709,7 @@ test('shared filters brush traffic, round-trip in the URL, and apply from a host
   const filteredRows = page.getByRole('grid', { name: 'HTTP messages' }).getByRole('row');
   await expect(filteredRows).toHaveCount(4);
   await page.locator('.nav a[href="#/packets"]').click();
-  await expect(page.getByText('19 of 31 packets')).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'Shared filter: 19 of 31 packets' })).toBeVisible();
   await page.locator('.nav a[href="#/http"]').click();
 
   await page.getByRole('button', { name: 'Remove time range filter' }).click();
@@ -868,8 +884,8 @@ test('TLS 1.3 key log decrypts and marks records locally; a later capture has no
   await expect(table).toContainText('/decrypted');
   await expect(table).toContainText('Decrypted');
 
-  await page.getByRole('button', { name: 'Open another' }).click();
-  await expect(page.getByRole('button', { name: 'Choose TLS key log (optional)' })).toBeVisible();
+  await clickCaptureAction(page, 'Open another');
+  await expect(page.locator('.tls-key-menu summary')).toContainText('tls13.keys');
   await page.locator('input[type=file]').first().setInputFiles(fixture('tls13.pcap'));
   await expect(page.locator('.cap-title h1')).toHaveText('tls13.pcap');
   await expect(page.getByRole('status').filter({ hasText: 'TLS decryption:' })).toContainText('0 of 1 sessions decrypted');
@@ -898,7 +914,7 @@ test('TLS key logs expose decrypted HTTP/2 rows with version and stream ID', asy
   await expect(drawer).toContainText('fixture-h2-keylog/1.0');
   await page.keyboard.press('Escape');
 
-  await page.getByRole('button', { name: 'Open another' }).click();
+  await clickCaptureAction(page, 'Open another');
   await page.locator('input[type=file]').first().setInputFiles(fixture('tls13-h2.pcap'));
   await expect(page.getByRole('status').filter({ hasText: 'TLS decryption:' })).toContainText('0 of 1 sessions decrypted');
   await view(page, 'http');
@@ -967,7 +983,7 @@ test('opening another capture replaces the first one entirely', async ({ page })
   await view(page, 'packets');
   await expect(page.getByText('31 of 31 packets')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await clickCaptureAction(page, 'Close');
   await expect(page.getByRole('button', { name: 'Choose capture file' })).toBeVisible();
 });
 
@@ -1069,7 +1085,7 @@ test('exports are local downloads', async ({ page }) => {
   await menu.locator('summary').click();
   const [jd] = await Promise.all([
     page.waitForEvent('download'),
-    menu.getByRole('button', { name: 'Download aggregate JSON' }).click(),
+    menu.getByRole('button', { name: 'Download whole capture aggregate JSON' }).click(),
   ]);
   expect(jd.suggestedFilename()).toBe('capture-summary.json');
   const jsonPath = await jd.path();
@@ -1092,9 +1108,10 @@ test('HTML report is a self-contained aggregate snapshot without captured payloa
   const reqs = watchRequests(page);
   await page.goto('./');
   await openCapture(page, 'http.pcap');
-  await expect(page.getByRole('button', { name: 'Download filtered HTML report' })).toBeDisabled();
+  await openExport(page);
+  await expect(page.getByRole('button', { name: 'Download current selection HTML' })).toBeDisabled();
   const download = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Download HTML report' }).click();
+  await page.getByRole('button', { name: 'Download whole capture HTML' }).click();
   const reportDownload = await download;
   expect(reportDownload.suggestedFilename()).toBe('http-report.html');
   const html = Buffer.concat(await (await reportDownload.createReadStream()).toArray()).toString('utf8');
@@ -1122,7 +1139,8 @@ test('filtered HTML report uses shared time and host filters and handles zero ma
   await page.goto('./');
   await openCapture(page, 'http.pcap');
   await page.evaluate(() => { location.hash = '#/overview?hf=10.0.0.80&t0=0.001&t1=0.05'; });
-  const filteredButton = page.getByRole('button', { name: 'Download filtered HTML report' });
+  await openExport(page);
+  const filteredButton = page.getByRole('button', { name: 'Download current selection HTML' });
   await expect(filteredButton).toBeEnabled();
   const download = page.waitForEvent('download');
   await filteredButton.click();
@@ -1143,9 +1161,10 @@ test('filtered HTML report uses shared time and host filters and handles zero ma
   expect(html).not.toMatch(/url\(\s*['"]?(?:https?:)?\/\//i);
 
   await page.evaluate(() => { location.hash = '#/overview?t0=0.001&t1=0.005'; });
-  await expect(page.getByRole('button', { name: 'Download filtered HTML report' })).toBeEnabled();
+  await openExport(page);
+  await expect(page.getByRole('button', { name: 'Download current selection HTML' })).toBeEnabled();
   const noMatchDownload = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Download filtered HTML report' }).click();
+  await page.getByRole('button', { name: 'Download current selection HTML' }).click();
   const zeroReport = await noMatchDownload;
   const zeroHtml = Buffer.concat(await (await zeroReport.createReadStream()).toArray()).toString('utf8');
   expect(zeroHtml).toContain('<strong>No packets matched the active time and host filters.</strong>');
@@ -1169,7 +1188,7 @@ for (const vp of [{ name: 'tablet', width: 820, height: 1180 }, { name: 'phone',
       expect(await fits(), `${v} overflows at ${vp.width}px`).toBe(true);
       if (v === 'overview' || v === 'dns') await page.screenshot({ path: `test-results/${vp.name}-${v}.png`, fullPage: true });
     }
-    if (vp.name === 'phone') await expect(page.locator('.mobile-local')).toBeVisible();
+    if (vp.name === 'phone') { await page.locator('.capture-help summary').click(); await expect(page.locator('.capture-help')).toContainText('Your capture is processed locally'); await page.keyboard.press('Escape'); }
 
     // The conversation detail and the follow panel (long text lines, a max-content hex dump) stay within the page.
     await openCapture(page, 'follow.pcap');
