@@ -1,9 +1,12 @@
 // Copyright (C) 2026 Estudely and contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useDeferredValue, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useDeferredValue, useId, useMemo, useRef, type ReactNode } from 'react';
 import { downloadCsv } from '../download';
 import { num } from '../format';
+import { useViewState } from '../context';
+
+type SortState = { key: string; dir: 'asc' | 'desc' } | null;
 
 export interface Column<T> {
   key: string;
@@ -32,16 +35,25 @@ interface Props<T> {
   height?: number | string;
   empty?: ReactNode;
   label: string;
+  /** Stable capture-local key for restoring this table's search and sort. */
+  stateId?: string;
 }
 
 const ROW = 34;
 
 export function DataTable<T>(props: Props<T>) {
   const { rows, columns, rowKey, onRowClick, selectedKey, exportName, toolbar, empty, label } = props;
-  const [query, setQuery] = useState('');
+  const localId = useId();
+  const stateId = props.stateId ?? `local:${localId}`;
+  const [query, setQuery] = useViewState<string>(`table:${stateId}:query`, '', (value): value is string => typeof value === 'string');
   const deferred = useDeferredValue(query);
-  const [sort, setSort] = useState(props.initialSort ?? null);
+  const [sort, setSort] = useViewState<SortState>(`table:${stateId}:sort`, props.initialSort ?? null, (value): value is SortState =>
+    value === null || (typeof value === 'object' && value !== null && typeof (value as { key?: unknown }).key === 'string' &&
+      ((value as { dir?: unknown }).dir === 'asc' || (value as { dir?: unknown }).dir === 'desc')));
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const sortKeyExists = sort === null || columns.some((column) => column.key === sort.key);
+  if (!sortKeyExists) setSort(props.initialSort ?? null);
 
   const view = useMemo(() => {
     let out = rows;

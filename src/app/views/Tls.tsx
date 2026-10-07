@@ -81,7 +81,7 @@ export function Tls() {
             <Panel title="Application protocol selected" sub="ALPN in ServerHello"><BarList items={stats.alpn} limit={6} color="var(--s2)" emptyText="No ServerHello decoded." /></Panel>
           </div>
           <section className="panel">
-            <DataTable label="TLS handshakes" exportName="tls" rows={model.tls} columns={columns} rowKey={(t) => t.id} onRowClick={open} searchPlaceholder="Search SNI, addresses, versions, ciphers" />
+            <DataTable stateId="tls.handshakes" label="TLS handshakes" exportName="tls" rows={model.tls} columns={columns} rowKey={(t) => t.id} onRowClick={open} searchPlaceholder="Search SNI, addresses, versions, ciphers" />
           </section>
         </>
       )}

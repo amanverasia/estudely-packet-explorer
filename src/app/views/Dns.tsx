@@ -1,18 +1,19 @@
 // Copyright (C) 2026 Estudely and contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { DNS_MATCH_WINDOW } from '../../engine/analyze';
 import type { DnsProto, DnsTransaction } from '../../engine/types';
 import { BarList, FlowChart } from '../components/charts';
 import { DataTable, type Column } from '../components/DataTable';
 import { Addr, Fact, FramesLink, Note, Panel, Seg, ViewHead } from '../components/bits';
-import { useApp } from '../context';
+import { useApp, useViewState } from '../context';
 import { absTime, duration, endpoint, num, plural } from '../format';
 
 const STATUS_TAG: Record<string, string> = {
   answered: 'good', unanswered: 'warn', retransmitted: 'info', 'response without query': 'warn', 'duplicate response': 'info',
   'multicast query': '', 'multicast response': '',
 };
+const DNS_STATUSES = new Set(['all', 'answered', 'unanswered', 'retransmitted', 'response without query', 'duplicate response', 'multicast query', 'multicast response']);
 
 export function Dns() {
   const { model, openDrawer, params } = useApp();
@@ -21,8 +22,20 @@ export function Dns() {
     for (const d of model.dns) m[d.proto]++;
     return m;
   }, [model.dns]);
-  const [proto, setProto] = useState<DnsProto>(() => (params.get('proto') as DnsProto) || (counts.DNS || !model.dns.length ? 'DNS' : (Object.keys(counts) as DnsProto[]).find((k) => counts[k]) ?? 'DNS'));
-  const [status, setStatus] = useState<string>('all');
+  const defaultProto = counts.DNS || !model.dns.length ? 'DNS' : (Object.keys(counts) as DnsProto[]).find((k) => counts[k]) ?? 'DNS';
+  const [proto, setProto] = useViewState<DnsProto>('dns.proto', defaultProto, (value): value is DnsProto => value === 'DNS' || value === 'mDNS' || value === 'LLMNR' || value === 'NBNS');
+  const [status, setStatus] = useViewState<string>('dns.status', 'all', (value): value is string => typeof value === 'string' && DNS_STATUSES.has(value));
+  const lastRouteProto = useRef<string | null>(null);
+  useEffect(() => {
+    if (!params.has('proto')) { lastRouteProto.current = null; return; }
+    const requested = params.get('proto');
+    if (requested !== lastRouteProto.current) {
+      lastRouteProto.current = requested;
+      if (requested === 'DNS' || requested === 'mDNS' || requested === 'LLMNR' || requested === 'NBNS') {
+        if (requested !== proto) { setProto(requested); setStatus('all'); }
+      }
+    }
+  }, [params, proto, setProto, setStatus]);
   const rows = useMemo(() => model.dns.filter((d) => d.proto === proto), [model.dns, proto]);
   const shown = useMemo(() => (status === 'all' ? rows : rows.filter((d) => d.status === status)), [rows, status]);
   const multicast = proto === 'mDNS';
@@ -123,7 +136,7 @@ export function Dns() {
                 </Panel>
               )}
               <section className="panel">
-                <DataTable label={`${proto} transactions`} exportName={`${proto.toLowerCase()}-transactions`} rows={shown} columns={columns}
+                <DataTable stateId={`dns.transactions.${proto}`} key={`dns.transactions.${proto}`} label={`${proto} transactions`} exportName={`${proto.toLowerCase()}-transactions`} rows={shown} columns={columns}
                   rowKey={(d) => d.id} onRowClick={open} searchPlaceholder="Search names, addresses, answers"
                   toolbar={
                     <select className="select" value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Filter by status">

@@ -72,7 +72,7 @@ export function Quic() {
             <Panel title="Server names requested" sub="SNI in the Initial ClientHello"><BarList items={stats.sni} limit={8} color="var(--s7)" emptyText="No decodable ClientHello." /></Panel>
           </div>
           <section className="panel">
-            <DataTable label="QUIC conversations" exportName="quic" rows={model.quic} columns={columns} rowKey={(q) => q.id} onRowClick={open}
+            <DataTable stateId="quic.conversations" label="QUIC conversations" exportName="quic" rows={model.quic} columns={columns} rowKey={(q) => q.id} onRowClick={open}
               searchPlaceholder="Search SNI, addresses, versions" />
           </section>
         </>

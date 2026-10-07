@@ -69,7 +69,7 @@ export function Dhcp() {
             <Panel title="Servers" sub="Server Identifier option, else reply source"><BarList items={stats.servers} limit={6} color="var(--s7)" emptyText="No server replies decoded." /></Panel>
           </div>
           <section className="panel">
-            <DataTable label="DHCP exchanges" exportName="dhcp" rows={model.dhcp} columns={columns} rowKey={(d) => d.id} onRowClick={open}
+            <DataTable stateId="dhcp.exchanges" label="DHCP exchanges" exportName="dhcp" rows={model.dhcp} columns={columns} rowKey={(d) => d.id} onRowClick={open}
               searchPlaceholder="Search MACs, host names, addresses" />
           </section>
         </>

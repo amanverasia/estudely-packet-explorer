@@ -1,11 +1,11 @@
 // Copyright (C) 2026 Estudely and contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import type { IcmpMessage } from '../../engine/types';
 import { BarList } from '../components/charts';
 import { DataTable, type Column } from '../components/DataTable';
 import { Addr, Fact, FramesLink, Panel, Seg, ViewHead } from '../components/bits';
-import { useApp } from '../context';
+import { useApp, useViewState } from '../context';
 import { absTime, endpoint, num } from '../format';
 
 type Filter = 'all' | 'error' | 'echo' | 'other';
@@ -16,7 +16,7 @@ const echoText = (i: IcmpMessage) => (i.echo ? `id ${i.echo.ident ?? '?'} seq ${
 
 export function Icmp() {
   const { model, openDrawer, go } = useApp();
-  const [filter, setFilter] = useState<Filter>('all');
+  const [filter, setFilter] = useViewState<Filter>('icmp.kind', 'all', (value): value is Filter => value === 'all' || value === 'error' || value === 'echo' || value === 'other');
   const rows = useMemo(() => (filter === 'all' ? model.icmp : model.icmp.filter((i) => filterOf(i) === filter)), [model.icmp, filter]);
   const stats = useMemo(() => {
     const count = (keys: (string | null)[]) => {
@@ -74,7 +74,7 @@ export function Icmp() {
             <Panel title="Error senders" sub="Address that sent the error"><BarList items={stats.errorSenders} limit={8} color="var(--s3)" emptyText="No error messages." /></Panel>
           </div>
           <section className="panel">
-            <DataTable label="ICMP messages" exportName="icmp" rows={rows} columns={columns} rowKey={(i) => i.id} onRowClick={open}
+            <DataTable stateId="icmp.messages" label="ICMP messages" exportName="icmp" rows={rows} columns={columns} rowKey={(i) => i.id} onRowClick={open}
               searchPlaceholder="Search addresses, types, quoted packets" />
           </section>
         </>

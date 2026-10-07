@@ -1,12 +1,12 @@
 // Copyright (C) 2026 Estudely and contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { PACKET_ROW_PAGE_SIZE, type Conversation, type PacketRow, type Transport } from '../../engine/types';
 import { DataTable, type Column } from '../components/DataTable';
 import { flagText } from '../components/Drawer';
 import { Addr, Note, Panel, Seg, ViewHead } from '../components/bits';
 import { FollowStream } from '../components/FollowStream';
-import { useApp } from '../context';
+import { useApp, useViewState } from '../context';
 import { bytes, duration, endpoint, num, plural, rel } from '../format';
 import {
   connectionQualityFilters,
@@ -28,17 +28,43 @@ export function tcpState(c: Conversation): string {
 }
 
 export function Connections() {
-  const { model, params, go } = useApp();
-  const [transport, setTransport] = useState<'all' | Transport>('all');
-  const [app, setApp] = useState('all');
-  const [qualityFilter, setQualityFilter] = useState<ConnectionQualityFilter>('all');
-  const hostFilter = params.get('host');
-  const [selected, setSelected] = useState<number | null>(params.get('conv') !== null ? Number(params.get('conv')) : null);
+  const { model, sourceModel, params, go } = useApp();
+  const [transport, setTransport] = useViewState<'all' | Transport>('connections.transport', 'all', (value): value is 'all' | Transport =>
+    value === 'all' || value === 'TCP' || value === 'UDP' || value === 'IP' || value === 'Non-IP');
+  const [app, setApp] = useViewState<string>('connections.protocol', 'all', (value): value is string =>
+    value === 'all' || (typeof value === 'string' && sourceModel.conversations.some((conversation) => conversation.appProtocol === value)));
+  const [qualityFilter, setQualityFilter] = useViewState<ConnectionQualityFilter>('connections.quality', 'all', (value): value is ConnectionQualityFilter =>
+    value === 'all' || connectionQualityFilters.some((item) => item.value === value));
+  const [hostFilter, setHostFilter] = useViewState<string | null>('connections.host', null, (value): value is string | null => value === null || typeof value === 'string');
+  const lastRouteHost = useRef<string | null>(null);
+  const [selected, setSelected] = useViewState<number | null>('connections.selected', null, (value): value is number | null => value === null || (typeof value === 'number' && Number.isInteger(value)));
+  const lastRouteConversation = useRef<string | null>(null);
+  useEffect(() => {
+    if (params.has('host')) {
+      const requested = params.get('host') || '';
+      if (requested !== lastRouteHost.current) {
+        lastRouteHost.current = requested;
+        setHostFilter(requested && sourceModel.hosts.some((h) => h.addr === requested) ? requested : null);
+      }
+    } else {
+      lastRouteHost.current = null;
+      if (params.has('conv')) setHostFilter(null);
+    }
+  }, [params, sourceModel.hosts, setHostFilter]);
+  useEffect(() => {
+    if (!params.has('conv')) { lastRouteConversation.current = null; return; }
+    const requested = params.get('conv') || '';
+    if (requested !== lastRouteConversation.current) {
+      lastRouteConversation.current = requested;
+      const id = Number(requested);
+      setSelected(requested && Number.isInteger(id) && sourceModel.conversations.some((c) => c.id === id) ? id : null);
+    }
+  }, [params, sourceModel.conversations, setSelected]);
   const apps = useMemo(() => {
     const m = new Map<string, number>();
-    for (const c of model.conversations) m.set(c.appProtocol, (m.get(c.appProtocol) ?? 0) + 1);
+    for (const c of sourceModel.conversations) m.set(c.appProtocol, (m.get(c.appProtocol) ?? 0) + 1);
     return [...m.entries()].sort((a, b) => b[1] - a[1]);
-  }, [model.conversations]);
+  }, [sourceModel.conversations]);
   const unfilteredRows = useMemo(() => model.conversations.filter((c) =>
     (transport === 'all' || c.transport === transport) && (app === 'all' || c.appProtocol === app)
     && (!hostFilter || c.a === hostFilter || c.b === hostFilter)), [model.conversations, transport, app, hostFilter]);
@@ -47,9 +73,9 @@ export function Connections() {
   const conv = selected !== null ? model.conversations.find((c) => c.id === selected) ?? null : null;
   const counts = useMemo(() => {
     const m: Record<string, number> = { TCP: 0, UDP: 0, IP: 0, 'Non-IP': 0 };
-    for (const c of model.conversations) m[c.transport]++;
+    for (const c of sourceModel.conversations) m[c.transport]++;
     return m;
-  }, [model.conversations]);
+  }, [sourceModel.conversations]);
   const digits = Math.min(6, model.capture.timestampDigits);
 
   const columns: Column<Conversation>[] = [
@@ -75,12 +101,12 @@ export function Connections() {
         TCP and UDP conversations use Wireshark's stream index, so a reused address and port pair appears as separate sessions. Endpoint A is the TCP SYN sender, or otherwise the first packet's sender. Other IP traffic (such as ICMP) is grouped per address pair and protocol.
       </ViewHead>
       {hostFilter && (
-        <Note>Showing conversations involving <span className="mono">{hostFilter}</span>. <button className="btn small" onClick={() => go('connections')}>Show all</button></Note>
+        <Note>Showing conversations involving <span className="mono">{hostFilter}</span>. <button className="btn small" onClick={() => { setHostFilter(null); go('connections'); }}>Show all</button></Note>
       )}
       <Note>Counts are conversations with at least one recorded Wireshark indicator. They describe observations in this capture, not a diagnosed cause. TCP indicators use full-conversation counts; shared packet filters affect the displayed packet totals, bytes, and times.</Note>
       {conv && <ConversationDetail key={conv.id} c={conv} onClose={() => setSelected(null)} />}
       <section className="panel">
-        <DataTable label="Conversations" exportName="conversations" rows={rows} columns={columns} rowKey={(c) => c.id} selectedKey={selected}
+        <DataTable stateId="connections.conversations" label="Conversations" exportName="conversations" rows={rows} columns={columns} rowKey={(c) => c.id} selectedKey={selected}
           onRowClick={(c) => setSelected(c.id)} initialSort={{ key: 'start', dir: 'asc' }} searchPlaceholder="Search addresses, ports, protocols"
           toolbar={
             <div className="connection-filters">
@@ -232,7 +258,7 @@ function ConversationDetail({ c, onClose }: { c: Conversation; onClose: () => vo
                 <button className="btn small" onClick={() => setPage(Math.max(0, Math.ceil(visiblePackets.total / PACKET_ROW_PAGE_SIZE) - 1))}
                   disabled={(page + 1) * PACKET_ROW_PAGE_SIZE >= visiblePackets.total}>Last</button>
               </div>
-              <DataTable label="Conversation packets" exportName={`conversation-${c.id}-packets-page-${page + 1}`} rows={visiblePackets.rows} columns={pcols} rowKey={(p) => p.frame}
+              <DataTable stateId={`connections.packets:${c.id}`} label="Conversation packets" exportName={`conversation-${c.id}-packets-page-${page + 1}`} rows={visiblePackets.rows} columns={pcols} rowKey={(p) => p.frame}
                 onRowClick={(p) => openDrawer({ title: `Packet #${p.frame}`, frames: [p.frame] })} height={360} />
             </div>
           )}
