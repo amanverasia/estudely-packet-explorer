@@ -46,10 +46,11 @@
   <section>
     <h2>Known limitations</h2>
     <ul>
-      <li>HTTP/2 and HTTP/3 are not shown as request rows. Encrypted traffic (TLS, QUIC, DoH, DoT) is not decrypted.</li>
+      <li>HTTP/2 requests are shown when Wireshark reconstructs the header block, including after a matching key log. HTTP/3 is not turned into request rows.</li>
+      <li>TLS and QUIC decrypt only when a matching key log is supplied, and only for what Wireshark then exposes. TLS 1.3 certificates stay encrypted unless the decrypted handshake exposes them. DoH and DoT are not shown as DNS queries or request rows.</li>
       <li>TLS certificates are shown only when sent in cleartext (TLS 1.2 and earlier). Trust is not checked.</li>
       <li>Names come only from the capture itself (DNS, mDNS, NBNS, DHCP, TLS SNI, HTTP Host). Ports are traffic observations, not open-port checks. No device or OS identification.</li>
-      <li>Files over 1 GiB are refused; large captures take about a minute per 400,000 packets.</li>
+      <li>The first 1.00 GiB of capture data is analyzed; if there is more, results are marked partial. Inputs larger than 1 GiB are not refused. Large captures take about a minute per 400,000 packets.</li>
     </ul>
   </section>
 </main>
