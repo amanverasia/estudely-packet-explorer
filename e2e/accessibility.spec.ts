@@ -134,8 +134,9 @@ test('packet rows open with Space and the toolbar time range is keyboard accessi
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toBeHidden();
 
-  const rangeStart = page.getByRole('spinbutton', { name: 'Toolbar time range start in seconds' });
-  const rangeEnd = page.getByRole('spinbutton', { name: 'Toolbar time range end in seconds' });
+  await page.locator('.strip-range-menu > summary').click();
+  const rangeStart = page.getByRole('spinbutton', { name: 'Traffic strip start in seconds' });
+  const rangeEnd = page.getByRole('spinbutton', { name: 'Traffic strip end in seconds' });
   await rangeStart.fill('0');
   await rangeEnd.fill('0.5');
   await rangeEnd.press('Enter');

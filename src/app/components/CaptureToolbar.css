@@ -25,7 +25,10 @@
 .capture-timeline > span { flex: none; }
 .capture-timeline .strip-host { display: flex; align-items: center; gap: 8px; flex: 1 1 280px; min-width: 0; flex-wrap: wrap; }
 .capture-timeline .strip { flex: 1 1 80px; min-width: 80px; width: auto; margin: 0; }
-.strip-range { display: flex; flex-wrap: wrap; align-items: end; gap: 6px; }
+.strip-range-menu { position: relative; flex: none; }
+.strip-range-menu > summary { list-style: none; cursor: pointer; }
+.strip-range-menu > summary::-webkit-details-marker { display: none; }
+.strip-range { position: absolute; z-index: 15; top: calc(100% + 6px); left: 0; display: flex; flex-wrap: wrap; align-items: end; gap: 6px; width: max-content; max-width: min(360px, calc(100vw - 32px)); margin: 0; padding: 8px; border: 1px solid var(--rule-strong); border-radius: 8px; background: var(--panel); box-shadow: 0 8px 24px rgba(0,0,0,.16); }
 .strip-range label { display: grid; gap: 2px; color: var(--ink-2); font-size: 11px; line-height: 1.2; }
 .strip-range .input { width: 7.5em; }
 .strip-range .note { margin: 0; font-size: 11px; }

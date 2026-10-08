@@ -249,12 +249,15 @@ export function Strip({ timeline, selection = null, onRangeChange, timestampDigi
       )}
     </div>
     {onRangeChange && (
-      <form className="strip-range" aria-label="Toolbar time range" onSubmit={(e) => { e.preventDefault(); if (rangeValid) onRangeChange(appliedStart, appliedEnd); }}>
-        <label>Start (s)<input className="input mono" type="number" step="any" min={min} max={rangeEnd} value={start} onChange={(e) => setStart(e.target.value)} aria-label="Toolbar time range start in seconds" /></label>
-        <label>End (s)<input className="input mono" type="number" step="any" min={min} max={rangeEnd} value={end} onChange={(e) => setEnd(e.target.value)} aria-label="Toolbar time range end in seconds" /></label>
-        <button className="btn small primary" type="submit" disabled={!rangeValid} aria-label="Apply toolbar time range">Apply range</button>
-        {!rangeValid && <span className="note warn" role="status">End must be later than start, within this capture.</span>}
-      </form>
+      <details className="strip-range-menu">
+        <summary className="btn small">Set time range</summary>
+        <form className="strip-range" aria-label="Toolbar time range" onSubmit={(e) => { e.preventDefault(); if (rangeValid) onRangeChange(appliedStart, appliedEnd); }}>
+          <label>Start (s)<input className="input mono" type="number" step="any" min={min} max={rangeEnd} value={start} onChange={(e) => setStart(e.target.value)} aria-label="Traffic strip start in seconds" /></label>
+          <label>End (s)<input className="input mono" type="number" step="any" min={min} max={rangeEnd} value={end} onChange={(e) => setEnd(e.target.value)} aria-label="Traffic strip end in seconds" /></label>
+          <button className="btn small primary" type="submit" disabled={!rangeValid}>Set range</button>
+          {!rangeValid && <span className="note warn" role="status">End must be later than start, within this capture.</span>}
+        </form>
+      </details>
     )}
     </div>
   );
