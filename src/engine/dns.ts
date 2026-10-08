@@ -106,7 +106,10 @@ export function correlateDns(
     const list = pending.get(key);
     let idx = -1;
     if (list) {
+      // The same transaction id can be outstanding for different questions.
+      // Attach the answer only when the name and type match too.
       idx = list.findIndex((query) => (query.server === p.src || isGroupAddress(query.server))
+        && query.qname === m.qname && query.qtype === m.qtype
         && query.queryTime !== null && query.queryTime <= p.t && p.t - query.queryTime <= DNS_MATCH_WINDOW);
     }
     if (idx >= 0) {

@@ -469,11 +469,13 @@ local function emit_icmp(w, num, v6)
   local t = first(ty)
   if not t then return end
   local c = first(co)
-  -- The quoted packet is whatever IP and TCP/UDP header follows the ICMP
-  -- header; tunnels (VXLAN, GRE, IP-in-IP) put more IP headers before it.
+  -- The quoted packet is the IP and TCP/UDP header that follows the ICMP
+  -- header in the same data source. Tunnels (VXLAN, GRE, IP-in-IP) put more
+  -- IP headers before it. A field from another reassembly buffer can have a
+  -- larger offset without being that header, so the DNS/HTTP source rule applies.
   local function after(field)
     for _, fi in ipairs(all(field)) do
-      if fi.offset > t.offset then return fi end
+      if same_source(t, fi) and fi.offset > t.offset then return fi end
     end
     return nil
   end

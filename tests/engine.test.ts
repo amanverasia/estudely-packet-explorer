@@ -552,6 +552,24 @@ describe('protocols fixture (DHCP, ARP, ICMP, SSH, QUIC)', () => {
   });
 });
 
+describe('ICMP quoted header across IPv4 reassembly sources', () => {
+  it('quotes the header from the ICMP data source, not a later offset on the frame', async () => {
+    const { model: m } = await open('icmp-source.pcap');
+    expect(m.capture.packetCount).toBe(3);
+    expect(m.icmp).toHaveLength(1);
+    const error = m.icmp[0];
+    expect(error).toMatchObject({
+      frame: 3, version: 4, type: 3, code: 3, kind: 'error',
+      src: '198.51.100.9', dst: '10.0.2.50',
+      typeName: 'Destination unreachable', codeName: 'Port unreachable',
+    });
+    const quotedConv = m.conversations.find((c) => c.transport === 'UDP' && c.aPort === 51000)!;
+    expect(error.quoted).toEqual({
+      protocol: 'UDP', src: '10.0.2.50', srcPort: 51000, dst: '198.51.100.9', dstPort: 33434, convId: quotedConv.id,
+    });
+  });
+});
+
 describe('protocols edge fixture (DHCP outcome order, tunnelled ICMP)', () => {
   let m: AnalysisModel;
   beforeAll(async () => ({ model: m } = await open('protocols-edge.pcap')));

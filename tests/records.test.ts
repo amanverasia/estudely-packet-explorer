@@ -11,14 +11,33 @@ function packetRecord(protos: string, tlsAppData: boolean, quicStreamData: boole
 }
 
 describe('decrypted application packet records', () => {
-  it('marks decrypted QUIC stream data and tracks short-header packets', () => {
+  it('does not treat QUIC stream data without an inner protocol as decrypted', () => {
     const { packets } = parseRecords(packetRecord('eth:ip:udp:quic', false, true, true));
-    expect(packets[0]).toMatchObject({ quicStreamData: true, quicShort: true, decrypted: true });
+    expect(packets[0]).toMatchObject({ quicStreamData: true, quicShort: true, decrypted: false });
+  });
+
+  it('does not treat bare data or the Initial TLS handshake above QUIC as decrypted', () => {
+    const data = parseRecords(packetRecord('eth:ip:udp:quic:data', false, true, true));
+    const initial = parseRecords(packetRecord('eth:ethertype:ip:udp:quic:tls', false, false, false));
+    expect(data.packets[0]).toMatchObject({ quicStreamData: true, decrypted: false });
+    expect(initial.packets[0]).toMatchObject({ quicStreamData: false, decrypted: false });
+  });
+
+  it('marks QUIC decrypted only when a protocol other than data sits above it', () => {
+    const bare = parseRecords(packetRecord('eth:ip:udp:quic', false, true, true));
+    const inner = parseRecords(packetRecord('eth:ip:udp:quic:http3', false, true, false));
+    expect(bare.packets[0].decrypted).toBe(false);
+    expect(inner.packets[0]).toMatchObject({ quicStreamData: true, decrypted: true });
   });
 
   it('does not mistake encrypted TLS application data for decrypted content', () => {
     const { packets } = parseRecords(packetRecord('eth:ip:tcp:tls:data', true, false, false));
     expect(packets[0]).toMatchObject({ tlsAppData: true, decrypted: false });
+  });
+
+  it('marks TLS decrypted when an inner protocol is present', () => {
+    const { packets } = parseRecords(packetRecord('eth:ip:tcp:tls:http', true, false, false));
+    expect(packets[0]).toMatchObject({ tlsAppData: true, decrypted: true });
   });
 });
 

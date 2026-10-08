@@ -66,8 +66,10 @@ export async function correlateTls(
     if (session.convId !== null) conversations[session.convId].records.tls++;
   }
 
-  // A protocol stack entry after TLS (other than generic `data`) means
-  // Wireshark decrypted the application record and dispatched its plaintext.
+  // Decrypted follows the packet flag. That flag is set when Wireshark
+  // dissected a protocol above TLS other than bare data, or a protocol above
+  // QUIC other than the Initial TLS handshake and bare data. QUIC stream data
+  // alone means the session still has encrypted application data.
   const tlsDataByConv = new Map<number, { hasAppData: boolean; frames: number[]; decryptedFrames: number[] }>();
   for (let i = 0; i < packets.length; i++) {
     const p = packets[i];

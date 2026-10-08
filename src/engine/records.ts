@@ -232,6 +232,17 @@ export function forEachLine(buf: Uint8Array, fn: (line: string) => void, onProgr
   if (carry) fn(carry);
 }
 
+/**
+ * True when Wireshark dissected a protocol above `protocol` other than the
+ * ignored layers. Bare `data` is never plaintext. `tls` directly above `quic`
+ * is the Initial handshake Wireshark opens without a key log, so it does not
+ * count as QUIC application plaintext; a protocol above that TLS layer does.
+ */
+function dissectedAbove(stack: string[], protocol: string, ignore: readonly string[] = ['data']): boolean {
+  const index = stack.lastIndexOf(protocol);
+  return index >= 0 && stack.slice(index + 1).some((name) => !ignore.includes(name));
+}
+
 export function parseRecords(buf: Uint8Array, onProgress?: (fraction: number) => void): RawRecords {
   const out: RawRecords = {
     packets: [], segments: new Map(), dns: [], nbns: [], http: [], tls: [], arp: [], dhcp: [], icmp: [], ssh: [], quic: [], ifaces: [],
@@ -264,13 +275,15 @@ export function parseRecords(buf: Uint8Array, onProgress?: (fraction: number) =>
           baseSec = sec;
           baseFracDigits = fracDigits;
         }
+        const protos = intern(c[6]);
+        const stack = protos.split(':');
         out.packets.push({
           frame: Number(c[1]),
           t: relativeSeconds(sec, fracDigits, baseSec, baseFracDigits),
           len: Number(c[3]) || 0,
           caplen: Number(c[4]) || 0,
           iface: int(c[5]),
-          protos: intern(c[6]),
+          protos,
           ethSrc: intern(c[7]),
           ethDst: intern(c[8]),
           src: intern(c[9]),
@@ -283,13 +296,11 @@ export function parseRecords(buf: Uint8Array, onProgress?: (fraction: number) =>
           tcpLen: int(c[16]),
           flags: intern(c[17]),
           tlsAppData: bool(c[18]),
+          // Column 19 is quic.stream_data. It stays its own flag and does not
+          // mean Wireshark decrypted the payload.
           quicStreamData: bool(c[19]),
           quicShort: bool(c[20]),
-          decrypted: (() => {
-            const stack = intern(c[6]).split(':');
-            const tls = stack.lastIndexOf('tls');
-            return bool(c[19]) || (tls >= 0 && stack.slice(tls + 1).some((p) => p !== 'data'));
-          })(),
+          decrypted: dissectedAbove(stack, 'tls') || dissectedAbove(stack, 'quic', ['data', 'tls']),
         });
         break;
       }
