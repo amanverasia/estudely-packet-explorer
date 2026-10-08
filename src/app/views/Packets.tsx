@@ -243,7 +243,7 @@ export function Packets({ captureSession }: { captureSession: number }) {
                   <div key={vi.index} role="row" className="dt-row clickable" tabIndex={0}
                     style={{ gridTemplateColumns: template, position: 'absolute', top: 0, left: 0, right: 0, height: ROW, transform: `translateY(${vi.start}px)`, minHeight: ROW, fontSize: 12.5 }}
                     onClick={() => r && openDrawer({ title: `Packet #${r.number}`, frames: [r.number] })}
-                    onKeyDown={(e) => { if (r && e.key === 'Enter') openDrawer({ title: `Packet #${r.number}`, frames: [r.number] }); }}>
+                    onKeyDown={(e) => { if (r && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openDrawer({ title: `Packet #${r.number}`, frames: [r.number] }); } }}>
                     {r ? r.columns.map((c, i) => (
                       <div key={i} role="gridcell" className={columns[i] === 'No.' || columns[i] === 'Length' ? 'r' : columns[i] === 'Source' || columns[i] === 'Destination' ? 'mono' : undefined} title={c}>{c}</div>
                     )) : <div className="muted" role="gridcell">Loading…</div>}

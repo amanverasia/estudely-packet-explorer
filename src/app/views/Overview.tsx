@@ -157,7 +157,7 @@ export function CaptureNotes() {
   if (c.malformedPackets) notes.push(<Note key="mal" kind="warn"><b>{plural(c.malformedPackets, 'packet')} malformed</b> according to Wireshark. Fields after the damage point are unavailable.</Note>);
   if (c.lostSegments) notes.push(<Note key="lost" kind="info">Wireshark saw {plural(c.lostSegments, 'gap')} in TCP sequence numbers (segments not captured). Reassembled protocols in those streams may be partial.</Note>);
   if (c.nonMonotonicTimestamps) notes.push(<Note key="ts" kind="info">{plural(c.nonMonotonicTimestamps, 'packet')} have timestamps earlier than the packet before them. Durations use the earliest and latest timestamps.</Note>);
-  if (c.retransmissions || c.outOfOrder) notes.push(<Note key="re" kind="info">TCP analysis: {num(c.retransmissions)} retransmissions, {num(c.outOfOrder)} out-of-order segments, {num(c.duplicateAcks)} duplicate ACKs. Byte counts include retransmitted packets.</Note>);
+  if (c.retransmissions || c.spuriousRetransmissions || c.outOfOrder) notes.push(<Note key="re" kind="info">TCP analysis: {num(c.retransmissions)} retransmissions, {num(c.spuriousRetransmissions)} spurious retransmissions, {num(c.outOfOrder)} out-of-order segments, {num(c.duplicateAcks)} duplicate ACKs. Byte counts include retransmitted packets.</Note>);
   if (filter.start !== null || filter.host) notes.unshift(<Note key="capture-scope" kind="info">These data-quality notes and protocol counters describe the full capture.</Note>);
   if (!notes.length) return null;
   return <div className="notes">{notes}</div>;

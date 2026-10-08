@@ -79,6 +79,7 @@ export function htmlReport(model: AnalysisModel, scope?: HtmlReportScope): strin
     ['Expert error packets', c.expertErrorPackets],
     ['Fragment packets', c.fragmentPackets],
     ['TCP retransmissions', c.retransmissions],
+    ['TCP spurious retransmissions', c.spuriousRetransmissions],
     ['Out-of-order segments', c.outOfOrder],
     ['Lost segments', c.lostSegments],
     ['Duplicate ACKs', c.duplicateAcks],

@@ -205,7 +205,7 @@ function ConversationDetail({ c }: { c: Conversation }) {
           <dl className="kv">
             <dt>Protocols</dt><dd>{c.protocols.join(', ')}</dd>
             {t && <><dt>TCP flags seen</dt><dd>{tcpState(c)}</dd>
-              <dt>TCP analysis</dt><dd>{num(t.retransmissions)} retransmissions, {num(t.outOfOrder)} out of order, {num(t.lostSegments)} gaps (segments not captured)</dd></>}
+              <dt>TCP analysis</dt><dd>{num(t.retransmissions)} retransmissions, {num(t.spuriousRetransmissions)} spurious retransmissions, {num(t.outOfOrder)} out of order, {num(t.lostSegments)} gaps (segments not captured)</dd></>}
             {(c.truncatedPackets > 0 || c.malformedPackets > 0) && <><dt>Data quality</dt><dd>{num(c.truncatedPackets)} truncated, {num(c.malformedPackets)} malformed packets</dd></>}
             <dt>Decoded records</dt><dd>{num(dns.length)} DNS, {num(http.length)} HTTP, {num(tls.length)} TLS</dd>
           </dl>

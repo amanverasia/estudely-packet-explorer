@@ -80,7 +80,7 @@ export async function analyze(
     timestampDigits: raw.timestampDigits, nonMonotonicTimestamps: packetSummary.backwards,
     interfaces, wireBytes: packetSummary.wire, capturedBytes: packetSummary.captured, truncatedPackets: packetSummary.truncated,
     malformedPackets: packetSummary.malformed, expertErrorPackets: packetSummary.expert, fragmentPackets: packetSummary.fragments,
-    retransmissions: packetSummary.retransmissions, outOfOrder: packetSummary.outOfOrder, lostSegments: packetSummary.lost,
+    retransmissions: packetSummary.retransmissions, spuriousRetransmissions: packetSummary.spuriousRetransmissions, outOfOrder: packetSummary.outOfOrder, lostSegments: packetSummary.lost,
     duplicateAcks: packetSummary.duplicateAcks, incomplete: meta.incomplete,
     warnings: [...meta.warnings, ...raw.warnings], engine: meta.engine, analysisMs: 0,
   };

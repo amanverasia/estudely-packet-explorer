@@ -51,6 +51,8 @@ export interface CaptureInfo {
   expertErrorPackets: number;
   fragmentPackets: number;
   retransmissions: number;
+  /** Wireshark `tcp.analysis.spurious_retransmission`. Not included in `retransmissions`. */
+  spuriousRetransmissions: number;
   outOfOrder: number;
   lostSegments: number;
   duplicateAcks: number;
@@ -184,6 +186,8 @@ export interface Conversation {
     finSeen: boolean;
     rstSeen: boolean;
     retransmissions: number;
+    /** Wireshark spurious retransmissions. Not included in `retransmissions`. */
+    spuriousRetransmissions: number;
     outOfOrder: number;
     lostSegments: number;
     payloadBytesAB: number;

@@ -60,7 +60,7 @@ export function CaptureToolbar({ fileName, facts, exports, keys, timeline, filte
             <h2>Capture information</h2>
             <p className="mono">{fileName}</p>
             <p>Your capture is processed locally in your browser. Capture and key-log files are not uploaded or saved by the app.</p>
-            <p>Use the traffic strip or Overview time bounds to select a time range. Shared filters follow you between views.</p>
+            <p>Use the traffic strip, the start and end fields beside it, or the Overview time bounds to select a time range. Shared filters follow you between views.</p>
             <a href="./ABOUT.html" target="_blank" rel="noopener">Licences and limitations</a>
           </div>
         </details>

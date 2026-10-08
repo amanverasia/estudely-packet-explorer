@@ -15,7 +15,7 @@ function conversation(id: number, patch: Partial<Conversation> = {}): Conversati
     packetsAB: 2, bytesAB: 120, packetsBA: 1, bytesBA: 60,
     start: 0, end: 2, firstFrame: 1, lastFrame: 3,
     protocols: ['TCP'], appProtocol: 'TCP',
-    tcp: { synSeen: true, synAckSeen: true, finSeen: false, rstSeen: false, retransmissions: 0, outOfOrder: 0, lostSegments: 0, payloadBytesAB: 0, payloadBytesBA: 0 },
+    tcp: { synSeen: true, synAckSeen: true, finSeen: false, rstSeen: false, retransmissions: 0, spuriousRetransmissions: 0, outOfOrder: 0, lostSegments: 0, payloadBytesAB: 0, payloadBytesBA: 0 },
     truncatedPackets: 0,
     malformedPackets: 0,
     records: { dns: 0, http: 0, tls: 0 },
@@ -28,7 +28,7 @@ describe('connection quality filters', () => {
     const selectedTraffic = conversation(1, {
       packetsAB: 1,
       packetsBA: 0,
-      tcp: { synSeen: true, synAckSeen: true, finSeen: false, rstSeen: true, retransmissions: 4, outOfOrder: 2, lostSegments: 3, payloadBytesAB: 0, payloadBytesBA: 0 },
+      tcp: { synSeen: true, synAckSeen: true, finSeen: false, rstSeen: true, retransmissions: 4, spuriousRetransmissions: 0, outOfOrder: 2, lostSegments: 3, payloadBytesAB: 0, payloadBytesBA: 0 },
     });
     const damagedUdp = conversation(2, { transport: 'UDP', tcp: null, truncatedPackets: 1, malformedPackets: 1 });
     const cleanTcp = conversation(3);
@@ -36,6 +36,7 @@ describe('connection quality filters', () => {
     expect(countConnectionQuality([selectedTraffic, damagedUdp, cleanTcp])).toEqual({
       all: 3,
       retransmissions: 1,
+      spuriousRetransmissions: 0,
       outOfOrder: 1,
       gaps: 1,
       rstSeen: 1,
@@ -46,7 +47,7 @@ describe('connection quality filters', () => {
 
   it('filters by one observation and leaves All as a clear option', () => {
     const retransmitted = conversation(1, {
-      tcp: { synSeen: true, synAckSeen: true, finSeen: false, rstSeen: false, retransmissions: 1, outOfOrder: 0, lostSegments: 0, payloadBytesAB: 0, payloadBytesBA: 0 },
+      tcp: { synSeen: true, synAckSeen: true, finSeen: false, rstSeen: false, retransmissions: 1, spuriousRetransmissions: 0, outOfOrder: 0, lostSegments: 0, payloadBytesAB: 0, payloadBytesBA: 0 },
     });
     const udp = conversation(2, { transport: 'UDP', tcp: null, truncatedPackets: 1 });
     const conversations = [retransmitted, udp];
@@ -55,5 +56,17 @@ describe('connection quality filters', () => {
     expect(filterConnectionsByQuality(conversations, 'truncated')).toEqual([udp]);
     expect(filterConnectionsByQuality(conversations, 'all')).toBe(conversations);
     expect(filterConnectionsByQuality(conversations, 'malformed')).toEqual([]);
+  });
+
+  it('keeps spurious retransmissions out of the ordinary retransmission filter', () => {
+    const tcp = { synSeen: true, synAckSeen: true, finSeen: false, rstSeen: false, outOfOrder: 0, lostSegments: 0, payloadBytesAB: 0, payloadBytesBA: 0 };
+    const ordinary = conversation(1, { tcp: { ...tcp, retransmissions: 1, spuriousRetransmissions: 0 } });
+    const spuriousOnly = conversation(2, { tcp: { ...tcp, retransmissions: 0, spuriousRetransmissions: 2 } });
+    const both = conversation(3, { tcp: { ...tcp, retransmissions: 1, spuriousRetransmissions: 1 } });
+    const conversations = [ordinary, spuriousOnly, both];
+
+    expect(filterConnectionsByQuality(conversations, 'retransmissions')).toEqual([ordinary, both]);
+    expect(filterConnectionsByQuality(conversations, 'spuriousRetransmissions')).toEqual([spuriousOnly, both]);
+    expect(countConnectionQuality(conversations)).toMatchObject({ retransmissions: 2, spuriousRetransmissions: 2 });
   });
 });
