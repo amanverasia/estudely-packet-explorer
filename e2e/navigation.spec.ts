@@ -115,3 +115,18 @@ test('navigation retains shared filters, keeps filtered zero protocols visible, 
   await expect(sidebar.locator('a[href="#/http"]')).toBeVisible();
   await expect(sidebar.locator('a[href="#/dns"]')).toBeHidden();
 });
+
+test('the first capture from a deep link opens Overview with a clean hash', async ({ page }) => {
+  await page.goto('./');
+  await page.evaluate(() => { location.hash = '#/connections?conv=3&hf=10.0.0.9'; });
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe('#/connections?conv=3&hf=10.0.0.9');
+  await page.locator('input[type=file]').first().setInputFiles(fixture('dns.pcap'));
+  await expect(page.locator('.cap-title h1')).toHaveText('dns.pcap');
+  await expect(page.locator('.view-head').getByRole('heading', { name: 'Overview', exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe('#/overview');
+  await expect(page.getByRole('button', { name: 'Remove host filter for 10.0.0.9' })).toHaveCount(0);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.locator('.workspace-sidebar a[href="#/dns"]').click();
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe('#/dns');
+  await expect(page.locator('.view-head').getByRole('heading', { name: 'Name resolution', exact: true })).toBeVisible();
+});

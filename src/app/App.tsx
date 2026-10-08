@@ -20,6 +20,7 @@ import { WorkspaceNavigation } from './components/WorkspaceNavigation';
 import { JsonExport } from './components/JsonExport';
 import { htmlReport } from './report';
 import { EngineClient, HARD_LIMIT_BYTES, SOFT_LIMIT_BYTES, type EngineState } from './engine';
+import { landingDragLeaveAction, probeFromDragLeave } from './dropHighlight';
 import { bytes, duration, num } from './format';
 import { Overview } from './views/Overview';
 import { Dns } from './views/Dns';
@@ -134,14 +135,19 @@ export function App() {
     setActiveKeyLog(null);
     setReturnOperation(null);
     snapshotRef.current = null;
-    const replacingCapture = captureAttempted.current;
     captureAttempted.current = true;
     const session = resetViewState();
-    if (replacingCapture) replaceRoute('#/overview', session);
-    else setHistoryCaptureSession(session);
+    // A first open has no investigation yet. Leaving the previous hash in place
+    // would apply someone else's view, conversation, and filters to this file.
+    replaceRoute('#/overview', session);
     setDrawers([]);
     engine.open(file, keyLog);
-  }, [engine, replaceRoute, resetViewState, setHistoryCaptureSession]);
+  }, [engine, replaceRoute, resetViewState]);
+  const retryFailedOpen = useCallback(() => {
+    const file = currentFileRef.current;
+    if (!file) return;
+    openFile(file, pendingKeysRef.current);
+  }, [openFile]);
 
   const saveSnapshot = useCallback(() => {
     snapshotRef.current = { hash: location.hash, drawers, scroll: window.scrollY, workspaceScroll: document.querySelector('.content')?.scrollTop ?? 0, tables: Array.from(document.querySelectorAll('.dt-scroll')).map((element) => ({ label: element.getAttribute('aria-label'), top: element.scrollTop })) };
@@ -266,7 +272,7 @@ export function App() {
           <button className="btn" onClick={closeCapture}>Return to start</button>
         </section></main>
       ) : (
-        <Landing state={state} onOpen={openFile} onCancel={closeCapture} onCompare={() => enterCompare(null)} theme={theme} setTheme={setTheme} />
+        <Landing state={state} onOpen={openFile} onCancel={closeCapture} onCompare={() => enterCompare(null)} onRetry={state.kind === 'error' && currentFileRef.current ? retryFailedOpen : undefined} theme={theme} setTheme={setTheme} />
       )}
       <UpdateBanner captureOpen={state.kind !== 'idle' && state.kind !== 'error'} />
     </>
@@ -296,13 +302,36 @@ function ShieldIcon() {
   return <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1 2.5 3v4.3c0 3.4 2.3 6.4 5.5 7.7 3.2-1.3 5.5-4.3 5.5-7.7V3L8 1Zm-1 9.7L4.6 8.3l1.1-1.1L7 8.5l3.3-3.3 1.1 1.1L7 10.7Z" /></svg>;
 }
 
-function Landing({ state, onOpen, onCancel, onCompare, theme, setTheme }: { state: EngineState; onOpen: (f: File, keyLog?: File | null) => void; onCancel: () => void; onCompare: () => void; theme: Theme; setTheme: (t: Theme) => void }) {
+function Landing({ state, onOpen, onCancel, onCompare, onRetry, theme, setTheme }: { state: EngineState; onOpen: (f: File, keyLog?: File | null) => void; onCancel: () => void; onCompare: () => void; onRetry?: () => void; theme: Theme; setTheme: (t: Theme) => void }) {
   const [over, setOver] = useState(false);
   const [keyLog, setKeyLog] = useState<File | null>(null);
   const [dropError, setDropError] = useState<string | null>(null);
   const [sampleError, setSampleError] = useState<string | null>(null);
   const [sampleBusy, setSampleBusy] = useState(false);
+  const dragLeaveTimer = useRef<number | null>(null);
   const working = state.kind === 'working' ? state : null;
+  const clearDragLeaveTimer = () => {
+    if (dragLeaveTimer.current !== null) {
+      window.clearTimeout(dragLeaveTimer.current);
+      dragLeaveTimer.current = null;
+    }
+  };
+  const showDropHighlight = () => {
+    clearDragLeaveTimer();
+    setOver(true);
+  };
+  const hideDropHighlight = () => {
+    clearDragLeaveTimer();
+    setOver(false);
+  };
+  useEffect(() => {
+    const endDrag = () => hideDropHighlight();
+    window.addEventListener('dragend', endDrag);
+    return () => {
+      window.removeEventListener('dragend', endDrag);
+      clearDragLeaveTimer();
+    };
+  }, []);
   const openSample = async () => {
     setSampleError(null);
     setSampleBusy(true);
@@ -317,11 +346,20 @@ function Landing({ state, onOpen, onCancel, onCompare, theme, setTheme }: { stat
   };
   return (
     <main className="landing"
-      onDragOver={(e) => { e.preventDefault(); setOver(true); }}
-      onDragLeave={() => setOver(false)}
+      onDragOver={(e) => { e.preventDefault(); showDropHighlight(); }}
+      onDragLeave={(e) => {
+        const action = landingDragLeaveAction(probeFromDragLeave(e.currentTarget, e));
+        if (action === 'keep') return;
+        if (action === 'clear') { hideDropHighlight(); return; }
+        clearDragLeaveTimer();
+        dragLeaveTimer.current = window.setTimeout(() => {
+          dragLeaveTimer.current = null;
+          setOver(false);
+        }, 0);
+      }}
       onDrop={(e) => {
         e.preventDefault();
-        setOver(false);
+        hideDropHighlight();
         if (working) return;
         const file = e.dataTransfer.files?.[0];
         if (!file) { setDropError('Drop a capture file to open it.'); return; }
@@ -383,9 +421,12 @@ function Landing({ state, onOpen, onCancel, onCompare, theme, setTheme }: { stat
               </section>
             )}
             {state.kind === 'error' && (
-              <div className="note crit" role="alert">
-                <div><b>{state.fileName ? `Could not analyse ${state.fileName}.` : 'Something went wrong.'}</b> {state.message}</div>
-              </div>
+              <>
+                <div className="note crit" role="alert">
+                  <div><b>{state.fileName ? `Could not analyse ${state.fileName}.` : 'Something went wrong.'}</b> {state.message}</div>
+                </div>
+                {onRetry && <button className="btn primary" type="button" onClick={onRetry}>Retry</button>}
+              </>
             )}
             {working && working.fileSize > SOFT_LIMIT_BYTES && (
               <div className="note warn">{working.fileSize > HARD_LIMIT_BYTES
@@ -403,7 +444,7 @@ function Landing({ state, onOpen, onCancel, onCompare, theme, setTheme }: { stat
           <article className="landing-detail">
             <span className="landing-detail-label">CAPACITY</span>
             <h3>Large captures still open</h3>
-            <p>The first {bytes(HARD_LIMIT_BYTES)} of capture data is analyzed; if there is more, results are marked partial. Tested up to 350 MB and 400,000 packets; expect slower analysis above {bytes(SOFT_LIMIT_BYTES)}.</p>
+            <p>The first {bytes(HARD_LIMIT_BYTES)} of capture data is analyzed; if there is more, results are marked partial. Tested up to 350 MB (decimal) and 400,000 packets; expect slower analysis above {bytes(SOFT_LIMIT_BYTES)}.</p>
           </article>
           <article className="landing-detail landing-detail-offline">
             <span className="landing-detail-label">AVAILABILITY</span>
