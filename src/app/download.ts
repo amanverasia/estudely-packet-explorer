@@ -39,19 +39,19 @@ export interface JsonExportOptions {
 }
 
 const SENSITIVE_FIELD_KEYS = new Set([
-  'a', 'addr', 'arpmacs', 'assignedip', 'b', 'client', 'clientmac', 'clientversion', 'contenttype',
+  'a', 'addr', 'alpn', 'arpmacs', 'assignedip', 'b', 'client', 'clientmac', 'clientversion', 'contenttype',
   'commonname', 'dnsservers', 'dst', 'fileName', 'hostname', 'host', 'incomplete', 'ip', 'issuer',
   'location', 'mac', 'macs', 'name', 'offeredip', 'phrase', 'qname', 'requestedip', 'requestcontenttype',
   'requestheaders', 'responseheaders', 'routers', 'san', 'sni', 'server', 'serverheader',
   'serverversion', 'sha256', 'src', 'startepoch', 'subject', 'subnetmask', 'leasetime', 'targetip', 'targetmac', 'txid', 'uri',
-  'useragent', 'value', 'warnings', 'xid', 'serial', 'ident', 'notbefore', 'notafter',
+  'useragent', 'value', 'vendor', 'warnings', 'xid', 'serial', 'ident', 'notbefore', 'notafter',
 ].map((key) => key.toLowerCase()));
 
 const SENSITIVE_CATEGORIES = [
   'Capture file name and exact start time',
-  'IP addresses, MAC addresses, host names, and DNS names',
+  'IP addresses, MAC addresses, MAC vendor strings, host names, and DNS names',
   'HTTP hosts, request paths, locations, user-agent strings, and headers',
-  'TLS server names and certificate identity values',
+  'TLS server names, TLS and QUIC ALPN values, and certificate identity values',
   'DHCP client identifiers, assigned addresses, and network configuration',
   'SSH identification strings',
 ];
@@ -63,7 +63,7 @@ const NEVER_EXPORTED = [
   'Exported-file inventory and downloaded file contents',
 ];
 
-const REDACTION_LIMITS = 'Redaction replaces values in known sensitive fields. Frame numbers, relative timings, ports, traffic sizes, protocol labels, and counts remain. These details can still identify or describe a capture, so redaction is not anonymization; review the file before sharing.';
+const REDACTION_LIMITS = 'Redaction replaces values in known sensitive fields, including MAC vendor strings and ALPN values. Frame numbers, relative timings, ports, traffic sizes, protocol labels, and counts remain. These details can still identify or describe a capture, so redaction is not anonymization; review the file before sharing.';
 
 function exportHeader(mode: JsonExportOptions['mode'], redactSensitive: boolean) {
   return {
@@ -134,8 +134,14 @@ function aggregateExport(model: AnalysisModel) {
   };
 }
 
+function isRecordArray(value: unknown): boolean {
+  return Array.isArray(value) && value.length > 0 && value.every((item) => item !== null && typeof item === 'object' && !Array.isArray(item));
+}
+
 function redactKnownFields(value: unknown, key = ''): unknown {
-  if (SENSITIVE_FIELD_KEYS.has(key.toLowerCase())) {
+  // hosts[].macs is an array of objects, so the MAC and vendor have to be
+  // replaced in place. A string array such as ARP MACs is still one token.
+  if (SENSITIVE_FIELD_KEYS.has(key.toLowerCase()) && !isRecordArray(value)) {
     if (Array.isArray(value) && value.length === 0) return value;
     if (value === '') return value;
     return value === null || value === undefined ? value : '[REDACTED]';
@@ -181,4 +187,9 @@ export function summaryJson(model: AnalysisModel, options: JsonExportOptions = {
 
 export function safeBase(fileName: string): string {
   return fileName.replace(/\.[^.]+$/, '').replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 60) || 'capture';
+}
+
+export function jsonDownloadName(captureFileName: string, mode: 'aggregate' | 'detailed'): string {
+  const suffix = mode === 'aggregate' ? 'summary' : 'details';
+  return `${safeBase(captureFileName)}-${suffix}.json`;
 }

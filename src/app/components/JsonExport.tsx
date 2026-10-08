@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 import { useEffect, useRef, useState } from 'react';
 import type { AnalysisModel } from '../../engine/types';
-import { downloadBlob, summaryJson } from '../download';
+import { downloadBlob, jsonDownloadName, summaryJson } from '../download';
 
 interface CaptureExportProps {
   model: AnalysisModel;
@@ -49,9 +49,8 @@ export function JsonExport({ model, selectionAvailable, selectionDescription, on
   };
 
   const exportJson = (mode: 'aggregate' | 'detailed') => {
-    const suffix = mode === 'aggregate' ? 'summary' : 'details';
     const json = summaryJson(model, { mode, redactSensitive });
-    downloadBlob(`capture-${suffix}.json`, new Blob([json], { type: 'application/json;charset=utf-8' }));
+    downloadBlob(jsonDownloadName(model.capture.fileName, mode), new Blob([json], { type: 'application/json;charset=utf-8' }));
     close(true);
   };
 
@@ -81,7 +80,7 @@ export function JsonExport({ model, selectionAvailable, selectionDescription, on
             Redact known identifying and content-like values
           </label>
           <button className="btn" onClick={() => exportJson('detailed')}>Download whole capture detailed JSON</button>
-          <p className="muted">Redaction replaces values in known sensitive fields. Relative timings, frame numbers, ports, traffic sizes, protocol labels, and counts remain, so the result is not anonymous. Review it before sharing.</p>
+          <p className="muted">Redaction replaces values in known sensitive fields, including MAC vendor strings and ALPN values. Relative timings, frame numbers, ports, traffic sizes, protocol labels, and counts remain, so the result is not anonymous. Review it before sharing.</p>
         </section>
         <p className="json-export-exclusions">JSON downloads always cover the whole capture. Both JSON choices exclude packet bytes, packet field trees, stream payloads, TLS key logs and secrets, exported-file inventory, and file contents. Downloads are created locally; no capture data is sent.</p>
         <p className="json-export-exclusions">CSV exports are available in each table and use that table’s current search and sort. Conversation packet CSV exports cover the current page.</p>

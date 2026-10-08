@@ -35,7 +35,7 @@ async function openMixed(page: Page) {
   await expect(page.locator('.cap-title h1')).toHaveText('mixed.pcap');
 }
 
-async function download(page: Page, name: string, keyboard = false): Promise<string> {
+async function download(page: Page, name: string, keyboard = false): Promise<{ text: string; filename: string }> {
   const menu = page.locator('.json-export-menu');
   await menu.locator('summary').click();
   const button = menu.getByRole('button', { name, exact: true });
@@ -49,7 +49,7 @@ async function download(page: Page, name: string, keyboard = false): Promise<str
   if (!path) throw new Error('Download path unavailable');
   await expect(menu).not.toHaveAttribute('open', '');
   await expect(menu.locator('summary')).toBeFocused();
-  return readFileSync(path, 'utf8');
+  return { text: readFileSync(path, 'utf8'), filename: result.suggestedFilename() };
 }
 
 test('Export labels scope before download and preserves 31 selected versus 129 whole packets', async ({ page }) => {
@@ -72,27 +72,40 @@ test('Export labels scope before download and preserves 31 selected versus 129 w
   await menu.locator('summary').click();
   await expect(menu).toContainText('31 of 129 packets');
   await expect(menu).toContainText('JSON downloads always cover the whole capture');
+  await expect(menu).toContainText('including MAC vendor strings and ALPN values');
+  await expect(menu).toContainText('ports, traffic sizes, protocol labels, and counts remain');
   await expect(menu.getByRole('checkbox')).toBeChecked();
   await expect(menu.getByRole('button', { name: 'Download current selection HTML' })).toBeEnabled();
   await page.keyboard.press('Escape');
 
   const selected = await download(page, 'Download current selection HTML', true);
-  expect(selected).toContain('Active shared-filter aggregates');
-  expect(selected).toContain('<span>Matching packets</span><strong>31</strong>');
-  expect(selected).toContain('10.000000–16.000000');
+  expect(selected.filename).toBe('mixed-filtered-report.html');
+  expect(selected.text).toContain('Active shared-filter aggregates');
+  expect(selected.text).toContain('<span>Matching packets</span><strong>31</strong>');
+  expect(selected.text).toContain('10.000000–16.000000');
   const whole = await download(page, 'Download whole capture HTML', true);
-  expect(whole).toContain('Whole-capture aggregates');
-  expect(whole).toContain('<span>Packets</span><strong>129</strong>');
-  const aggregate = JSON.parse(await download(page, 'Download whole capture aggregate JSON', true));
+  expect(whole.filename).toBe('mixed-report.html');
+  expect(whole.text).toContain('Whole-capture aggregates');
+  expect(whole.text).toContain('<span>Packets</span><strong>129</strong>');
+  const aggregateDownload = await download(page, 'Download whole capture aggregate JSON', true);
+  const aggregate = JSON.parse(aggregateDownload.text);
+  expect(aggregateDownload.filename).toBe('mixed-summary.json');
   expect(aggregate.capture.packetCount).toBe(129);
   expect(aggregate.export.mode).toBe('aggregate');
   expect(aggregate).not.toHaveProperty('hosts');
-  const redactedText = await download(page, 'Download whole capture detailed JSON', true);
+  expect(aggregateDownload.text).not.toContain('mixed.pcap');
+  const redactedDownload = await download(page, 'Download whole capture detailed JSON', true);
+  const redactedText = redactedDownload.text;
   const redacted = JSON.parse(redactedText);
+  expect(redactedDownload.filename).toBe('mixed-details.json');
   expect(redacted.capture.packetCount).toBe(129);
+  expect(redacted.capture.fileName).toBe('[REDACTED]');
   expect(redacted.export.redaction).toBe('known sensitive fields replaced with [REDACTED]');
+  expect(redactedText).not.toContain('mixed.pcap');
   expect(redactedText).not.toContain('fixture-agent/1.0');
   expect(redacted.export.neverIncluded).toContain('Reassembled TCP/UDP stream payloads');
+  expect(redacted.export.sensitiveData.join('\n')).toContain('MAC vendor strings');
+  expect(redacted.export.sensitiveData.join('\n')).toContain('ALPN');
   expect(outbound).toEqual([]);
 });
 
