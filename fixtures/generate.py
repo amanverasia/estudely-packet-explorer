@@ -730,11 +730,33 @@ def protocols_edge_fixture():
     wrpcap(os.path.join(HERE, "protocols-edge.pcap"), stamp(P))
 
 
+def icmp_source_fixture():
+    # IPv4 fragments. Wireshark leaves the outer IP header on the frame data
+    # source and dissects the ICMP message, including its quoted header, on
+    # "Reassembled IPv4". The frame ip.src offset is greater than the
+    # reassembled icmp.type offset, so an offset-only search quotes the outer
+    # address. fragsize stays under the 36-byte ICMP payload so this splits.
+    from scapy.layers.inet import ICMP
+    c = Clock()
+    a1, gw = "02:00:00:00:00:a1", "02:00:00:00:00:01"
+    quoted = bytes(IP(src="10.0.2.50", dst="198.51.100.9", id=1) / UDP(sport=51000, dport=33434))[:28]
+    probe = eth(a1, gw) / IP(src="10.0.2.50", dst="198.51.100.9", id=1) / UDP(sport=51000, dport=33434) / Raw(b"probe")
+    outer = IP(src="198.51.100.9", dst="10.0.2.50", id=0x1234) / ICMP(type=3, code=3) / quoted
+    frags = fragment(outer, fragsize=32)
+    if len(frags) != 2:
+        raise SystemExit(f"icmp-source fixture expected 2 fragments, got {len(frags)}")
+    packets = [(probe, c.tick())]
+    for frag in frags:
+        packets.append((eth(gw, a1) / frag, c.tick()))
+    wrpcap(os.path.join(HERE, "icmp-source.pcap"), stamp(packets))
+
+
 FIXTURES = {
     "dns": dns_fixture, "http": http_fixture, "sources": source_fixture, "http-pairing": http_pairing_fixture,
     "http2": http2_fixture, "tls": tls_fixture, "tls13": tls13_fixture, "tls13-h2": tls13_http2_fixture, "edge": edge_fixture,
     "pcapng": pcapng_fixture, "vendors": vendors_fixture, "protocols": protocols_fixture,
-    "protocols-edge": protocols_edge_fixture, "follow": follow_fixture, "ip-data": ip_data_fixture,
+    "protocols-edge": protocols_edge_fixture, "icmp-source": icmp_source_fixture,
+    "follow": follow_fixture, "ip-data": ip_data_fixture,
 }
 
 if __name__ == "__main__":
