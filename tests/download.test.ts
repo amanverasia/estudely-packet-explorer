@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 import { describe, expect, it } from 'vitest';
 import type { AnalysisModel } from '../src/engine/types';
-import { summaryJson } from '../src/app/download';
+import { jsonDownloadName, summaryJson } from '../src/app/download';
 
 function fixtureModel(): AnalysisModel {
   return {
@@ -20,17 +20,17 @@ function fixtureModel(): AnalysisModel {
     protocolHierarchy: [{ proto: 'TCP', packets: 5, bytes: 500 }],
     topProtocols: [{ proto: 'TCP', packets: 5, bytes: 500 }],
     timeline: { origin: 0, end: 2, binSeconds: 1, bins: 2, series: [{ key: 'TCP', packets: [3, 2], bytes: [300, 200] }] },
-    hosts: [{ addr: '10.0.0.7', macs: [{ mac: '00:11:22:33:44:55' }], arpMacs: ['00:11:22:33:44:55'], names: [{ name: 'device.private' }] } as AnalysisModel['hosts'][number]],
+    hosts: [{ addr: '10.0.0.7', macs: [{ mac: '00:11:22:33:44:55', packets: 3, vendor: 'Apple, Inc.', locallyAdministered: false }], arpMacs: ['00:11:22:33:44:55'], names: [{ name: 'device.private' }] } as AnalysisModel['hosts'][number]],
     conversations: [{ a: '10.0.0.7', b: '10.0.0.8', aPort: 51000, bPort: 443 } as AnalysisModel['conversations'][number]],
     dns: [{ client: '10.0.0.7', server: '10.0.0.8', qname: 'private.example', answers: [{ name: 'private.example', value: '10.0.0.8' }] } as AnalysisModel['dns'][number]],
     http: [{ host: 'private.example', uri: '/private/path', userAgent: 'private-agent', requestHeaders: ['Authorization: Bearer private-token'], responseHeaders: ['Set-Cookie: private-cookie'], location: 'https://private.example/redirect' } as AnalysisModel['http'][number]],
-    tls: [{ sni: 'private.example', certificates: [{ subject: 'CN=Private Person', serial: 'private-serial', commonName: 'Private Person', san: ['private.example'], sha256: 'private-fingerprint' }] } as AnalysisModel['tls'][number]],
+    tls: [{ sni: 'private.example', offered: { alpn: ['h2', 'http/1.1'] }, negotiated: { alpn: 'h2' }, certificates: [{ subject: 'CN=Private Person', serial: 'private-serial', commonName: 'Private Person', san: ['private.example'], sha256: 'private-fingerprint', error: 'truncated DER header' }] } as AnalysisModel['tls'][number]],
     arp: [{ mac: '00:11:22:33:44:55', ip: '10.0.0.7', targetIp: '10.0.0.8' } as AnalysisModel['arp'][number]],
     arpBindings: [{ ip: '10.0.0.7', macs: ['00:11:22:33:44:55'] } as AnalysisModel['arpBindings'][number]],
     dhcp: [{ clientMac: '00:11:22:33:44:55', hostname: 'private-host', requestedIp: '10.0.0.7', assignedIp: '10.0.0.7', dnsServers: ['10.0.0.8'], subnetMask: '255.255.255.0', leaseTime: 86400 } as AnalysisModel['dhcp'][number]],
     icmp: [{ src: '10.0.0.7', dst: '10.0.0.8' } as AnalysisModel['icmp'][number]],
     ssh: [{ clientVersion: 'SSH-2.0-private-client', serverVersion: 'SSH-2.0-private-server' } as AnalysisModel['ssh'][number]],
-    quic: [{ client: '10.0.0.7', server: '10.0.0.8', sni: 'private.example' } as AnalysisModel['quic'][number]],
+    quic: [{ client: '10.0.0.7', server: '10.0.0.8', sni: 'private.example', alpn: ['h3'] } as AnalysisModel['quic'][number]],
     unsupported: { httpPortsUndecoded: [], encryptedConversations: 1, quicConversations: 0, http2Packets: 0, httpWithGaps: [] },
   } as unknown as AnalysisModel;
 }
@@ -48,7 +48,7 @@ describe('JSON exports', () => {
     expect(result.capture).not.toHaveProperty('startEpoch');
     expect(result).not.toHaveProperty('hosts');
     expect(result).not.toHaveProperty('timeline');
-    for (const value of ['private-capture.pcap', '10.0.0.7', 'private.example', '/private/path', 'private-token']) {
+    for (const value of ['private-capture.pcap', '10.0.0.7', 'private.example', '/private/path', 'private-token', 'Apple, Inc.', 'http/1.1', 'h3']) {
       expect(json).not.toContain(value);
     }
   });
@@ -61,10 +61,21 @@ describe('JSON exports', () => {
 
     expect(result.export).toMatchObject({ mode: 'detailed', redaction: 'known sensitive fields replaced with [REDACTED]' });
     expect(result.hosts[0].addr).toBe('[REDACTED]');
+    expect(result.hosts[0].macs[0]).toEqual({ mac: '[REDACTED]', packets: 3, vendor: '[REDACTED]', locallyAdministered: false });
+    expect(result.hosts[0].arpMacs).toBe('[REDACTED]');
+    expect(result.tls[0].offered.alpn).toBe('[REDACTED]');
+    expect(result.tls[0].negotiated.alpn).toBe('[REDACTED]');
+    expect(result.quic[0].alpn).toBe('[REDACTED]');
+    expect(result.tls[0].certificates[0].subject).toBe('[REDACTED]');
+    expect(result.tls[0].certificates[0].error).toBe('truncated DER header');
+    expect(result.conversations[0].aPort).toBe(51000);
+    expect(result.protocolHierarchy[0].proto).toBe('TCP');
+    expect(result.export.sensitiveData.join('\n')).toContain('MAC vendor strings');
+    expect(result.export.sensitiveData.join('\n')).toContain('ALPN');
     expect(result.http[0].requestHeaders).toBe('[REDACTED]');
     expect(result).not.toHaveProperty('filterIndex');
     expect(result.export.neverIncluded).toContain('Reassembled TCP/UDP stream payloads');
-    for (const value of ['10.0.0.7', '00:11:22:33:44:55', 'private.example', '/private/path', 'private-agent', 'private-token', 'private-fingerprint', 'private-capture.pcap', '255.255.255.0', '86400']) {
+    for (const value of ['10.0.0.7', '00:11:22:33:44:55', 'private.example', '/private/path', 'private-agent', 'private-token', 'private-fingerprint', 'private-capture.pcap', '255.255.255.0', '86400', 'Apple, Inc.', 'http/1.1', 'h3']) {
       expect(json).not.toContain(value);
     }
     expect(model).toEqual(before);
@@ -75,9 +86,49 @@ describe('JSON exports', () => {
 
     expect(result.export.redaction).toBe('not applied');
     expect(result.hosts[0].addr).toBe('10.0.0.7');
+    expect(result.hosts[0].macs[0]).toMatchObject({ mac: '00:11:22:33:44:55', packets: 3, vendor: 'Apple, Inc.', locallyAdministered: false });
+    expect(result.tls[0].offered.alpn).toEqual(['h2', 'http/1.1']);
+    expect(result.tls[0].negotiated.alpn).toBe('h2');
+    expect(result.quic[0].alpn).toEqual(['h3']);
+    expect(result.tls[0].certificates[0].error).toBe('truncated DER header');
     expect(result.http[0].requestHeaders).toContain('Authorization: Bearer private-token');
     expect(result.dhcp[0].subnetMask).toBe('255.255.255.0');
     expect(result.export.sensitiveData).toContain('HTTP hosts, request paths, locations, user-agent strings, and headers');
     expect(result.export.redactionLimits).toContain('not anonymization');
+    expect(result.export.redactionLimits).toContain('MAC vendor strings and ALPN values');
+  });
+});
+
+describe('JSON download names', () => {
+  it('names summary and details files from the capture basename', () => {
+    expect(jsonDownloadName('office.pcapng', 'aggregate')).toBe('office-summary.json');
+    expect(jsonDownloadName('office.pcapng', 'detailed')).toBe('office-details.json');
+  });
+
+  it('keeps a hostile capture name from setting a path or a different extension', () => {
+    const names = [
+      jsonDownloadName('../../etc/passwd', 'aggregate'),
+      jsonDownloadName('..\\..\\office.pcapng', 'detailed'),
+      jsonDownloadName('evil.html', 'aggregate'),
+      jsonDownloadName('report.json', 'detailed'),
+      jsonDownloadName('a/b\\c\0.pcap', 'aggregate'),
+      jsonDownloadName('name.pcapng.exe', 'detailed'),
+      jsonDownloadName('////', 'aggregate'),
+      jsonDownloadName('', 'detailed'),
+    ];
+    expect(names).toEqual([
+      '.._.-summary.json',
+      '.._.._office-details.json',
+      'evil-summary.json',
+      'report-details.json',
+      'a_b_c_-summary.json',
+      'name.pcapng-details.json',
+      '_-summary.json',
+      'capture-details.json',
+    ]);
+    for (const name of names) {
+      expect(name).toMatch(/^[A-Za-z0-9._-]{1,60}-(summary|details)\.json$/);
+      expect(name).not.toMatch(/[\\/]/);
+    }
   });
 });

@@ -610,7 +610,7 @@ test('JSON export offers an aggregate allowlist and redacted or unredacted detai
 
   const aggregateDownload = await readDownloadedJson('Download whole capture aggregate JSON');
   const aggregate = JSON.parse(aggregateDownload.json);
-  expect(aggregateDownload.name).toBe('capture-summary.json');
+  expect(aggregateDownload.name).toBe('http-summary.json');
   expect(aggregate.export.mode).toBe('aggregate');
   expect(aggregate).not.toHaveProperty('hosts');
   expect(aggregateDownload.json).not.toContain('10.0.0.5');
@@ -1112,7 +1112,7 @@ test('exports are local downloads', async ({ page }) => {
     page.waitForEvent('download'),
     menu.getByRole('button', { name: 'Download whole capture aggregate JSON' }).click(),
   ]);
-  expect(jd.suggestedFilename()).toBe('capture-summary.json');
+  expect(jd.suggestedFilename()).toBe('dns-summary.json');
   const jsonPath = await jd.path();
   if (!jsonPath) throw new Error('Browser did not provide the JSON download path');
   const summary = JSON.parse(readFileSync(jsonPath, 'utf8'));
