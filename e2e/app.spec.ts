@@ -975,11 +975,174 @@ test('edge cases: truncated/malformed notes, incomplete file, non-capture file',
   await expect(page.getByText(/cut short/)).toBeVisible();
 
   await page.locator('input[type=file]').first().setInputFiles(fixture('not-a-capture.pcap'));
+  await expect(page.getByRole('alert')).toContainText('Could not analyse not-a-capture.pcap.');
   await expect(page.getByRole('alert')).toContainText('could not be opened as a packet capture');
+  await expect(page.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
   // The landing page is usable again afterwards.
   await openCapture(page, 'multi-iface.pcapng');
   await expect(page.getByText('Raw IP (7)')).toBeVisible();
   await expect(page.getByText(/nanoseconds \(9 decimal digits used\)/)).toBeVisible();
+});
+
+test('capacity copy keeps decimal and binary figures distinct', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('./');
+  const card = page.locator('article.landing-detail').filter({ hasText: 'CAPACITY' });
+  await expect(card).toContainText('The first 1.00 GiB of capture data is analyzed');
+  await expect(card).toContainText('Tested up to 350 MB (decimal) and 400,000 packets; expect slower analysis above 250 MiB.');
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+    for (const theme of ['light', 'dark']) {
+      await page.evaluate((value) => document.documentElement.setAttribute('data-theme', value), theme);
+      await expect(card).toBeVisible();
+      expect(await card.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+    }
+  }
+});
+
+test('start-screen drop highlight stays on across children and clears when the drag leaves', async ({ page }) => {
+  await page.goto('./');
+  const drop = page.locator('section.landing-drop');
+  const drag = (type: string, x: number, y: number, related: 'card' | null = null, files: string[] = []) => page.evaluate(({ type, x, y, related, files }) => {
+    const main = document.querySelector('main.landing');
+    if (!(main instanceof HTMLElement)) throw new Error('missing landing');
+    const transfer = new DataTransfer();
+    for (const name of files) transfer.items.add(new File(['unread'], name));
+    main.dispatchEvent(new DragEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      clientX: x,
+      clientY: y,
+      relatedTarget: related === 'card' ? main.querySelector('.landing-card') : null,
+      dataTransfer: transfer,
+    }));
+  }, { type, x, y, related, files });
+
+  await drag('dragover', 220, 180, null, ['should-not-open.pcap']);
+  await expect(drop).toHaveClass(/over/);
+  await expect(page.getByText('should-not-open.pcap')).toHaveCount(0);
+  await expect(page.getByRole('progressbar')).toHaveCount(0);
+  await page.evaluate(() => {
+    const main = document.querySelector('main.landing');
+    if (!(main instanceof HTMLElement)) throw new Error('missing landing');
+    const card = main.querySelector('.landing-card');
+    const fire = (type: string, x: number, y: number, relatedTarget: Element | null) => {
+      main.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, relatedTarget, dataTransfer: new DataTransfer() }));
+    };
+    fire('dragleave', 240, 200, card);
+    fire('dragover', 260, 220, null);
+    fire('dragleave', 280, 240, null);
+    fire('dragover', 300, 260, null);
+  });
+  await expect(drop).toHaveClass(/over/);
+  await page.waitForTimeout(50);
+  await expect(drop).toHaveClass(/over/);
+
+  await drag('dragleave', 0, 160);
+  await expect(drop).not.toHaveClass(/over/);
+
+  await drag('dragover', 220, 180);
+  await drag('dragleave', 220, 180);
+  await expect(drop).not.toHaveClass(/over/);
+
+  await drag('dragover', 220, 180);
+  await page.evaluate(() => window.dispatchEvent(new DragEvent('dragend')));
+  await expect(drop).not.toHaveClass(/over/);
+
+  await drag('drop', 220, 180);
+  await expect(page.getByRole('alert')).toHaveText('Drop a capture file to open it.');
+  await expect(drop).not.toHaveClass(/over/);
+});
+
+test('a drop opens the first file and a drag during analysis does not open another', async ({ page }) => {
+  await page.addInitScript(() => {
+    const NativeWorker = window.Worker;
+    const control = window as unknown as { holdOpens: boolean };
+    control.holdOpens = true;
+    class HoldingWorker {
+      native: Worker;
+      constructor(url: string | URL, options?: WorkerOptions) { this.native = new NativeWorker(url, options); }
+      set onmessage(handler: ((event: MessageEvent) => void) | null) { this.native.onmessage = handler; }
+      set onerror(handler: ((event: ErrorEvent) => void) | null) { this.native.onerror = handler; }
+      postMessage(message: { type?: string; file?: File }) {
+        const deliver = () => this.native.postMessage(message);
+        if (message?.type === 'open' && control.holdOpens) {
+          const wait = () => { if (control.holdOpens) window.setTimeout(wait, 25); else deliver(); };
+          wait();
+          return;
+        }
+        deliver();
+      }
+      terminate() { this.native.terminate(); }
+    }
+    window.Worker = HoldingWorker as unknown as typeof Worker;
+  });
+  await page.goto('./');
+  await page.evaluate(() => {
+    const main = document.querySelector('main.landing');
+    if (!(main instanceof HTMLElement)) throw new Error('missing landing');
+    const transfer = new DataTransfer();
+    transfer.items.add(new File(['not a capture'], 'first-drop.pcap'));
+    transfer.items.add(new File(['not a capture'], 'second-drop.pcap'));
+    main.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+  });
+  await expect(page.getByRole('heading', { name: 'first-drop.pcap' })).toBeVisible();
+  await page.evaluate(() => {
+    const main = document.querySelector('main.landing');
+    if (!(main instanceof HTMLElement)) throw new Error('missing landing');
+    const transfer = new DataTransfer();
+    transfer.items.add(new File(['not a capture'], 'later-drop.pcap'));
+    main.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+  });
+  await expect(page.getByRole('heading', { name: 'first-drop.pcap' })).toBeVisible();
+  await expect(page.getByText('later-drop.pcap')).toHaveCount(0);
+  await page.evaluate(() => { (window as unknown as { holdOpens: boolean }).holdOpens = false; });
+  const alert = page.getByRole('alert');
+  await expect(alert).toContainText('Could not analyse first-drop.pcap.');
+  await expect(alert).toContainText('could not be opened as a packet capture');
+  await expect(page.getByText('second-drop.pcap')).toHaveCount(0);
+  await expect(page.getByText('later-drop.pcap')).toHaveCount(0);
+});
+
+test('a failed start-screen analysis can be retried with the same file and key log', async ({ page }) => {
+  await page.addInitScript(() => {
+    const NativeWorker = window.Worker;
+    const control = window as unknown as { opens: { name: string; key: string | null }[] };
+    control.opens = [];
+    class CountingWorker {
+      native: Worker;
+      constructor(url: string | URL, options?: WorkerOptions) { this.native = new NativeWorker(url, options); }
+      set onmessage(handler: ((event: MessageEvent) => void) | null) { this.native.onmessage = handler; }
+      set onerror(handler: ((event: ErrorEvent) => void) | null) { this.native.onerror = handler; }
+      postMessage(message: { type?: string; file?: File; keyLog?: File | null }) {
+        if (message?.type === 'open') control.opens.push({ name: message.file?.name ?? '', key: message.keyLog?.name ?? null });
+        this.native.postMessage(message);
+      }
+      terminate() { this.native.terminate(); }
+    }
+    window.Worker = CountingWorker as unknown as typeof Worker;
+  });
+  await page.goto('./');
+  await page.getByLabel('Choose TLS key log (optional)').setInputFiles(fixture('tls13.keys'));
+  await page.locator('input[type=file]').first().setInputFiles(fixture('not-a-capture.pcap'));
+  const alert = page.getByRole('alert');
+  await expect(alert).toContainText('Could not analyse not-a-capture.pcap.');
+  await expect(alert).toContainText('This file could not be opened as a packet capture.');
+  await expect(page.getByRole('button', { name: 'Return to previous analysis' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Return to start' })).toHaveCount(0);
+  const retry = page.getByRole('button', { name: 'Retry', exact: true });
+  await expect(retry).toBeVisible();
+  await retry.click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { opens: { name: string; key: string | null }[] }).opens)).toEqual([
+    { name: 'not-a-capture.pcap', key: 'tls13.keys' },
+    { name: 'not-a-capture.pcap', key: 'tls13.keys' },
+  ]);
+  await expect(alert).toContainText('Could not analyse not-a-capture.pcap.');
+  await expect(alert).toContainText('This file could not be opened as a packet capture.');
+  await page.waitForTimeout(400);
+  await expect.poll(() => page.evaluate(() => (window as unknown as { opens: unknown[] }).opens.length)).toBe(2);
+  await page.locator('input[type=file]').first().setInputFiles(fixture('dns.pcap'));
+  await expect(page.locator('.cap-title h1')).toHaveText('dns.pcap');
 });
 
 test('cancelling an analysis returns to the start and a later capture opens cleanly', async ({ page }) => {
