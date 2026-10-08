@@ -10,10 +10,12 @@ import { absTime, bytes, num, plural } from '../format';
 import { lookupLocalIp, type LocalIpDataKind, type LocalIpDatabase, type LocalIpMatch } from '../localIpData';
 
 export function Hosts() {
-  const { model, sourceModel, params, go, openDrawer, filter, setHostFilter } = useApp();
+  const { model, sourceModel, params, go, openDrawer, closeDrawer, patchRouteParams, filter, setHostFilter } = useApp();
   const [family, setFamily] = useViewState<'all' | '4' | '6'>('hosts.family', 'all', (value): value is 'all' | '4' | '6' => value === 'all' || value === '4' || value === '6');
   const [selected, setSelected] = useViewState<string | null>('hosts.selected', null, (value): value is string | null => value === null || typeof value === 'string');
   const lastRouteHost = useRef<string | null>(null);
+  const openedHostFromRoute = useRef(false);
+  const [hostNotice, setHostNotice] = useState<string | null>(null);
   const [databases, setDatabases] = useState<Record<LocalIpDataKind, LocalIpDatabase | null>>({ country: null, asn: null });
   const [showIpColumns, setShowIpColumns] = useViewState<boolean>('hosts.ipColumns', false, (value): value is boolean => typeof value === 'boolean');
   const rows = useMemo(() => model.hosts.filter((h) => family === 'all' || String(h.ipVersion) === family), [model.hosts, family]);
@@ -29,16 +31,31 @@ export function Hosts() {
     });
   };
   useEffect(() => {
-    if (!params.has('host')) { lastRouteHost.current = null; return; }
+    if (!params.has('host')) { lastRouteHost.current = null; openedHostFromRoute.current = false; setHostNotice(null); return; }
     const requested = params.get('host') || '';
-    if (requested === lastRouteHost.current) return;
-    lastRouteHost.current = requested;
     const found = sourceModel.hosts.find((h) => h.addr === requested);
-    setSelected(found ? found.addr : null);
-    if (found) openHost(found);
+    const visible = !!found && model.hosts.some((h) => h.addr === found.addr) && (family === 'all' || String(found.ipVersion) === family);
+    const notice = !found
+      ? `Host ${requested || '(empty)'} (host) is not in this capture.`
+      : !visible
+        ? `Host ${requested} (host) is outside the current filter. Its details stay closed so the list and the drawer match.`
+        : null;
+    setHostNotice((current) => current === notice ? current : notice);
+    if (notice) {
+      if (lastRouteHost.current !== notice) {
+        lastRouteHost.current = notice;
+        setSelected(null);
+        if (openedHostFromRoute.current) { openedHostFromRoute.current = false; closeDrawer(); }
+      }
+      return;
+    }
+    if (!found || lastRouteHost.current === requested) return;
+    lastRouteHost.current = requested;
+    openedHostFromRoute.current = true;
+    openHost(found);
     // Route changes open the detail once; later renders keep the same host key.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params, sourceModel.hosts]);
+  }, [params, sourceModel.hosts, model.hosts, family, closeDrawer, setSelected]);
   const onDatabaseChange = useCallback((kind: LocalIpDataKind, database: LocalIpDatabase | null) => {
     setDatabases((current) => ({ ...current, [kind]: database }));
   }, []);
@@ -85,6 +102,7 @@ export function Hosts() {
       <ViewHead title="Hosts" right={<Seg label="Address family" value={family} onChange={setFamily} options={[{ value: 'all', label: 'All' }, { value: '4', label: 'IPv4' }, { value: '6', label: 'IPv6' }]} />}>
         One row per IP address seen as a packet source or destination. Bytes are original frame lengths.
       </ViewHead>
+      {hostNotice && <Note kind="warn" onDismiss={() => patchRouteParams({ host: null })}>{hostNotice}</Note>}
       <LocalIpDataPanel databases={databases} onChange={onDatabaseChange} />
       <details style={{ marginBottom: 12 }}>
         <summary>About host evidence and address ranges</summary>

@@ -27,6 +27,13 @@ describe('graph label placement', () => {
     expect(['above', 'below']).toContain(p.get('a')!.side);
   });
 
+  it('keeps a broadcast label clear of its own ring', () => {
+    const node = { id: 'bcast', x: 40, y: 40, r: 8, label: '255.255.255.255' };
+    const at = placeLabels([node], []).get('bcast')!;
+    const gap = at.side === 'left' || at.side === 'right' ? Math.abs(at.x) - node.r : Math.abs(at.y) - node.r;
+    expect(gap).toBeGreaterThanOrEqual(10);
+  });
+
   it('does not stack two labels on top of each other', () => {
     // Two nodes close together vertically: their right-hand labels would overlap.
     const p = placeLabels([{ id: 'a', x: 0, y: 0, r: 5, label: 'first.example' }, { id: 'b', x: 0, y: 8, r: 2, label: 'second.example' }], []);

@@ -28,7 +28,7 @@ Follow Stream retains only the capped decoded prefix and its segment metadata in
 
 ## In-tab view state
 
-During navigation within one open capture, the app remembers view filters and selections for DNS protocol/status, HTTP host, Hosts family/selection, Connections transport/protocol/quality and selected conversation, Network protocol/focus/limit/selection, ICMP message kind, and Overview chart metrics/time-input drafts. Packet display-filter drafts remain separate from the accepted filter. Table searches, sorts and optional-column choices are retained independently per table, including separate DNS protocol tables and conversation packet tables. Changing views closes record drawers. An explicit `proto`, `host`, `conv`, or `filter` route parameter takes precedence for that navigation; an absent packet `filter` can restore the last accepted in-tab filter, while explicit `filter=` represents a cleared filter.
+During navigation within one open capture, the app remembers view filters and selections for DNS protocol/status, HTTP host, Hosts family/selection, Connections transport/protocol/quality and selected conversation, Network protocol/focus/limit/selection, ICMP message kind, and Overview chart metrics/time-input drafts. Packet display-filter drafts remain separate from the accepted filter. Table searches, sorts and optional-column choices are retained independently per table, including separate DNS protocol tables and conversation packet tables. Changing views closes record drawers. An explicit `proto`, `host`, `conv`, or `filter` route parameter takes precedence for that navigation. A host, conversation, or host-filter value that is not in the open capture is left unapplied and explained in a dismissible note; a conversation that the current filters hide stays closed so the drawer and the table agree. Clearing the packet display filter removes `filter` from the hash. Navigating back to the packet list restores a non-empty accepted filter into the hash. An absent `filter` applies no display filter, and a legacy empty `filter=` value still means cleared.
 
 The accepted Packet filter is stored in the URL hash, so Back and Forward restore the expression and its rows. Invalid draft filters leave the accepted filter/results in place. View state and packet filters reset when a capture closes or is replaced, or when Compare mode starts. Browser-history entries from an earlier capture are ignored after the capture changes. These values remain in tab memory or the URL; capture contents and packet data are not persisted.
 
@@ -91,11 +91,13 @@ sort and CSV export retain all host fields. Address-registry dates and inference
 remain in About host evidence and address ranges. Imports and matches remain local.
 
 Network offers host search/focus, Fit graph, Reset viewport and keyboard zoom buttons.
-Fit and Reset affect only pan/zoom; graph and shared filters remain active. Clear host
-focus resets graph focus and its search, keeping protocol and shared filters. Layout
-refits after resizing, includes label bounds and packs disconnected components. Automatic
-fit stays capped at 1.2 to keep small captures sensibly sized. Selected hosts have a
-readable label and retain the accessible host/link tables.
+Fit frames every node and label in the current graph. Reset viewport returns to 100%
+zoom centered on that graph, so it is not a second Fit. Neither control clears graph or
+shared filters. Clear host focus resets graph focus and its search, keeping protocol and
+shared filters. Layout refits after resizing, measures the drawn labels and packs
+disconnected components. Automatic fit stays capped at 1.2 when the whole graph still
+fits; a larger graph is shown smaller so nodes and labels stay inside the panel. Selected
+hosts have a readable label and retain the accessible host/link tables.
 
 ## Capture workflow and navigation
 

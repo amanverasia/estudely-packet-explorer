@@ -13,7 +13,9 @@ interface Box { x0: number; y0: number; x1: number; y1: number }
 // Graph labels are 11px; this is a conservative average glyph width.
 const CHAR_W = 6.4;
 const LINE_H = 13;
-const GAP = 4;
+// Clear the node ring, its stroke, and the label's halo. A 4px gap left the
+// broadcast label sitting on the dashed circle.
+const GAP = 10;
 // Tried in this order, so ties keep the familiar right-hand label.
 const SIDES: LabelSide[] = ['right', 'left', 'below', 'above'];
 
@@ -22,8 +24,8 @@ function boxFor(n: LabelNode, side: LabelSide, w: number): { box: Box; at: Label
   switch (side) {
     case 'right': return { box: { x0: n.x + n.r + GAP, y0: n.y - h / 2, x1: n.x + n.r + GAP + w, y1: n.y + h / 2 }, at: { side, x: n.r + GAP, y: 0, anchor: 'start' } };
     case 'left': return { box: { x0: n.x - n.r - GAP - w, y0: n.y - h / 2, x1: n.x - n.r - GAP, y1: n.y + h / 2 }, at: { side, x: -(n.r + GAP), y: 0, anchor: 'end' } };
-    case 'below': return { box: { x0: n.x - w / 2, y0: n.y + n.r + 2, x1: n.x + w / 2, y1: n.y + n.r + 2 + h }, at: { side, x: 0, y: n.r + 2 + h / 2, anchor: 'middle' } };
-    case 'above': return { box: { x0: n.x - w / 2, y0: n.y - n.r - 2 - h, x1: n.x + w / 2, y1: n.y - n.r - 2 }, at: { side, x: 0, y: -(n.r + 2 + h / 2), anchor: 'middle' } };
+    case 'below': return { box: { x0: n.x - w / 2, y0: n.y + n.r + GAP, x1: n.x + w / 2, y1: n.y + n.r + GAP + h }, at: { side, x: 0, y: n.r + GAP + h / 2, anchor: 'middle' } };
+    case 'above': return { box: { x0: n.x - w / 2, y0: n.y - n.r - GAP - h, x1: n.x + w / 2, y1: n.y - n.r - GAP }, at: { side, x: 0, y: -(n.r + GAP + h / 2), anchor: 'middle' } };
   }
 }
 

@@ -787,6 +787,7 @@ test('packet filters survive navigation, browser history and capture replacement
   await page.getByRole('button', { name: 'Clear' }).click();
   await expect(input).toHaveValue('');
   await expect(page.getByText('31 of 31 packets')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => new URLSearchParams(location.hash.split('?')[1] ?? '').has('filter'))).toBe(false);
   await page.goBack();
   await expect(input).toHaveValue('http.response.code == 200');
   await expect(page.getByText('1 of 31 packets')).toBeVisible();
@@ -797,7 +798,7 @@ test('packet filters survive navigation, browser history and capture replacement
   await view(page, 'http');
   await page.locator('.nav a[href="#/packets"]').click();
   await expect(input).toHaveValue('');
-  await expect.poll(() => page.evaluate(() => new URLSearchParams(location.hash.split('?')[1]).has('filter'))).toBe(true);
+  await expect.poll(() => page.evaluate(() => new URLSearchParams(location.hash.split('?')[1] ?? '').has('filter'))).toBe(false);
 
   await page.locator('input[type=file]').first().setInputFiles(fixture('http.pcap'));
   await expect(page.locator('.cap-title h1')).toHaveText('http.pcap');

@@ -13,6 +13,7 @@ import {
   connectionQualityFilters,
   countConnectionQuality,
   filterConnectionsByQuality,
+  hasConnectionQualityIndicator,
   type ConnectionQualityFilter,
 } from '../connectionQuality';
 
@@ -29,7 +30,7 @@ export function tcpState(c: Conversation): string {
 }
 
 export function Connections() {
-  const { model, sourceModel, params, go, openDrawer } = useApp();
+  const { model, sourceModel, params, go, openDrawer, closeDrawer, patchRouteParams } = useApp();
   const [transport, setTransport] = useViewState<'all' | Transport>('connections.transport', 'all', (value): value is 'all' | Transport =>
     value === 'all' || value === 'TCP' || value === 'UDP' || value === 'IP' || value === 'Non-IP');
   const [app, setApp] = useViewState<string>('connections.protocol', 'all', (value): value is string =>
@@ -40,18 +41,24 @@ export function Connections() {
   const lastRouteHost = useRef<string | null>(null);
   const [selected, setSelected] = useViewState<number | null>('connections.selected', null, (value): value is number | null => value === null || (typeof value === 'number' && Number.isInteger(value)));
   const lastRouteConversation = useRef<string | null>(null);
+  const openedConversationFromRoute = useRef(false);
+  const [convMiss, setConvMiss] = useState<string | null>(null);
+  const routeHost = params.has('host') ? params.get('host') ?? '' : null;
+  const knownRouteHost = routeHost && sourceModel.hosts.some((h) => h.addr === routeHost) ? routeHost : null;
+  // A conversation link drops a saved host filter so the requested row can appear.
+  const hostLimit = routeHost !== null ? knownRouteHost : params.has('conv') ? null : hostFilter;
+  const hostMiss = routeHost !== null && knownRouteHost === null ? routeHost : null;
   useEffect(() => {
-    if (params.has('host')) {
-      const requested = params.get('host') || '';
-      if (requested !== lastRouteHost.current) {
-        lastRouteHost.current = requested;
-        setHostFilter(requested && sourceModel.hosts.some((h) => h.addr === requested) ? requested : null);
+    if (routeHost !== null) {
+      if (routeHost !== lastRouteHost.current) {
+        lastRouteHost.current = routeHost;
+        setHostFilter(knownRouteHost);
       }
     } else {
       lastRouteHost.current = null;
       if (params.has('conv')) setHostFilter(null);
     }
-  }, [params, sourceModel.hosts, setHostFilter]);
+  }, [routeHost, knownRouteHost, params, setHostFilter]);
   const openConversation = (c: Conversation) => {
     setSelected(c.id);
     openDrawer({
@@ -62,24 +69,52 @@ export function Connections() {
     });
   };
   useEffect(() => {
-    if (!params.has('conv')) { lastRouteConversation.current = null; return; }
+    if (!params.has('conv')) {
+      lastRouteConversation.current = null;
+      openedConversationFromRoute.current = false;
+      setConvMiss(null);
+      return;
+    }
     const requested = params.get('conv') || '';
-    if (requested === lastRouteConversation.current) return;
-    lastRouteConversation.current = requested;
     const id = Number(requested);
     const found = requested && Number.isInteger(id) ? sourceModel.conversations.find((c) => c.id === id) : undefined;
-    setSelected(found ? found.id : null);
-    if (found) openConversation(found);
+    if (!found) {
+      if (lastRouteConversation.current !== `missing:${requested}`) {
+        lastRouteConversation.current = `missing:${requested}`;
+        setSelected(null);
+        if (openedConversationFromRoute.current) { openedConversationFromRoute.current = false; closeDrawer(); }
+      }
+      setConvMiss(`Conversation ${requested || '(empty)'} (conv) is not in this capture.`);
+      return;
+    }
+    const listed = model.conversations.some((c) => c.id === found.id)
+      && (!hostLimit || found.a === hostLimit || found.b === hostLimit)
+      && (transport === 'all' || found.transport === transport)
+      && (app === 'all' || found.appProtocol === app)
+      && hasConnectionQualityIndicator(found, qualityFilter);
+    if (!listed) {
+      lastRouteConversation.current = null;
+      setSelected(null);
+      if (openedConversationFromRoute.current) { openedConversationFromRoute.current = false; closeDrawer(); }
+      setConvMiss(`Conversation ${found.id} (conv) is outside the current filter. Its details stay closed so the list and the drawer match.`);
+      return;
+    }
+    setConvMiss(null);
+    if (lastRouteConversation.current === requested) return;
+    lastRouteConversation.current = requested;
+    openedConversationFromRoute.current = true;
+    openConversation(found);
+    // The open helper is recreated each render; the route key above opens a conversation once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params, sourceModel.conversations]);
+  }, [params, sourceModel.conversations, model.conversations, hostLimit, transport, app, qualityFilter, closeDrawer, setSelected]);
   const apps = useMemo(() => {
     const m = new Map<string, number>();
     for (const c of sourceModel.conversations) m.set(c.appProtocol, (m.get(c.appProtocol) ?? 0) + 1);
     return [...m.entries()].sort((a, b) => b[1] - a[1]);
   }, [sourceModel.conversations]);
   const transportScope = useMemo(() => model.conversations.filter((c) =>
-    (app === 'all' || c.appProtocol === app) && (!hostFilter || c.a === hostFilter || c.b === hostFilter)),
-  [model.conversations, app, hostFilter]);
+    (app === 'all' || c.appProtocol === app) && (!hostLimit || c.a === hostLimit || c.b === hostLimit)),
+  [model.conversations, app, hostLimit]);
   const unfilteredRows = useMemo(() => transportScope.filter((c) => transport === 'all' || c.transport === transport), [transportScope, transport]);
   const rows = useMemo(() => filterConnectionsByQuality(unfilteredRows, qualityFilter), [unfilteredRows, qualityFilter]);
   const qualityCounts = useMemo(() => countConnectionQuality(unfilteredRows), [unfilteredRows]);
@@ -112,8 +147,16 @@ export function Connections() {
           options={[{ value: 'all', label: `All ${num(transportScope.length)}` }, ...availableTransports.map((t) => ({ value: t, label: `${t} ${num(counts[t])}` }))]} />}>
         TCP and UDP conversations use Wireshark's stream index, so a reused address and port pair appears as separate sessions. Endpoint A is the TCP SYN sender, or otherwise the first packet's sender. Other IP traffic (such as ICMP) is grouped per address pair and protocol.
       </ViewHead>
-      {hostFilter && (
-        <Note>Showing conversations involving <span className="mono">{hostFilter}</span>. <button className="btn small" onClick={() => { setHostFilter(null); go('connections'); }}>Show all</button></Note>
+      {hostMiss !== null && (
+        <Note kind="warn" onDismiss={() => patchRouteParams({ host: null })}>
+          Host <span className="mono">{hostMiss || '(empty)'}</span> (<span className="mono">host</span>) is not in this capture, so the conversation list was not filtered to it.
+        </Note>
+      )}
+      {convMiss && (
+        <Note kind="warn" onDismiss={() => patchRouteParams({ conv: null })}>{convMiss}</Note>
+      )}
+      {hostLimit && (
+        <Note>Showing conversations involving <span className="mono">{hostLimit}</span>. <button className="btn small" onClick={() => { setHostFilter(null); go('connections'); }}>Show all</button></Note>
       )}
       <Note>Transport counts use the shared capture filters and current protocol/host choices, before the transport and quality filters, so the chips partition the same conversation set. TCP indicators are full-conversation observations, not diagnoses; their counts keep that scope even when packet filters are active.</Note>
       <section className="panel">

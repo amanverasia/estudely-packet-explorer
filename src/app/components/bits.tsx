@@ -31,11 +31,14 @@ const ICONS = {
   crit: <path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM5.2 4.1 8 6.9l2.8-2.8 1.1 1.1L9.1 8l2.8 2.8-1.1 1.1L8 9.1l-2.8 2.8-1.1-1.1L6.9 8 4.1 5.2l1.1-1.1Z" />,
 };
 
-export function Note({ kind = 'info', children }: { kind?: 'info' | 'warn' | 'crit'; children: ReactNode }) {
+export function Note({ kind = 'info', children, onDismiss }: { kind?: 'info' | 'warn' | 'crit'; children: ReactNode; onDismiss?: () => void }) {
   return (
-    <div className={`note ${kind}`} role={kind === 'crit' ? 'alert' : 'note'}>
+    <div className={`note ${kind}`} role={kind === 'crit' ? 'alert' : onDismiss ? 'status' : 'note'} style={onDismiss ? { margin: '12px 0' } : undefined}>
       <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">{ICONS[kind]}</svg>
-      <div>{children}</div>
+      <div>
+        {children}
+        {onDismiss && <button className="btn small" type="button" onClick={onDismiss} style={{ marginLeft: 8 }}>Dismiss</button>}
+      </div>
     </div>
   );
 }

@@ -3,9 +3,9 @@
 import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, type SimulationLinkDatum, type SimulationNodeDatum } from 'd3-force';
 import { select } from 'd3-selection';
 import { zoom, zoomIdentity, type ZoomBehavior, type ZoomTransform } from 'd3-zoom';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Legend, colorMap } from '../components/charts';
-import { Panel, ViewHead } from '../components/bits';
+import { Note, Panel, ViewHead } from '../components/bits';
 import { useApp, useViewState } from '../context';
 import { placeLabels, type LabelPlacement } from '../labels';
 import { bytes, num, plural } from '../format';
@@ -16,7 +16,7 @@ interface GEdge extends SimulationLinkDatum<GNode> { key: string; a: string; b: 
 const OTHER_NODE = 'Other hosts';
 
 export function Network() {
-  const { model, sourceModel, params, go, nameOf, filter } = useApp();
+  const { model, sourceModel, params, go, nameOf, filter, patchRouteParams } = useApp();
   const [proto, setProto] = useViewState<string>('network.protocol', 'all', (value): value is string =>
     value === 'all' || (typeof value === 'string' && sourceModel.conversations.some((conversation) => conversation.transport !== 'Non-IP' && conversation.appProtocol === value)));
   const [focus, setFocus] = useViewState<string>('network.focus', '', (value): value is string => typeof value === 'string');
@@ -26,21 +26,23 @@ export function Network() {
       ((value as { kind?: unknown }).kind === 'node' && typeof (value as { id?: unknown }).id === 'string' ||
        (value as { kind?: unknown }).kind === 'edge' && typeof (value as { key?: unknown }).key === 'string')));
   const lastRouteHost = useRef<string | null>(null);
+  const [hostMiss, setHostMiss] = useState<string | null>(null);
+  const routeHost = params.has('host') ? params.get('host') ?? '' : null;
   useEffect(() => {
-    if (!params.has('host')) { lastRouteHost.current = null; return; }
-    const requested = params.get('host') || '';
-    if (requested !== lastRouteHost.current) {
-      lastRouteHost.current = requested;
-      const host = requested && sourceModel.hosts.some((h) => h.addr === requested) ? requested : '';
-      setFocus(host);
-      setSel(host ? { kind: 'node', id: host } : null);
-    }
-  }, [params, sourceModel.hosts, setFocus, setSel]);
+    if (routeHost === null) { lastRouteHost.current = null; setHostMiss(null); return; }
+    if (routeHost === lastRouteHost.current) return;
+    lastRouteHost.current = routeHost;
+    const known = !!routeHost && sourceModel.hosts.some((h) => h.addr === routeHost);
+    setFocus(known ? routeHost : '');
+    setSel(known ? { kind: 'node', id: routeHost } : null);
+    setHostMiss(known ? null : routeHost);
+  }, [routeHost, sourceModel.hosts, setFocus, setSel]);
   const svgRef = useRef<SVGSVGElement>(null);
   const gRef = useRef<SVGGElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const zoomRef = useRef<ZoomBehavior<SVGSVGElement, unknown> | null>(null);
   const fitRef = useRef<ZoomTransform>(zoomIdentity);
+  const resetRef = useRef<ZoomTransform>(zoomIdentity);
   const [viewport, setViewport] = useState({ w: 900, h: 600 });
   const [scale, setScale] = useState(1);
   const [hostSearch, setHostSearch] = useState('');
@@ -58,6 +60,9 @@ export function Network() {
   }, []);
   const fitViewport = () => {
     if (svgRef.current && zoomRef.current) select(svgRef.current).call(zoomRef.current.transform, fitRef.current);
+  };
+  const resetViewport = () => {
+    if (svgRef.current && zoomRef.current) select(svgRef.current).call(zoomRef.current.transform, resetRef.current);
   };
   const zoomViewport = (factor: number) => {
     if (svgRef.current && zoomRef.current) select(svgRef.current).call(zoomRef.current.scaleBy, factor);
@@ -179,7 +184,7 @@ export function Network() {
       layout.edges.map((e) => { const s = e.source as GNode, t = e.target as GNode; return { x1: s.x ?? 0, y1: s.y ?? 0, x2: t.x ?? 0, y2: t.y ?? 0 }; }),
     );
   }, [layout]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!svgRef.current || !gRef.current || !layout) return;
     const svg = select(svgRef.current);
     const g = select(gRef.current);
@@ -189,23 +194,26 @@ export function Network() {
     });
     zoomRef.current = z;
     svg.call(z);
-    // Include the placed labels so disconnected components and edge labels fit too.
-    const bounds = layout.nodes.flatMap((n) => {
-      const at = labels.get(n.id);
-      const x = (n.x ?? 0) + (at?.x ?? 0), y = (n.y ?? 0) + (at?.y ?? 0);
-      const width = shortLabel(labelOf(n)).length * 6.4;
-      const left = at?.anchor === 'end' ? x - width : at?.anchor === 'middle' ? x - width / 2 : x;
-      return [{ x: (n.x ?? 0) - 36, y: (n.y ?? 0) - 36 }, { x: (n.x ?? 0) + 36, y: (n.y ?? 0) + 36 }, { x: left, y: y - 8 }, { x: left + width, y: y + 8 }];
-    });
-    if (bounds.length) {
-      const minX = Math.min(...bounds.map((p) => p.x)), maxX = Math.max(...bounds.map((p) => p.x));
-      const minY = Math.min(...bounds.map((p) => p.y)), maxY = Math.max(...bounds.map((p) => p.y));
-      const k = Math.max(0.05, Math.min(1.2, (layout.w - 32) / (maxX - minX), (layout.h - 32) / (maxY - minY)));
-      fitRef.current = zoomIdentity.translate(layout.w / 2 - k * (minX + maxX) / 2, layout.h / 2 - k * (minY + maxY) / 2).scale(k);
+    let cancelled = false;
+    // Measure the drawn nodes and labels. The 1.2 cap stays for a small capture,
+    // and is skipped when it would leave any of that measured content outside.
+    const applyFit = () => {
+      if (cancelled || !gRef.current) return;
+      const box = gRef.current.getBBox();
+      if (!(box.width > 0) || !(box.height > 0)) return;
+      const pad = 24;
+      const raw = Math.min((layout.w - pad * 2) / box.width, (layout.h - pad * 2) / box.height);
+      const k = Math.max(0.05, Math.min(1.2, Number.isFinite(raw) ? raw : 1));
+      const cx = box.x + box.width / 2;
+      const cy = box.y + box.height / 2;
+      fitRef.current = zoomIdentity.translate(layout.w / 2 - k * cx, layout.h / 2 - k * cy).scale(k);
+      resetRef.current = zoomIdentity.translate(layout.w / 2 - cx, layout.h / 2 - cy);
       svg.call(z.transform, fitRef.current);
-    }
-    return () => { svg.on('.zoom', null); zoomRef.current = null; };
-  }, [layout, labels]);
+    };
+    applyFit();
+    void document.fonts?.ready.then(applyFit);
+    return () => { cancelled = true; svg.on('.zoom', null); zoomRef.current = null; };
+  }, [layout]);
 
   const maxE = Math.max(1, ...graph.edges.map((e) => e.bytes));
   const hosts = useMemo(() => [...model.hosts].sort((a, b) => a.addr.localeCompare(b.addr, undefined, { numeric: true })), [model.hosts]);
@@ -226,6 +234,11 @@ export function Network() {
   return (
     <>
       <ViewHead title="Network">Hosts linked by the traffic between them. Line width scales with bytes on wire (log scale); line colour is the pair's main protocol by bytes. Node size scales with the host's total bytes.{filter.start !== null || filter.host ? ' Totals reflect the selected packets.' : ''}</ViewHead>
+      {hostMiss !== null && (
+        <Note kind="warn" onDismiss={() => patchRouteParams({ host: null })}>
+          Host <span className="mono">{hostMiss || '(empty)'}</span> (<span className="mono">host</span>) is not in this capture, so the graph was not focused on it.
+        </Note>
+      )}
       <Panel title="Host graph" sub={`${plural(graph.nodes.length, 'node')}, ${plural(graph.edges.length, 'link')}${graph.folded ? `; ${num(graph.folded)} smaller hosts grouped as “${OTHER_NODE}”` : ''}`}
         right={<>
           <select className="select" value={proto} onChange={(e) => setProto(e.target.value)} aria-label="Protocol filter">
@@ -255,11 +268,11 @@ export function Network() {
         </div>
         <div role="group" aria-label="Graph viewport controls" style={{ padding: '0 16px 12px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
           <button className="btn small" disabled={!graph.nodes.length} onClick={fitViewport} title="Fit the currently filtered graph">Fit graph</button>
-          <button className="btn small" disabled={!graph.nodes.length} onClick={fitViewport} title="Reset pan and zoom to the fitted view; keep graph and shared filters">Reset viewport</button>
+          <button className="btn small" disabled={!graph.nodes.length} onClick={resetViewport} title="Reset zoom to 100% and center the graph. Filters stay active.">Reset viewport</button>
           <button className="btn small" aria-label="Zoom out graph" disabled={!graph.nodes.length || scale <= 0.05} onClick={() => zoomViewport(1 / 1.25)}>−</button>
           <span className="mono" style={{ minWidth: 44, textAlign: 'center' }} aria-label="Graph zoom">{Math.round(scale * 100)}%</span>
           <button className="btn small" aria-label="Zoom in graph" disabled={!graph.nodes.length || scale >= 6} onClick={() => zoomViewport(1.25)}>+</button>
-          <span className="muted" style={{ fontSize: 12 }}>Fit and Reset change only pan and zoom. Filters stay active.</span>
+          <span className="muted" style={{ fontSize: 12 }}>Fit frames the current graph. Reset returns to 100% zoom. Filters stay active.</span>
         </div>
         <div className="graph-wrap" ref={wrapRef}>
           {!graph.nodes.length ? <div className="empty"><strong>No IP traffic matches these filters.</strong></div> : (

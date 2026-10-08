@@ -22,6 +22,7 @@ import { htmlReport } from './report';
 import { EngineClient, HARD_LIMIT_BYTES, SOFT_LIMIT_BYTES, type EngineState } from './engine';
 import { landingDragLeaveAction, probeFromDragLeave } from './dropHighlight';
 import { bytes, duration, num } from './format';
+import { Note } from './components/bits';
 import { Overview } from './views/Overview';
 import { Dns } from './views/Dns';
 
@@ -243,7 +244,7 @@ export function App() {
     for (const [key, value] of Object.entries(params ?? {})) next.set(key, value);
     if (view === 'packets' && !Object.prototype.hasOwnProperty.call(params ?? {}, 'filter')) {
       const savedFilter = viewStateRef.current.get('packets.filter.applied');
-      if (typeof savedFilter === 'string') {
+      if (typeof savedFilter === 'string' && savedFilter) {
         next.set('filter', savedFilter);
         viewStateRef.current.set('packets.filter.routeRestore', savedFilter);
       }
@@ -477,9 +478,11 @@ function Workspace(props: {
       const b = Math.max(origin, Math.min(limit, Number(rawEnd)));
       if (a < b && (a > origin || b < limit)) { start = a; end = b; }
     }
-    const host = props.params.get('hf');
-    return { start, end, host: host && sourceModel.hosts.some((h) => h.addr === host) ? host : null };
+    const requestedHost = props.params.has('hf') ? props.params.get('hf') ?? '' : null;
+    const host = requestedHost && sourceModel.hosts.some((h) => h.addr === requestedHost) ? requestedHost : null;
+    return { start, end, host };
   }, [props.params, sourceModel, c.duration]);
+  const unmatchedHost = props.params.has('hf') && !filter.host ? props.params.get('hf') ?? '' : null;
   const { model, stats } = useMemo(() => applySharedFilter(sourceModel, filter), [sourceModel, filter]);
   const setHostFilter = useCallback((host: string | null) => props.patchRouteParams({ hf: host }), [props.patchRouteParams]);
   const setTimeRange = useCallback((start: number, end: number) => {
@@ -577,6 +580,9 @@ function Workspace(props: {
             {c.partial && <div className="note warn" role="status" style={{ marginBottom: 14 }}>
               <b>Partial analysis.</b> Only the first {bytes(c.analyzedBytes)} of capture data was analyzed. Packets after this prefix are omitted from every view and export.
             </div>}
+            {unmatchedHost !== null && <Note kind="warn" onDismiss={() => props.patchRouteParams({ hf: null })}>
+              Host filter <span className="mono">{unmatchedHost || '(empty)'}</span> (<span className="mono">hf</span>) is not a host in this capture, so no host filter was applied.
+            </Note>}
             {(filter.start !== null || filter.host) && <div className="note info" role="status">
               Shared filter: {num(stats.packets)} of {num(c.packetCount)} packets, {num(model.dns.length)} of {num(sourceModel.dns.length)} DNS records, {num(model.http.length)} of {num(sourceModel.http.length)} HTTP records, {num(model.tls.length)} of {num(sourceModel.tls.length)} TLS sessions, {num(model.hosts.length)} of {num(sourceModel.hosts.length)} hosts, and {num(model.conversations.length)} of {num(sourceModel.conversations.length)} conversations. A correlated exchange appears when any source packet meets the filter; its details can include packets outside the time window.
             </div>}

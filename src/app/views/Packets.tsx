@@ -105,8 +105,24 @@ export function Packets({ captureSession }: { captureSession: number }) {
   }, [fetchPage]);
 
   useEffect(() => {
-    if (!params.has('filter')) { lastRouteFilter.current = null; return; }
+    if (!params.has('filter')) {
+      const hadRouteFilter = lastRouteFilter.current !== null;
+      lastRouteFilter.current = null;
+      setFilter('');
+      if (hadRouteFilter) {
+        setDraft('');
+        setError(null);
+      }
+      return;
+    }
     const routeFilter = params.get('filter') ?? '';
+    if (!routeFilter) {
+      lastRouteFilter.current = '';
+      setFilter('');
+      setDraft('');
+      setError(null);
+      return;
+    }
     const routeFilterChanged = lastRouteFilter.current !== routeFilter;
     lastRouteFilter.current = routeFilter;
     const wasRestoredByNavigation = restoredFilter === routeFilter;
@@ -161,7 +177,7 @@ export function Packets({ captureSession }: { captureSession: number }) {
     setFilter(f);
     setDraft(f);
     setError(null);
-    patchRouteParams({ filter: f });
+    patchRouteParams({ filter: f ? f : null });
   };
 
   const virt = useVirtualizer({ count: matched ?? 0, getScrollElement: () => scrollRef.current, estimateSize: () => ROW, overscan: 20 });

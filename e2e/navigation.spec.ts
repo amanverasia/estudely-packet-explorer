@@ -130,3 +130,36 @@ test('the first capture from a deep link opens Overview with a clean hash', asyn
   await expect.poll(() => page.evaluate(() => location.hash)).toBe('#/dns');
   await expect(page.locator('.view-head').getByRole('heading', { name: 'Name resolution', exact: true })).toBeVisible();
 });
+
+test('an unmatched shared link is explained and a matching host filter still applies', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('./');
+  await openCapture(page);
+  await page.evaluate(() => { location.hash = '#/overview?hf=203.0.113.5'; });
+  const unmatchedHost = page.getByRole('status').filter({ hasText: '203.0.113.5' });
+  await expect(unmatchedHost).toBeVisible();
+  await expect(unmatchedHost).toContainText('hf');
+  await expect(page.getByRole('button', { name: 'Remove host filter for 203.0.113.5' })).toHaveCount(0);
+  await expect(page.getByText(/Shared filter:/)).toHaveCount(0);
+  await unmatchedHost.getByRole('button', { name: 'Dismiss' }).click();
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe('#/overview');
+
+  await page.evaluate(() => { location.hash = '#/overview?hf=10.0.0.5'; });
+  await expect(page.getByRole('button', { name: 'Remove host filter for 10.0.0.5' })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: '203.0.113.5' })).toHaveCount(0);
+
+  await page.evaluate(() => { location.hash = '#/connections?conv=999'; });
+  await expect(page.getByRole('status').filter({ hasText: '999' })).toContainText('conv');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.evaluate(() => { location.hash = '#/connections?hf=10.0.0.9&conv=0'; });
+  await expect(page.getByRole('status').filter({ hasText: 'outside the current filter' })).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Remove host filter for 10.0.0.9' }).click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+
+  await page.evaluate(() => { location.hash = '#/hosts?host=203.0.113.9'; });
+  await expect(page.getByRole('status').filter({ hasText: '203.0.113.9' })).toContainText('host');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.evaluate(() => { location.hash = '#/hosts?host=10.0.0.5'; });
+  await expect(page.getByRole('dialog')).toContainText('10.0.0.5');
+});

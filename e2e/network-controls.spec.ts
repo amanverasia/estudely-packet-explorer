@@ -70,8 +70,21 @@ async function fittedBounds(page: Page) {
     const svg = wrap.querySelector('svg')!, g = svg.querySelector('g')!;
     const bounds = svg.getBoundingClientRect();
     const k = g.getCTM()!.a;
-    const circles = [...g.querySelectorAll('circle')].map((node) => node.getBoundingClientRect());
-    return { k, inside: circles.every((r) => r.left >= bounds.left && r.right <= bounds.right && r.top >= bounds.top && r.bottom <= bounds.bottom) };
+    const marks = [...g.querySelectorAll('circle, text')].map((node) => node.getBoundingClientRect());
+    const inside = marks.length > 0 && marks.every((r) => r.left >= bounds.left - 1 && r.right <= bounds.right + 1 && r.top >= bounds.top - 1 && r.bottom <= bounds.bottom + 1);
+    const labelClear = [...g.querySelectorAll('.graph-node')].every((node) => {
+      const circle = node.querySelector('circle');
+      const text = node.querySelector('text');
+      if (!circle || !text) return false;
+      const ring = circle.getBoundingClientRect();
+      const label = text.getBoundingClientRect();
+      const cx = (ring.left + ring.right) / 2;
+      const cy = (ring.top + ring.bottom) / 2;
+      const px = Math.max(label.left, Math.min(cx, label.right));
+      const py = Math.max(label.top, Math.min(cy, label.bottom));
+      return Math.hypot(px - cx, py - cy) >= ring.width / 2 - 3;
+    });
+    return { k, inside, labelClear };
   });
 }
 
@@ -104,6 +117,9 @@ test('graph viewport recovers from keyboard zoom and mouse pan while graph filte
   await page.getByRole('button', { name: 'Zoom out graph' }).click();
   await page.getByRole('button', { name: 'Reset viewport', exact: true }).focus();
   await page.keyboard.press('Enter');
+  await expect(page.getByLabel('Graph zoom')).toHaveText('100%');
+  await expect.poll(() => transform(page)).not.toBe(focused);
+  await page.getByRole('button', { name: 'Fit graph', exact: true }).click();
   await expect.poll(() => transform(page)).toBe(focused);
   await expect(page.getByRole('combobox', { name: 'Focus on host', exact: true })).toHaveValue('10.0.0.5');
   await expect(page.getByRole('combobox', { name: 'Protocol filter' })).toHaveValue('HTTP');
@@ -114,13 +130,14 @@ test('graph viewport recovers from keyboard zoom and mouse pan while graph filte
   await expect(page.getByRole('combobox', { name: 'Protocol filter' })).toHaveValue('HTTP');
 });
 
-for (const capture of ['mixed.pcap', 'dns.pcap', 'http.pcap']) {
+for (const capture of ['mixed.pcap', 'dns.pcap', 'http.pcap', 'protocols.pcap']) {
   test(`${capture}: fit cap and framing remain useful through desktop and narrow resizes`, async ({ page }) => {
     await network(page, capture);
     for (const width of [1440, 960, 390]) {
       await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
       await settledGraph(page);
       await expect.poll(async () => (await fittedBounds(page)).inside).toBe(true);
+      await expect.poll(async () => (await fittedBounds(page)).labelClear).toBe(true);
       expect((await fittedBounds(page)).k).toBeLessThanOrEqual(1.200001);
       const controls = page.getByRole('group', { name: 'Graph viewport controls' });
       await expect(controls).toBeVisible();
@@ -130,8 +147,11 @@ for (const capture of ['mixed.pcap', 'dns.pcap', 'http.pcap']) {
       }));
       expect(positions.every((rect) => rect.left >= 0 && rect.right <= width)).toBe(true);
       await page.getByRole('button', { name: 'Zoom in graph' }).click();
-      await page.getByRole('button', { name: 'Reset viewport', exact: true }).click();
+      await page.getByRole('button', { name: 'Fit graph', exact: true }).click();
       expect((await fittedBounds(page)).inside).toBe(true);
+      expect((await fittedBounds(page)).labelClear).toBe(true);
+      await page.getByRole('button', { name: 'Reset viewport', exact: true }).click();
+      await expect(page.getByLabel('Graph zoom')).toHaveText('100%');
     }
   });
 }
