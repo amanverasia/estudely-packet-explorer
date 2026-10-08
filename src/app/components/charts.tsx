@@ -1,8 +1,8 @@
 // Copyright (C) 2026 Estudely and contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
-import { useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import type { Timeline } from '../../engine/types';
-import { bytes, duration, num, pct } from '../format';
+import { bytes, duration, editableSeconds, num, parseEditableSeconds, pct } from '../format';
 
 /** Categorical slots in fixed order (validated palette); "Other" is neutral. */
 export const SERIES = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)', 'var(--s5)', 'var(--s6)', 'var(--s7)', 'var(--s8)'];
@@ -191,7 +191,9 @@ export function TimeChart({ timeline, metric, height = 220, colors, selection = 
 }
 
 /** Capture-wide traffic strip shown under the header on every view. */
-export function Strip({ timeline, selection = null, onRangeChange }: { timeline: Timeline; selection?: TimeSelection | null; onRangeChange?: (start: number, end: number) => void }) {
+export function Strip({ timeline, selection = null, onRangeChange, timestampDigits = 6 }: {
+  timeline: Timeline; selection?: TimeSelection | null; onRangeChange?: (start: number, end: number) => void; timestampDigits?: number;
+}) {
   const [ref, width] = useWidth<HTMLDivElement>();
   const drag = useRef<number | null>(null);
   const [dragRange, setDragRange] = useState<TimeSelection | null>(null);
@@ -205,7 +207,23 @@ export function Strip({ timeline, selection = null, onRangeChange }: { timeline:
   const visibleSelection = dragRange ?? selection;
   const selectionStart = visibleSelection ? Math.max(0, Math.min(total.length, Math.floor((visibleSelection.start - timeline.origin) / timeline.binSeconds))) : 0;
   const selectionEnd = visibleSelection ? Math.max(selectionStart, Math.min(total.length, Math.ceil((visibleSelection.end - timeline.origin) / timeline.binSeconds))) : 0;
+  const min = timeline.origin;
+  const rangeEnd = timeline.end;
+  const exactStart = selection?.start ?? min;
+  const exactEnd = selection?.end ?? rangeEnd;
+  const displayedStart = editableSeconds(exactStart, timestampDigits);
+  const displayedEnd = editableSeconds(exactEnd, timestampDigits);
+  const [start, setStart] = useState(displayedStart);
+  const [end, setEnd] = useState(displayedEnd);
+  useEffect(() => {
+    setStart(displayedStart);
+    setEnd(displayedEnd);
+  }, [displayedStart, displayedEnd]);
+  const appliedStart = parseEditableSeconds(start, displayedStart, exactStart);
+  const appliedEnd = parseEditableSeconds(end, displayedEnd, exactEnd);
+  const rangeValid = Number.isFinite(appliedStart) && Number.isFinite(appliedEnd) && appliedStart >= min && appliedEnd <= rangeEnd && appliedStart < appliedEnd;
   return (
+    <div className="strip-host">
     <div ref={ref} className="strip">
       {width > 0 && (
         <svg width={width} height={h} role="img" aria-label="Capture traffic strip. Drag to choose a time range."
@@ -229,6 +247,15 @@ export function Strip({ timeline, selection = null, onRangeChange }: { timeline:
           {visibleSelection && selectionEnd > selectionStart && <rect x={selectionStart * bw} y={0} width={(selectionEnd - selectionStart) * bw} height={h} fill="var(--accent)" fillOpacity={0.18} stroke="var(--accent)" strokeOpacity={0.8} pointerEvents="none" />}
         </svg>
       )}
+    </div>
+    {onRangeChange && (
+      <form className="strip-range" aria-label="Toolbar time range" onSubmit={(e) => { e.preventDefault(); if (rangeValid) onRangeChange(appliedStart, appliedEnd); }}>
+        <label>Start (s)<input className="input mono" type="number" step="any" min={min} max={rangeEnd} value={start} onChange={(e) => setStart(e.target.value)} aria-label="Toolbar time range start in seconds" /></label>
+        <label>End (s)<input className="input mono" type="number" step="any" min={min} max={rangeEnd} value={end} onChange={(e) => setEnd(e.target.value)} aria-label="Toolbar time range end in seconds" /></label>
+        <button className="btn small primary" type="submit" disabled={!rangeValid} aria-label="Apply toolbar time range">Apply range</button>
+        {!rangeValid && <span className="note warn" role="status">End must be later than start, within this capture.</span>}
+      </form>
+    )}
     </div>
   );
 }

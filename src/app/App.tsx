@@ -525,7 +525,7 @@ function Workspace(props: {
               onWholeHtml={() => downloadBlob(`${safeBase(c.fileName)}-report.html`, new Blob([htmlReport(sourceModel)], { type: 'text/html;charset=utf-8' }))}
               onSelectionHtml={() => downloadBlob(`${safeBase(c.fileName)}-filtered-report.html`, new Blob([htmlReport(model, { filter, stats })], { type: 'text/html;charset=utf-8' }))} />}
             keys={<TlsKeyControls activeKeyLog={props.activeKeyLog} model={sourceModel} onApplyKeys={props.onApplyKeys} onRemoveKeys={props.onRemoveKeys} />}
-            timeline={<Strip timeline={sourceModel.timeline} selection={filter.start !== null && filter.end !== null ? { start: filter.start, end: filter.end } : null} onRangeChange={setTimeRange} />}
+            timeline={<Strip timeline={sourceModel.timeline} timestampDigits={c.timestampDigits} selection={filter.start !== null && filter.end !== null ? { start: filter.start, end: filter.end } : null} onRangeChange={setTimeRange} />}
             filters={(filter.start !== null || filter.host) && <div className="filter-chips" aria-label="Shared filters">
               {filter.start !== null && filter.end !== null && <button className="filter-chip" onClick={clearTimeRange} aria-label="Remove time range filter">Time {rangeLabel(filter.start, filter.end)} <span aria-hidden="true">×</span></button>}
               {filter.host && <button className="filter-chip" onClick={() => setHostFilter(null)} aria-label={`Remove host filter for ${filter.host}`}>Host {filter.host} <span aria-hidden="true">×</span></button>}

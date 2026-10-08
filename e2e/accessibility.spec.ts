@@ -110,3 +110,44 @@ test('Files and populated protocol dashboards pass axe in both themes', async ({
     }
   }
 });
+
+test('packet rows open with Space and the toolbar time range is keyboard accessible', async ({ page }) => {
+  await openCapture(page, 'http.pcap');
+  await view(page, 'packets');
+  await expect(page.getByText('31 of 31 packets')).toBeVisible();
+  const packetGrid = page.getByRole('grid', { name: 'Packets' });
+  const packetRow = packetGrid.locator('[role="row"][tabindex="0"]').first();
+  await packetRow.focus();
+  const scrollBefore = await page.evaluate(() => ({
+    grid: document.querySelector('.dt-scroll')?.scrollTop ?? null,
+    main: document.querySelector('.main')?.scrollTop ?? null,
+    win: window.scrollY,
+  }));
+  await page.keyboard.press('Space');
+  await expect(page.getByRole('dialog', { name: /Packet details: Packet #/ })).toBeVisible();
+  const scrollAfter = await page.evaluate(() => ({
+    grid: document.querySelector('.dt-scroll')?.scrollTop ?? null,
+    main: document.querySelector('.main')?.scrollTop ?? null,
+    win: window.scrollY,
+  }));
+  expect(scrollAfter).toEqual(scrollBefore);
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toBeHidden();
+
+  const rangeStart = page.getByRole('spinbutton', { name: 'Toolbar time range start in seconds' });
+  const rangeEnd = page.getByRole('spinbutton', { name: 'Toolbar time range end in seconds' });
+  await rangeStart.fill('0');
+  await rangeEnd.fill('0.5');
+  await rangeEnd.press('Enter');
+  await expect(page.locator('.nav a[href="#/packets"]')).toHaveAttribute('aria-current', 'page');
+  const timeChip = page.getByRole('button', { name: 'Remove time range filter' });
+  await expect(timeChip).toBeVisible();
+  await expect(page.locator('.filter-chips')).toContainText('Time');
+  await expect.poll(() => page.evaluate(() => location.hash)).toMatch(/[?&]t0=/);
+  await expect.poll(() => page.evaluate(() => location.hash)).toMatch(/[?&]t1=/);
+  await expect(page.getByRole('status').filter({ hasText: 'Shared filter:' })).toContainText(/of 31 packets/);
+  await expect(page.getByRole('status').filter({ hasText: 'Shared filter:' })).not.toContainText('31 of 31 packets');
+  await timeChip.click();
+  await expect(timeChip).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => location.hash)).not.toMatch(/[?&]t0=/);
+});

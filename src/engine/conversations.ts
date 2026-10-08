@@ -18,6 +18,7 @@ export interface PacketSummary {
   expert: number;
   fragments: number;
   retransmissions: number;
+  spuriousRetransmissions: number;
   outOfOrder: number;
   lost: number;
   duplicateAcks: number;
@@ -30,7 +31,7 @@ export function summarizePackets(packets: RawPacket[]): PacketSummary {
   const topOf: string[] = new Array(packets.length);
   const ifaceCount = new Map<number | null, number>();
   let backwards = 0;
-  let wire = 0, captured = 0, truncated = 0, malformed = 0, expert = 0, fragments = 0, retransmissions = 0, outOfOrder = 0, lost = 0, duplicateAcks = 0, http2 = 0;
+  let wire = 0, captured = 0, truncated = 0, malformed = 0, expert = 0, fragments = 0, retransmissions = 0, spuriousRetransmissions = 0, outOfOrder = 0, lost = 0, duplicateAcks = 0, http2 = 0;
   for (let i = 0; i < packets.length; i++) {
     const p = packets[i];
     if (i > 0 && p.t < packets[i - 1].t) backwards++;
@@ -42,7 +43,9 @@ export function summarizePackets(packets: RawPacket[]): PacketSummary {
       if (flags.includes('M')) malformed++;
       if (flags.includes('E')) expert++;
       if (flags.includes('F')) fragments++;
+      // flag_str emits R and r at most once each; includes('R') does not match r.
       if (flags.includes('R')) retransmissions++;
+      if (flags.includes('r')) spuriousRetransmissions++;
       if (flags.includes('O')) outOfOrder++;
       if (flags.includes('L')) lost++;
       if (flags.includes('D')) duplicateAcks++;
@@ -67,7 +70,7 @@ export function summarizePackets(packets: RawPacket[]): PacketSummary {
     stat.bytes += p.len;
     top.set(protocol, stat);
   }
-  return { hierarchy, top, topOf, ifaceCount, backwards, wire, captured, truncated, malformed, expert, fragments, retransmissions, outOfOrder, lost, duplicateAcks, http2 };
+  return { hierarchy, top, topOf, ifaceCount, backwards, wire, captured, truncated, malformed, expert, fragments, retransmissions, spuriousRetransmissions, outOfOrder, lost, duplicateAcks, http2 };
 }
 
 export interface ConversationSummary {
@@ -117,7 +120,7 @@ export function groupConversations(packets: RawPacket[], topOf: string[], byFram
         id, transport, stream, a: src, aPort: ported ? p.sport : null, b: dst, bPort: ported ? p.dport : null,
         initiator: isSyn ? 'SYN' : 'first packet', packetsAB: 0, bytesAB: 0, packetsBA: 0, bytesBA: 0,
         start: p.t, end: p.t, firstFrame: p.frame, lastFrame: p.frame, protocols: [], appProtocol: '',
-        tcp: transport === 'TCP' ? { synSeen: false, synAckSeen: false, finSeen: false, rstSeen: false, retransmissions: 0, outOfOrder: 0, lostSegments: 0, payloadBytesAB: 0, payloadBytesBA: 0 } : null,
+        tcp: transport === 'TCP' ? { synSeen: false, synAckSeen: false, finSeen: false, rstSeen: false, retransmissions: 0, spuriousRetransmissions: 0, outOfOrder: 0, lostSegments: 0, payloadBytesAB: 0, payloadBytesBA: 0 } : null,
         truncatedPackets: 0, malformedPackets: 0, records: { dns: 0, http: 0, tls: 0 },
       });
       convTop.push(new Map());
@@ -139,7 +142,9 @@ export function groupConversations(packets: RawPacket[], topOf: string[], byFram
       if ((flags & 0x12) === 0x12) conversation.tcp.synAckSeen = true;
       if (flags & 0x01) conversation.tcp.finSeen = true;
       if (flags & 0x04) conversation.tcp.rstSeen = true;
+      // Same R/r split as the capture summary: flag_str emits each character at most once.
       if (p.flags.includes('R')) conversation.tcp.retransmissions++;
+      if (p.flags.includes('r')) conversation.tcp.spuriousRetransmissions++;
       if (p.flags.includes('O')) conversation.tcp.outOfOrder++;
       if (p.flags.includes('L')) conversation.tcp.lostSegments++;
       if (ab) conversation.tcp.payloadBytesAB += p.tcpLen ?? 0; else conversation.tcp.payloadBytesBA += p.tcpLen ?? 0;

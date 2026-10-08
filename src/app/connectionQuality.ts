@@ -3,7 +3,8 @@
 import type { Conversation } from '../engine/types';
 
 export const connectionQualityFilters = [
-  { value: 'retransmissions', label: 'Retransmissions', description: 'Wireshark marked TCP retransmissions' },
+  { value: 'retransmissions', label: 'Retransmissions, not spurious', description: 'Wireshark marked ordinary TCP retransmissions, not spurious retransmissions' },
+  { value: 'spuriousRetransmissions', label: 'Spurious retransmissions', description: 'Wireshark marked spurious TCP retransmissions' },
   { value: 'outOfOrder', label: 'Out of order', description: 'Wireshark marked out-of-order TCP segments' },
   { value: 'gaps', label: 'Sequence gaps', description: 'Wireshark observed gaps in TCP sequence numbers' },
   { value: 'rstSeen', label: 'RST seen', description: 'a TCP reset flag was present' },
@@ -17,6 +18,7 @@ export function hasConnectionQualityIndicator(c: Conversation, filter: Connectio
   switch (filter) {
     case 'all': return true;
     case 'retransmissions': return (c.tcp?.retransmissions ?? 0) > 0;
+    case 'spuriousRetransmissions': return (c.tcp?.spuriousRetransmissions ?? 0) > 0;
     case 'outOfOrder': return (c.tcp?.outOfOrder ?? 0) > 0;
     case 'gaps': return (c.tcp?.lostSegments ?? 0) > 0;
     case 'rstSeen': return c.tcp?.rstSeen ?? false;
@@ -30,6 +32,7 @@ export function countConnectionQuality(conversations: Conversation[]): Record<Co
   const counts: Record<ConnectionQualityFilter, number> = {
     all: conversations.length,
     retransmissions: 0,
+    spuriousRetransmissions: 0,
     outOfOrder: 0,
     gaps: 0,
     rstSeen: 0,
