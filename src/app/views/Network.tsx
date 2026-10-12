@@ -9,11 +9,19 @@ import { Note, Panel, ViewHead } from '../components/bits';
 import { useApp, useViewState } from '../context';
 import { placeLabels, type LabelPlacement } from '../labels';
 import { bytes, num, plural } from '../format';
+import {
+  NETWORK_OTHER_NODE,
+  buildNetworkGraph,
+  networkNodeRadius as radius,
+  networkProtoOptions,
+  type NetworkGraphEdge,
+  type NetworkGraphNode,
+} from './networkGraph';
 
-interface GNode extends SimulationNodeDatum { id: string; bytes: number; packets: number; other: number; scope: string }
-interface GEdge extends SimulationLinkDatum<GNode> { key: string; a: string; b: string; bytes: number; packets: number; convs: number[]; protos: Map<string, number>; top: string }
+type GNode = SimulationNodeDatum & NetworkGraphNode;
+type GEdge = SimulationLinkDatum<GNode> & NetworkGraphEdge;
 
-const OTHER_NODE = 'Other hosts';
+const OTHER_NODE = NETWORK_OTHER_NODE;
 
 export function Network() {
   const { model, sourceModel, params, go, nameOf, filter, patchRouteParams } = useApp();
@@ -68,56 +76,14 @@ export function Network() {
     if (svgRef.current && zoomRef.current) select(svgRef.current).call(zoomRef.current.scaleBy, factor);
   };
 
-  const protoOptions = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const c of sourceModel.conversations) if (c.transport !== 'Non-IP') m.set(c.appProtocol, (m.get(c.appProtocol) ?? 0) + c.bytesAB + c.bytesBA);
-    return [...m.entries()].sort((a, b) => b[1] - a[1]).map((e) => e[0]);
-  }, [sourceModel.conversations]);
+  const protoOptions = useMemo(() => networkProtoOptions(sourceModel.conversations), [sourceModel.conversations]);
   const colors = useMemo(() => colorMap([...protoOptions.slice(0, 7), 'Other']), [protoOptions]);
   const colorOf = (p: string) => colors.get(p) ?? colors.get('Other')!;
 
-  const graph = useMemo(() => {
-    const convs = model.conversations.filter((c) => c.transport !== 'Non-IP' && (proto === 'all' || c.appProtocol === proto)
-      && (!focus || c.a === focus || c.b === focus));
-    const nodeAcc = new Map<string, { bytes: number; packets: number }>();
-    for (const c of convs) {
-      const v = c.bytesAB + c.bytesBA, p = c.packetsAB + c.packetsBA;
-      for (const h of [c.a, c.b]) {
-        const n = nodeAcc.get(h) ?? { bytes: 0, packets: 0 };
-        n.bytes += v; n.packets += p;
-        nodeAcc.set(h, n);
-      }
-    }
-    const ranked = [...nodeAcc.entries()].sort((a, b) => b[1].bytes - a[1].bytes);
-    const keep = new Set(ranked.slice(0, limit).map((e) => e[0]));
-    if (focus) keep.add(focus);
-    const folded = ranked.length - [...keep].filter((k) => nodeAcc.has(k)).length;
-    const nodes = new Map<string, GNode>();
-    const scopeOf = new Map(model.hosts.map((h) => [h.addr, h.scope]));
-    for (const [id, v] of ranked) {
-      const target = keep.has(id) ? id : OTHER_NODE;
-      const n = nodes.get(target) ?? { id: target, bytes: 0, packets: 0, other: 0, scope: target === OTHER_NODE ? 'aggregate' : scopeOf.get(id) ?? 'unknown' };
-      n.bytes += v.bytes; n.packets += v.packets;
-      if (target === OTHER_NODE) n.other++;
-      nodes.set(target, n);
-    }
-    const edges = new Map<string, GEdge>();
-    for (const c of convs) {
-      const a = keep.has(c.a) ? c.a : OTHER_NODE;
-      const b = keep.has(c.b) ? c.b : OTHER_NODE;
-      if (a === b) continue;
-      const [x, y] = a < b ? [a, b] : [b, a];
-      const key = x + '\u0000' + y;
-      const e: GEdge = edges.get(key) ?? { key, a: x, b: y, source: x, target: y, bytes: 0, packets: 0, convs: [], protos: new Map(), top: '' };
-      e.bytes += c.bytesAB + c.bytesBA;
-      e.packets += c.packetsAB + c.packetsBA;
-      e.convs.push(c.id);
-      e.protos.set(c.appProtocol, (e.protos.get(c.appProtocol) ?? 0) + c.bytesAB + c.bytesBA);
-      edges.set(key, e);
-    }
-    for (const e of edges.values()) e.top = [...e.protos.entries()].sort((a, b) => b[1] - a[1])[0][0];
-    return { nodes: [...nodes.values()], edges: [...edges.values()], folded };
-  }, [model.conversations, model.hosts, proto, focus, limit]);
+  const graph = useMemo(
+    () => buildNetworkGraph(model.conversations, model.hosts, { proto, focus, limit }),
+    [model.conversations, model.hosts, proto, focus, limit],
+  );
 
   const [layout, setLayout] = useState<{ nodes: GNode[]; edges: GEdge[]; w: number; h: number } | null>(null);
   useEffect(() => {
@@ -370,10 +336,6 @@ export function Network() {
       <p className="muted" style={{ fontSize: 12 }}>Drag to pan, scroll or pinch to zoom. Dashed nodes are multicast or broadcast addresses. Non-IP traffic (such as ARP) is not shown.</p>
     </>
   );
-}
-
-function radius(b: number, max: number): number {
-  return 5 + 15 * Math.sqrt(b / max);
 }
 
 function NodeDetail({ id, n, edges, onFocus, go }: { id: string; n: GNode; edges: GEdge[]; onFocus: () => void; go: (v: string, p?: Record<string, string>) => void }) {

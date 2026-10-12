@@ -3,7 +3,7 @@
 ## What works and was verified
 
 - **Browser-only engine**: Wiregasm 1.9.1 (Wireshark 4.4.5) runs in a module Web Worker. A Lua postdissector extracts compact records in one armed full-dissection pass (see ARCHITECTURE.md). Verified in Node and in Chromium.
-- **Engine tests**: `tests/engine.test.ts` has 18 tests, all passing, run against real Wiregasm on synthetic fixtures. They cover:
+- **Engine tests**: `tests/` holds the unit suite (24 files at the time of writing; count the directory for the current total), all passing, run against real Wiregasm on synthetic fixtures. `tests/engine.test.ts` covers:
   - DNS answered / NXDOMAIN / SERVFAIL / unanswered
   - a repeated query kept as its own row and linked to the original
   - a reused transaction ID treated as a new transaction
@@ -21,7 +21,7 @@
 
 ## Browser test suite (`npm run e2e`)
 
-10 Playwright tests, all passing. They run against the production build, served from `/tools/packet-explorer/` by a plain static server (`scripts/serve-subdir.mjs`):
+The Playwright suite in `e2e/` (12 specs at the time of writing; count the directory for the current total), all passing. They run against the production build, served from `/tools/packet-explorer/` by a plain static server (`scripts/serve-subdir.mjs`):
 
 - local-processing notice shown before a file is chosen
 - DNS: counts, statuses, mDNS/NBNS tabs, packet drawer showing reassembly provenance (#20–#22) and Wireshark's decode

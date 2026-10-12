@@ -6,6 +6,13 @@ import { DataTable } from '../components/DataTable';
 import { Addr, Fact, Note, Panel, Seg, ViewHead } from '../components/bits';
 import { useApp, useViewState } from '../context';
 import { absTime, bytes, duration, editableSeconds, endpoint, num, parseEditableSeconds, pct, plural } from '../format';
+import {
+  overviewAverageRateBytesPerSecond,
+  rankConversationsByBytes,
+  rankProtocols,
+  resolveSelectedDuration,
+  sliceTopHosts,
+} from './overviewTotals';
 
 export function Overview() {
   const { model, go, filter, stats, setTimeRange, setHostFilter } = useApp();
@@ -17,18 +24,16 @@ export function Overview() {
   const end = c.startEpoch ? absTime(c.startEpoch, model.timeline.origin + c.duration, Math.min(c.timestampDigits, 6)) : null;
   const start = c.startEpoch ? absTime(c.startEpoch, model.timeline.origin, Math.min(c.timestampDigits, 6)) : null;
   const ip = model.conversations.filter((x) => x.transport === 'TCP' || x.transport === 'UDP');
-  const selectedDuration = filter.start !== null && filter.end !== null ? filter.end - filter.start
-    : stats.start !== null && stats.end !== null ? Math.max(0, stats.end - stats.start) : c.duration;
+  const selectedDuration = resolveSelectedDuration(filter, stats, c.duration);
 
-  const talkers = model.hosts.slice(0, 50).map((h) => ({ key: h.addr, value: h.txBytes + h.rxBytes, label: <Addr addr={h.addr} />, detail: `${bytes(h.txBytes)} sent, ${bytes(h.rxBytes)} received` }));
-  const convs = [...model.conversations].sort((a, b) => b.bytesAB + b.bytesBA - (a.bytesAB + a.bytesBA)).slice(0, 50);
+  const talkers = sliceTopHosts(model.hosts).map((h) => ({ key: h.addr, value: h.txBytes + h.rxBytes, label: <Addr addr={h.addr} />, detail: `${bytes(h.txBytes)} sent, ${bytes(h.rxBytes)} received` }));
+  const convs = rankConversationsByBytes(model.conversations);
   const convItems = convs.map((x) => ({
     key: String(x.id), value: x.bytesAB + x.bytesBA,
     label: <span><span className="tag" style={{ marginRight: 6 }}>{x.appProtocol}</span><span className="mono">{endpoint(x.a, x.aPort)} ↔ {endpoint(x.b, x.bPort)}</span></span>,
     detail: `${num(x.packetsAB + x.packetsBA)} packets over ${duration(x.end - x.start)}`,
   }));
-  const protoItems = [...model.topProtocols]
-    .sort((a, b) => b[protoMetric] - a[protoMetric])
+  const protoItems = rankProtocols(model.topProtocols, protoMetric)
     .map((p) => ({ key: p.proto, value: p[protoMetric], color: colors.get(p.proto) ?? colors.get('Other'), label: p.proto }));
 
   return (
@@ -44,7 +49,7 @@ export function Overview() {
         <Fact label="File size" value={bytes(c.fileSize)} />
         <Fact label="IP hosts" value={num(stats.hosts)} small={stats.hosts !== stats.allHosts ? `${num(stats.allHosts)} in full capture` : undefined} />
         <Fact label="TCP/UDP conversations" value={num(ip.length)} small={filter.start !== null || filter.host ? `${num(stats.allConversations)} total in full capture` : `${num(model.conversations.length)} total`} />
-        <Fact label="Average rate" value={selectedDuration > 0 ? `${bytes(Math.round(stats.wireBytes / selectedDuration))}/s` : '—'} />
+        <Fact label="Average rate" value={(() => { const r = overviewAverageRateBytesPerSecond(stats.wireBytes, selectedDuration); return r === null ? '—' : `${bytes(r)}/s`; })()} />
       </dl>
       <Panel title="Time range" sub="UTC, at the precision stored in the file">
         <dl className="kv">

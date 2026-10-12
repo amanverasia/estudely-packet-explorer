@@ -103,3 +103,11 @@ saves when the shared cap partially or wholly excludes that direction.
 The three focused test files passed (84 tests), and TypeScript compilation
 passed. The integrated project test run passed 137 tests, and the Chromium and
 Firefox browser suite passed 86 tests, including existing save/truncation checks.
+
+## Pre-follow size guard
+
+The Follow Stream view warns before the follower runs when the conversation
+carried more than the 64 MiB save cap on wire. The warning states that opening
+reassembles the full stream and may use significant memory, and that Save raw
+keeps only the capped prefix. This does not bound Wiregasm's internal follower
+allocation; it only makes the cost visible before the request starts.

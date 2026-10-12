@@ -12,7 +12,6 @@ playwright-report
 !.dev.vars.example
 .env*
 !.env.example
-.wrangler
 __pycache__
 
 # agent worktrees

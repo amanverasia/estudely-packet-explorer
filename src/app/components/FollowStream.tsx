@@ -150,6 +150,18 @@ export function FollowStream({ c }: { c: Conversation }) {
   const { model, engine, openDrawer } = useApp();
   const transport = c.transport as 'TCP' | 'UDP';
   const stream = c.stream!;
+  // Pre-follow size guard: the conversation totals are known before the follower
+  // runs. Past the save cap the follower still reassembles the full stream
+  // internally (see docs/FOLLOW-MEMORY.md), so warn before that work starts.
+  const streamWireBytes = c.bytesAB + c.bytesBA;
+  const exceedsSaveCap = streamWireBytes > FOLLOW_SAVE_BYTES;
+  const sizeGuard = exceedsSaveCap ? (
+    <Note kind="warn">
+      <b>Large stream.</b> This conversation carried {bytes(streamWireBytes)} on wire, above the {bytes(FOLLOW_SAVE_BYTES)} save
+      cap. Opening it reassembles the full stream and may use significant memory; "Save raw" keeps only the first{" "}
+      {bytes(FOLLOW_SAVE_BYTES)} and {num(FOLLOW_SAVE_SEGMENTS)} segments across both directions.
+    </Note>
+  ) : null;
   const [request, setRequest] = useState<{
     engine: typeof engine; transport: 'TCP' | 'UDP'; stream: number; data: FollowData | null; error: string | null;
   } | null>(null);
@@ -206,8 +218,8 @@ export function FollowStream({ c }: { c: Conversation }) {
     queryRef.current?.focus();
   };
 
-  if (err) return <div className="note crit">{err}</div>;
-  if (!data) return <p className="muted">Reassembling the stream…</p>;
+  if (err) return (<><div className="note crit">{err}</div>{sizeGuard}</>);
+  if (!data) return (<><div>{sizeGuard}</div><p className="muted">Reassembling the stream…</p></>);
   if (!data.client || !data.server || data.totalSegments === 0) {
     return <p className="muted">This {transport} stream carries no payload (for example, only a handshake was captured).</p>;
   }
@@ -257,6 +269,7 @@ export function FollowStream({ c }: { c: Conversation }) {
 
   return (
     <div className="follow">
+      {sizeGuard}
       <div className="follow-tools">
         <Seg label="Directions shown" value={dir} onChange={(value) => { setDir(value); setActiveResult(0); }} options={[
           { value: 'both', label: 'Both directions' },
