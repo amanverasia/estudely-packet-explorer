@@ -32,3 +32,24 @@ test('workspace sidebar links to About and licences with the credit line', async
   await expect(foot.getByRole('link', { name: 'About and licences' })).toHaveAttribute('href', './ABOUT.html');
   await expect(foot.locator('.credit')).toHaveText('made by Aman Verasia · estudely.com · github.com/amanverasia');
 });
+
+test('landing footer lines up with the page: credit on the left edge, source and version on the right', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto('./');
+  const box = async (sel: string) => (await page.locator(sel).first().boundingBox())!;
+  const brand = await box('.landing-brand');
+  const actions = await box('.landing-header button:has-text("Theme")');
+  const credit = await box('.landing-footer .credit');
+  const source = await box('.landing-footer .build-tag > a');
+  // Credit starts at the same left edge as the brand; source link ends at the right edge of the header buttons.
+  expect(Math.abs(credit.x - brand.x)).toBeLessThanOrEqual(2);
+  expect(Math.abs(source.x + source.width - (actions.x + actions.width))).toBeLessThanOrEqual(2);
+  expect(credit.x + credit.width).toBeLessThan(source.x);
+
+  // Phone width: everything left-aligned in one column, no sideways scroll.
+  await page.setViewportSize({ width: 390, height: 844 });
+  const cr = await box('.landing-footer .credit');
+  const sr = await box('.landing-footer .build-tag > a');
+  expect(Math.abs(cr.x - sr.x)).toBeLessThanOrEqual(2);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});

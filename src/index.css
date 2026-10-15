@@ -412,7 +412,16 @@ p { margin: 0; }
 .landing-detail p, .landing-detail [data-testid='offline-status'] { color: var(--ink-2); font-size: 12.5px; line-height: 1.55; }
 .landing-detail [data-testid='offline-status'] h3 { margin-bottom: 6px; color: var(--ink); font-size: 14px; }
 .landing-footer { display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; padding-top: 4px; color: var(--ink-3); font-size: 12px; }
-.landing-footer .build-tag.corner { position: static; justify-items: end; text-align: right; }
+/* Wide screens: the credit sits on the left edge, in line with the page content,
+   and the source link and version sit on the right. (The footer has one child, so
+   without a width the block would float at the left with right-aligned text.) */
+.landing-footer .build-tag.corner {
+  position: static; width: 100%; column-gap: 20px; align-items: end; text-align: left;
+  grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "credit src" "credit ver";
+}
+.landing-footer .build-tag.corner > a { grid-area: src; justify-self: end; }
+.landing-footer .build-tag.corner > span:not(.credit) { grid-area: ver; justify-self: end; text-align: right; }
+.landing-footer .build-tag.corner .credit { grid-area: credit; align-self: end; justify-self: start; }
 .drop {
   border: 1.5px dashed var(--rule-strong); border-radius: 10px; background: var(--panel); padding: 38px 24px;
   display: grid; gap: 14px; justify-items: center; text-align: center;
@@ -514,7 +523,8 @@ p { margin: 0; }
   .landing-upload-controls > div:first-child > span { display: block; margin-top: 2px; }
   .landing-details { grid-template-columns: minmax(0, 1fr); }
   .landing-footer { align-items: flex-start; flex-direction: column; gap: 12px; }
-  .landing-footer .build-tag.corner { justify-items: start; text-align: left; }
+  .landing-footer .build-tag.corner { justify-items: start; text-align: left; grid-template-columns: minmax(0, 1fr); grid-template-areas: none; }
+  .landing-footer .build-tag.corner > a, .landing-footer .build-tag.corner > span:not(.credit), .landing-footer .build-tag.corner .credit { grid-area: auto; justify-self: start; text-align: left; }
 }
 
 /* ---------- follow stream ---------- */
