@@ -38,6 +38,10 @@ Conversation matching in Compare uses protocol and the unordered pair of endpoin
 
 Local IP database imports parse plain or gzip CSV incrementally and report read bytes and accepted ranges. They retain the 100 MiB selected-file and 150 MiB unpacked limits, reject malformed or overlapping ranges, and keep the installed database if a replacement fails. See [the import memory budget and measurements](IP_IMPORT_MEMORY.md).
 
+## About page
+
+The start-screen About link, the Help menu and the sidebar open "About and licences" (`ABOUT.html`) in a new tab: what the app is, how it works, what leaves and stays on the device, limits, the maker's credit line, then the licence notices and known limitations.
+
 ## Accessibility checks
 
 The browser suite runs axe WCAG 2.1 A/AA checks on the start screen, every view, the packet drawer, and the expanded network link list in light and dark themes. It checks text palette pairs at 4.5:1 and chart series colours at 3:1, and exercises the network link list and packet field tree with the keyboard. Traffic and DNS flow charts provide expandable data tables, and interactive bar-chart rows accept Enter and Space. Additional checks cover the Files view and expanded chart tables. Automated checks do not replace a manual NVDA or VoiceOver screen-reader pass; that requirement remains open in issue #22. See [the accessibility audit](ACCESSIBILITY.md).

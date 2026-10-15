@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="referrer" content="no-referrer" />
-<title>Licences and limitations</title>
+<title>About and licences</title>
 <style>
   :root { color-scheme: light dark; --bg: #eef1f4; --ink: #14191f; --ink2: #4c5663; --panel: #fff; --rule: #dbe1e7; }
   @media (prefers-color-scheme: dark) { :root { --bg: #101418; --ink: #edf1f5; --ink2: #b4bec9; --panel: #171c21; --rule: #29313a; } }
@@ -13,12 +13,55 @@
   section { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 16px 20px; margin-top: 16px; }
   h1 { font-size: 22px; margin: 0; } h2 { font-size: 16px; margin: 0 0 8px; }
   p, li { color: var(--ink2); } a { color: inherit; }
+  nav { margin-top: 8px; font-size: 14px; } nav a + a { margin-left: 12px; }
+  h2.part { margin: 32px 0 0; font-size: 18px; }
+  code { font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   table { border-collapse: collapse; width: 100%; font-size: 14px; } td, th { text-align: left; border-bottom: 1px solid var(--rule); padding: 6px 8px 6px 0; vertical-align: top; }
 </style>
 </head>
 <body>
 <main>
-  <h1>Estudely Packet Explorer: licences and limitations</h1>
+  <h1>About Estudely Packet Explorer</h1>
+  <nav aria-label="On this page"><a href="#about">About</a><a href="#licences">Licences and limitations</a></nav>
+
+  <section id="about">
+    <h2>What is this?</h2>
+    <p>Estudely Packet Explorer opens packet capture files (pcap and pcapng) in your browser and shows what is in them. Wireshark, compiled to WebAssembly by Wiregasm, decodes the packets in a Web Worker on your device. The app turns the decoded packets into views: Overview, Hosts, Connections, Network, Packets, DNS, HTTP, Files, TLS, QUIC, SSH, DHCP, ARP and ICMP, plus a comparison of two captures.</p>
+  </section>
+
+  <section id="how">
+    <h2>How it works</h2>
+    <p>You choose or drop a capture file. The browser reads it from your disk and passes it to the decoding engine running in a Web Worker. A script inside the engine records the fields the views need; the page builds its tables and charts from those records. You can add a TLS key log file to decrypt sessions it matches. Nothing here needs an account or a server of ours.</p>
+  </section>
+
+  <section id="leaves">
+    <h2>What leaves your device</h2>
+    <p>Captures and key log files are never uploaded. The app contains no code that sends them anywhere, and the page's security policy only allows it to request files from its own address.</p>
+    <p>The page requests only its own static files: the app, fonts, and the decoding engine (about 20 MB, compressed). Cloudflare hosts the site and, like any web host, sees ordinary request metadata for those files, such as your IP address, browser type and the file requested. The site runs no server code of ours and has Workers request logging turned off.</p>
+    <p>The app has no analytics. Links to other sites (for example the DB-IP download pages in the Hosts view) only load when you open them.</p>
+  </section>
+
+  <section id="stays">
+    <h2>What stays on your device</h2>
+    <ul>
+      <li><strong>Offline copy.</strong> A service worker saves the app's own files and the engine in your browser's Cache Storage (caches named <code>epx-shell-…</code> and <code>epx-engine-…</code>) so the app works offline. It caches only files the build lists; captures are never stored. The start screen shows how much space it uses.</li>
+      <li><strong>Colour theme.</strong> Your choice (system, light or dark) is kept in <code>localStorage</code> under <code>epx-theme</code>.</li>
+      <li><strong>Country and ASN data.</strong> Only if you import DB-IP Lite files in the Hosts view, the parsed address ranges are kept in IndexedDB (database <code>estudely-local-ip-data</code>) until you remove them. The imported file is read from your disk and matched locally.</li>
+    </ul>
+    <p>To clear them: use Remove next to each imported database in the Hosts view, and clear this site's data in your browser settings (this also removes the offline copy and the theme choice). Open captures and key logs exist only in the tab's memory and are gone when you close the capture or the tab.</p>
+  </section>
+
+  <section id="limits">
+    <h2>Limits</h2>
+    <p>The first 1 GiB of capture data is analyzed; if there is more, results are marked partial. A warning appears above 250 MiB. See Known limitations below for what the decoding does and does not show.</p>
+  </section>
+
+  <section id="who">
+    <h2>Who made this</h2>
+    <p>made by Aman Verasia · <a href="https://estudely.com" target="_blank" rel="noopener noreferrer">estudely.com</a> · <a href="https://github.com/amanverasia" target="_blank" rel="noopener noreferrer">github.com/amanverasia</a></p>
+  </section>
+
+  <h2 id="licences" class="part">Licences and limitations</h2>
   <p>Your capture is processed locally in your browser. Nothing is uploaded, and the page makes no requests other than loading its own files.</p>
 
   <section>
