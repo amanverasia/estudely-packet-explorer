@@ -377,7 +377,10 @@ function Landing({ state, onOpen, onCancel, onCompare, onRetry, theme, setTheme 
               <div className="muted">Protocol dashboards for packet captures</div>
             </div>
           </div>
-          <ThemeButton theme={theme} setTheme={setTheme} />
+          <div className="landing-header-actions">
+            <a className="btn" href="./ABOUT.html" target="_blank" rel="noopener">About</a>
+            <ThemeButton theme={theme} setTheme={setTheme} />
+          </div>
         </header>
         <div className="landing-hero">
           <div className="landing-copy">

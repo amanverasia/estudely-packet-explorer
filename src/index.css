@@ -364,6 +364,7 @@ p { margin: 0; }
 .landing:not(.compare-page) { min-height: 100vh; display: block; padding: clamp(22px, 4vw, 48px) clamp(18px, 5vw, 64px) 24px; }
 .landing:not(.compare-page) > .landing-card { width: min(1120px, 100%); margin: 0 auto; gap: clamp(30px, 4vw, 48px); }
 .landing-header { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.landing-header-actions { display: flex; align-items: center; gap: 8px; flex: none; }
 .landing-brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .landing-brand-mark { width: 38px; height: 38px; display: grid; place-items: center; flex: none; border-radius: 11px; background: var(--accent); color: var(--accent-ink); font-size: 24px; line-height: 1; font-weight: 600; letter-spacing: -0.08em; }
 .landing-brand .brand-name { font-size: 16px; }
@@ -482,6 +483,7 @@ p { margin: 0; }
 .build-tag { display: grid; gap: 3px; font-size: 12px; color: var(--ink-3); line-height: 1.4; }
 .build-tag a { color: var(--ink-2); text-decoration: none; }
 .build-tag a:hover { color: var(--ink); text-decoration: underline; }
+.build-tag .credit { overflow-wrap: anywhere; }
 .build-tag > a { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }
 .landing:not(.compare-page) { position: relative; }
 .build-tag.corner { position: absolute; right: 16px; bottom: 16px; justify-items: end; text-align: right; }
@@ -545,3 +547,4 @@ p { margin: 0; }
 @media (forced-colors: active) {
   .follow-swatch { forced-color-adjust: none; }
 }
+a.btn { color: inherit; text-decoration: none; }

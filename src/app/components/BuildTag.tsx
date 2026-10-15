@@ -1,6 +1,7 @@
 // Copyright (C) 2026 Estudely and contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
-// Version, build and source link, shown in a corner of every screen.
+// Version, build, source link and credit line, shown in a corner of every screen.
+import { Credit } from './Credit';
 
 export const REPO_URL = 'https://github.com/amanverasia/estudely-packet-explorer';
 
@@ -23,6 +24,7 @@ export function BuildTag({ className }: { className?: string }) {
         {linkable ? <a href={`${REPO_URL}/commit/${commit}`} target="_blank" rel="noopener noreferrer" className="mono">{commit}</a> : <span className="mono">{commit}</span>}
         {' '}({__BUILD_DATE__})
       </span>
+      <Credit />
     </div>
   );
 }

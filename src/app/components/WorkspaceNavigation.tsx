@@ -73,7 +73,7 @@ export function WorkspaceNavigation({ items, current, onNavigate, wireshark, loc
       </nav>
       <div className="sidebar-foot workspace-desktop">
         {localNotice && <p className="local-note">{localNotice}</p>}
-        <p>Decoded with Wireshark {wireshark} via Wiregasm. <a href="./ABOUT.html" target="_blank" rel="noopener">Licences and limitations</a></p>
+        <p>Decoded with Wireshark {wireshark} via Wiregasm. <a href="./ABOUT.html" target="_blank" rel="noopener">About and licences</a></p>
         <BuildTag />
       </div>
     </aside>

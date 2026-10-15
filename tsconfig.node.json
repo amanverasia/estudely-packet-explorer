@@ -5,10 +5,11 @@
     "lib": ["ES2023", "DOM"],
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "types": ["node"],
+    "types": ["node", "vite/client"],
+    "jsx": "react-jsx",
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["vite.config.ts", "tests", "playwright.config.ts", "e2e"]
+  "include": ["src/build-info.d.ts", "vite.config.ts", "tests", "playwright.config.ts", "e2e"]
 }
