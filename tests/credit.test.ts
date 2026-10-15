@@ -14,16 +14,19 @@ beforeAll(() => {
 });
 
 const text = (html: string) => html.replace(/<[^>]+>/g, '').replace(/&#x27;/g, "'");
-const CREDIT_TEXT = 'made by Aman Verasia · estudely.com · github.com/amanverasia';
+const CREDIT_TEXT = 'made by Aman Verasia · GitHub';
 const LINKS = [
-  '<a href="https://estudely.com" target="_blank" rel="noopener noreferrer">estudely.com</a>',
-  '<a href="https://github.com/amanverasia" target="_blank" rel="noopener noreferrer">github.com/amanverasia</a>',
+  '<a href="https://amanverasia.com/" target="_blank" rel="noopener noreferrer">Aman Verasia</a>',
+  '<a href="https://estudely.com" target="_blank" rel="noopener noreferrer">An Estudely tool</a>',
+  '<a href="https://estudely.com/tools/" target="_blank" rel="noopener noreferrer">All tools</a>',
+  '<a href="https://estudely.com/about/" target="_blank" rel="noopener noreferrer">About Estudely</a>',
+  '<a href="https://github.com/amanverasia" target="_blank" rel="noopener noreferrer">GitHub</a>',
 ];
 
 describe('credit line', () => {
-  it('renders the shared text with both links opening safely in a new tab', () => {
+  it('renders the shared credit and navigation with links opening safely in a new tab', () => {
     const html = renderToStaticMarkup(createElement(Credit));
-    expect(text(html)).toBe(CREDIT_TEXT);
+    expect(text(html)).toContain(CREDIT_TEXT);
     for (const link of LINKS) expect(html).toContain(link);
   });
 
@@ -37,7 +40,7 @@ describe('credit line', () => {
     const html = renderToStaticMarkup(createElement(WorkspaceNavigation, {
       items: [{ id: 'overview', label: 'Overview' }], current: 'overview', onNavigate: () => {}, wireshark: '4.4.5', localNotice: '',
     }));
-    expect(html.split(CREDIT_TEXT.slice(0, 7) + ' Aman').length - 1).toBe(1);
+    expect(html.match(/class="credit"/g)).toHaveLength(1);
     for (const link of LINKS) expect(html).toContain(link);
     expect(html.indexOf('About and licences')).toBeGreaterThan(-1);
     expect(html.indexOf('About and licences')).toBeLessThan(html.indexOf('made by'));

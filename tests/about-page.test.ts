@@ -37,7 +37,8 @@ describe('public/ABOUT.html', () => {
     for (const h of ['What is this?', 'How it works', 'What leaves your device', 'What stays on your device', 'Limits', 'Who made this', 'Licences and limitations']) {
       expect(page).toMatch(new RegExp(`<h2[^>]*>${h.replace('?', '\\?')}</h2>`));
     }
-    expect(page).toContain('made by Aman Verasia · <a href="https://estudely.com" target="_blank" rel="noopener noreferrer">estudely.com</a> · <a href="https://github.com/amanverasia" target="_blank" rel="noopener noreferrer">github.com/amanverasia</a>');
+    expect(page).toContain('<nav class="estudely-links" aria-label="Estudely">');
+    expect(page).toContain('<a href="https://estudely.com/tools/" target="_blank" rel="noopener noreferrer">All tools</a>');
   });
 
   it('loads nothing external and only follows allowed links', () => {
@@ -47,7 +48,7 @@ describe('public/ABOUT.html', () => {
     expect(page).not.toMatch(/@import|url\(/i);
     const hrefs = [...page.matchAll(/href="([^"]+)"/g)].map((m) => m[1]);
     const external = hrefs.filter((h) => /^https?:/.test(h));
-    const allowed = /^https:\/\/(www\.wireshark\.org|github\.com\/(good-tools|amanverasia)|estudely\.com)(\/|$)/;
+    const allowed = /^https:\/\/(www\.wireshark\.org|github\.com\/(good-tools|amanverasia)|estudely\.com|amanverasia\.com)(\/|$)/;
     for (const h of external) expect(h, h).toMatch(allowed);
   });
 

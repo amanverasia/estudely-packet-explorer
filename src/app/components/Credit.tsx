@@ -1,11 +1,14 @@
 // Copyright (C) 2026 Estudely and contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
-// The one credit line shared by every esdy.cc tool. Keep the strings here only.
+// Creator credit and Estudely navigation, shared by the landing and workspace.
 
 export const CREDIT = {
   name: 'Aman Verasia',
-  site: { href: 'https://estudely.com', text: 'estudely.com' },
-  github: { href: 'https://github.com/amanverasia', text: 'github.com/amanverasia' },
+  creator: { href: 'https://amanverasia.com/', text: 'Aman Verasia' },
+  site: { href: 'https://estudely.com', text: 'An Estudely tool' },
+  tools: { href: 'https://estudely.com/tools/', text: 'All tools' },
+  about: { href: 'https://estudely.com/about/', text: 'About Estudely' },
+  github: { href: 'https://github.com/amanverasia', text: 'GitHub' },
 };
 
 function CreditLink({ href, text }: { href: string; text: string }) {
@@ -14,8 +17,13 @@ function CreditLink({ href, text }: { href: string; text: string }) {
 
 export function Credit({ className }: { className?: string }) {
   return (
-    <span className={`credit${className ? ' ' + className : ''}`}>
-      made by {CREDIT.name} · <CreditLink {...CREDIT.site} /> · <CreditLink {...CREDIT.github} />
-    </span>
+    <div className={`credit${className ? ' ' + className : ''}`}>
+      <span>made by <CreditLink {...CREDIT.creator} /> · <CreditLink {...CREDIT.github} /></span>
+      <nav className="estudely-links" aria-label="Estudely">
+        <CreditLink {...CREDIT.site} />
+        <CreditLink {...CREDIT.tools} />
+        <CreditLink {...CREDIT.about} />
+      </nav>
+    </div>
   );
 }

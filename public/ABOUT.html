@@ -14,6 +14,9 @@
   h1 { font-size: 22px; margin: 0; } h2 { font-size: 16px; margin: 0 0 8px; }
   p, li { color: var(--ink2); } a { color: inherit; }
   nav { margin-top: 8px; font-size: 14px; } nav a + a { margin-left: 12px; }
+  .estudely-links { display: flex; flex-wrap: wrap; gap: 0 16px; }
+  .estudely-links a + a { margin-left: 0; }
+  @media (max-width: 860px) { #who a { display: inline-flex; align-items: center; min-height: 44px; } }
   h2.part { margin: 32px 0 0; font-size: 18px; }
   code { font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   table { border-collapse: collapse; width: 100%; font-size: 14px; } td, th { text-align: left; border-bottom: 1px solid var(--rule); padding: 6px 8px 6px 0; vertical-align: top; }
@@ -58,7 +61,12 @@
 
   <section id="who">
     <h2>Who made this</h2>
-    <p>made by Aman Verasia · <a href="https://estudely.com" target="_blank" rel="noopener noreferrer">estudely.com</a> · <a href="https://github.com/amanverasia" target="_blank" rel="noopener noreferrer">github.com/amanverasia</a></p>
+    <p>made by <a href="https://amanverasia.com/" target="_blank" rel="noopener noreferrer">Aman Verasia</a> · <a href="https://github.com/amanverasia" target="_blank" rel="noopener noreferrer">GitHub</a></p>
+    <nav class="estudely-links" aria-label="Estudely">
+      <a href="https://estudely.com" target="_blank" rel="noopener noreferrer">An Estudely tool</a>
+      <a href="https://estudely.com/tools/" target="_blank" rel="noopener noreferrer">All tools</a>
+      <a href="https://estudely.com/about/" target="_blank" rel="noopener noreferrer">About Estudely</a>
+    </nav>
   </section>
 
   <h2 id="licences" class="part">Licences and limitations</h2>

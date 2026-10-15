@@ -17,9 +17,10 @@ test('landing links to the About page and carries the credit line', async ({ pag
   await expect(about.getByRole('heading', { name: 'What leaves your device' })).toBeVisible();
   await expect(about.getByRole('heading', { name: 'Known limitations' })).toBeVisible();
   const footer = page.locator('.landing-footer .credit');
-  await expect(footer).toHaveText('made by Aman Verasia · estudely.com · github.com/amanverasia');
-  await expect(footer.getByRole('link', { name: 'estudely.com' })).toHaveAttribute('href', 'https://estudely.com');
-  await expect(footer.getByRole('link', { name: 'github.com/amanverasia' })).toHaveAttribute('rel', 'noopener noreferrer');
+  await expect(footer).toContainText('made by Aman Verasia · GitHub');
+  await expect(footer.getByRole('link', { name: 'An Estudely tool' })).toHaveAttribute('href', 'https://estudely.com');
+  await expect(footer.getByRole('link', { name: 'All tools' })).toHaveAttribute('href', 'https://estudely.com/tools/');
+  await expect(footer.getByRole('link', { name: 'GitHub', exact: true })).toHaveAttribute('rel', 'noopener noreferrer');
   // The header carries no estudely.com link.
   await expect(page.locator('.landing-header a[href*="estudely.com"]')).toHaveCount(0);
 });
@@ -30,7 +31,7 @@ test('workspace sidebar links to About and licences with the credit line', async
   await page.locator('input[type=file]').first().setInputFiles({ name: 'dns.pcap', mimeType: 'application/vnd.tcpdump.pcap', buffer: readFileSync(fixture('dns.pcap')) });
   const foot = page.locator('.sidebar-foot');
   await expect(foot.getByRole('link', { name: 'About and licences' })).toHaveAttribute('href', './ABOUT.html');
-  await expect(foot.locator('.credit')).toHaveText('made by Aman Verasia · estudely.com · github.com/amanverasia');
+  await expect(foot.locator('.credit')).toContainText('made by Aman Verasia · GitHub');
 });
 
 test('landing footer lines up with the page: credit on the left edge, source and version on the right', async ({ page }) => {
