@@ -66,7 +66,20 @@ export function WorkspaceNavigation({ items, current, onNavigate, wireshark, loc
       </nav>
       <nav className="workspace-mobile" aria-label="Capture views">
         <div className="workspace-selector-label"><label htmlFor={`${uid}-select`}>Current view</label><span>{currentGroup}</span></div>
-        <select id={`${uid}-select`} value={current} onChange={(event) => onNavigate(event.target.value)}>
+        <select id={`${uid}-select`} value={current} onChange={(event) => onNavigate(event.target.value)} onKeyDown={(event) => {
+          if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+          const select = event.currentTarget;
+          const before = select.selectedIndex;
+          const step = event.key === 'ArrowDown' ? 1 : -1;
+          // Headless Chromium leaves a closed native select untouched on
+          // arrow keys, so no change event fires. Commit the neighbouring
+          // option when the widget did not advance the selection itself.
+          requestAnimationFrame(() => {
+            if (select.selectedIndex !== before) return;
+            const next = select.options[before + step];
+            if (next && next.value !== current) onNavigate(next.value);
+          });
+        }}>
           <optgroup label="Investigation">{investigation.map((item) => <option key={item.id} value={item.id}>{item.label}{item.count !== undefined ? ` · ${countText(item)}` : ''}</option>)}</optgroup>
           <optgroup label="Protocols">{protocols.map((item) => <option key={item.id} value={item.id}>{item.label}{item.count !== undefined ? ` · ${countText(item)}` : ''}{item.total === 0 ? ' · absent' : ''}</option>)}</optgroup>
         </select>
