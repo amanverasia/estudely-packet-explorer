@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { FrameDetails, PacketRow, ProtoTreeNode } from '../../engine/types';
 import { useApp, type DrawerSpec } from '../context';
-import { absTime, bytes, decimalLiteral, endpoint, epochText, num, rel } from '../format';
+import { absTime, bytes, endpoint, epochText, num, rel } from '../format';
+import { sharedDisplayFilter } from '../filtering';
 import { SOURCE_PACKET_PAGE_SIZE, sourceFramePage } from '../sourceFrames';
 
 export function Drawer({ spec, active, onClose }: { spec: DrawerSpec; active: boolean; onClose: () => void }) {
@@ -29,14 +30,7 @@ export function Drawer({ spec, active, onClose }: { spec: DrawerSpec; active: bo
   const onCloseRef = useRef(onClose);
   const actionTokenRef = useRef(0);
   const returnFocusRef = useRef<HTMLElement | null>(document.activeElement instanceof HTMLElement ? document.activeElement : null);
-  const sharedDisplay = useMemo(() => {
-    const terms: string[] = [];
-    if (filter.start !== null && filter.end !== null) {
-      terms.push(`(frame.time_relative >= ${decimalLiteral(filter.start)} && frame.time_relative <= ${decimalLiteral(filter.end)})`);
-    }
-    if (filter.host) terms.push(`(${filter.host.includes(':') ? 'ipv6.addr' : 'ip.addr'} == ${filter.host})`);
-    return terms.join(' && ');
-  }, [filter.start, filter.end, filter.host]);
+  const sharedDisplay = useMemo(() => sharedDisplayFilter({ start: filter.start, end: filter.end, host: filter.host }), [filter.start, filter.end, filter.host]);
 
   useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
   useEffect(() => {

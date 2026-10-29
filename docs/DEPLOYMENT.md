@@ -29,7 +29,7 @@ npx wrangler login     # once
 npm run deploy         # build + wrangler deploy
 ```
 
-`public/_headers` (copied into `dist/`) sets the security headers. Cloudflare and Netlify both read it.
+`public/_headers` (copied into `dist/`) sets the security headers. Cloudflare and Netlify both read it. The build emits hidden source maps (no `sourceMappingURL` comment); `public/.assetsignore` keeps `*.map` files out of the Cloudflare deploy.
 
 ### Cloudflare zone settings
 

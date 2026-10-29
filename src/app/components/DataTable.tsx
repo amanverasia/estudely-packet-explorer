@@ -139,7 +139,7 @@ export function DataTable<T>(props: Props<T>) {
           {view.length === rows.length ? `${num(rows.length)} rows` : `${num(view.length)} of ${num(rows.length)} rows`}
         </span>
         {exportName && (
-          <button className="btn small" onClick={exportCsv} disabled={!view.length} title="Save the rows shown (search and sort applied) as CSV">
+          <button className="btn small" onClick={exportCsv} disabled={!view.length} title="Save the rows shown (search and sort applied) as CSV. Includes every column and is not redacted, so it can contain addresses and names.">
             Export CSV
           </button>
         )}

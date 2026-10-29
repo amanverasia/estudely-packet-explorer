@@ -194,11 +194,16 @@ function bool(s: string | undefined): boolean {
   return s === 'true' || s === '1';
 }
 
-/** Splits "1700000000.123456789" into integer seconds and the fractional digits. */
-function splitEpoch(e: string): [bigint, string] {
-  const dot = e.indexOf('.');
-  if (dot < 0) return [BigInt(e), ''];
-  return [BigInt(e.slice(0, dot)), e.slice(dot + 1)];
+const EPOCH_RE = /^(\d+)(?:\.(\d*))?$/;
+
+/**
+ * Splits "1700000000.123456789" into integer seconds and the fractional digits.
+ * Returns null for a missing or malformed timestamp so one bad line cannot
+ * abort the whole parse.
+ */
+function splitEpoch(e: string | undefined): [bigint, string] | null {
+  const m = e === undefined ? null : EPOCH_RE.exec(e);
+  return m ? [BigInt(m[1]), m[2] ?? ''] : null;
 }
 
 /** Subtract decimal epoch parts before converting the small relative value to a float. */
@@ -251,6 +256,7 @@ export function parseRecords(buf: Uint8Array, onProgress?: (fraction: number) =>
   let baseSec = 0n;
   let baseFracDigits = '';
   let digits = 0;
+  let skippedPackets = 0;
   // Interning keeps one copy of repeated strings (addresses, protocol stacks).
   const pool = new Map<string, string>();
   const intern = (v: string | undefined): string => {
@@ -267,7 +273,12 @@ export function parseRecords(buf: Uint8Array, onProgress?: (fraction: number) =>
     switch (c[0]) {
       case 'P': {
         const epoch = c[2];
-        const [sec, fracDigits] = splitEpoch(epoch);
+        const split = splitEpoch(epoch);
+        if (!split) {
+          skippedPackets++;
+          break;
+        }
+        const [sec, fracDigits] = split;
         const trimmed = fracDigits.replace(/0+$/, '');
         if (trimmed.length > digits) digits = trimmed.length;
         if (out.startEpoch === null) {
@@ -391,5 +402,8 @@ export function parseRecords(buf: Uint8Array, onProgress?: (fraction: number) =>
     }
   }, onProgress);
   out.timestampDigits = digits;
+  if (skippedPackets > 0) {
+    out.warnings.push(`Skipped ${skippedPackets} packet record${skippedPackets === 1 ? '' : 's'} with a missing or malformed timestamp.`);
+  }
   return out;
 }

@@ -12,6 +12,9 @@ export async function correlateTls(
 ): Promise<TlsSession[]> {
   const tls: TlsSession[] = [];
   const tlsByConv = new Map<number, TlsSession>();
+  // Certificate fingerprints are hashed together after the loop instead of
+  // one awaited digest per certificate.
+  const pendingFingerprints: Promise<void>[] = [];
   for (const t of raw.tls) {
     const p = pkt(t.frame);
     if (!p) continue;
@@ -54,11 +57,12 @@ export async function correlateTls(
       for (const hex of t.certs) {
         const der = hexToBytes(hex);
         const cert = parseCertificate(der, t.frame, session.certificates.length);
-        cert.sha256 = await fingerprint(der);
+        pendingFingerprints.push(fingerprint(der).then((sha) => { cert.sha256 = sha; }));
         session.certificates.push(cert);
       }
     }
   }
+  await Promise.all(pendingFingerprints);
   for (const session of tls) {
     session.frames = [...new Set(session.frames)].sort((a, b) => a - b);
     if (session.certificates.length) session.certificateStatus = 'decoded';

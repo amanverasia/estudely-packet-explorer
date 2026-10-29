@@ -565,7 +565,7 @@ test('conversation packet details page through the full conversation with bounde
   const pageControls = page.getByRole('group', { name: 'Conversation packet pages' });
   await expect(pageControls).toContainText('Page 1 of 3');
   await expect(page.getByText('Showing 1–500 of 1,001 packets in this conversation')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Export CSV' }).last()).toHaveAttribute('title', 'Save the rows shown (search and sort applied) as CSV');
+  await expect(page.getByRole('button', { name: 'Export CSV' }).last()).toHaveAttribute('title', 'Save the rows shown (search and sort applied) as CSV. Includes every column and is not redacted, so it can contain addresses and names.');
 
   await pageControls.getByLabel('Go to page').fill('2');
   await pageControls.getByRole('button', { name: 'Go', exact: true }).click();

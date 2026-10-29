@@ -4,7 +4,21 @@
 // download. Nothing is sent anywhere.
 import type { AnalysisModel } from '../engine/types';
 
+// Large exports can take a while to start saving in Safari and Firefox, and
+// revoking the object URL first aborts the download. Keep each URL for a
+// minute, and release it sooner when the next export begins.
+const REVOKE_DELAY_MS = 60_000;
+let previousUrl: { url: string; timer: ReturnType<typeof setTimeout> } | null = null;
+
+function releasePreviousUrl(): void {
+  if (!previousUrl) return;
+  clearTimeout(previousUrl.timer);
+  URL.revokeObjectURL(previousUrl.url);
+  previousUrl = null;
+}
+
 export function downloadBlob(name: string, blob: Blob): void {
+  releasePreviousUrl();
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -13,7 +27,13 @@ export function downloadBlob(name: string, blob: Blob): void {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  previousUrl = {
+    url,
+    timer: setTimeout(() => {
+      if (previousUrl?.url === url) previousUrl = null;
+      URL.revokeObjectURL(url);
+    }, REVOKE_DELAY_MS),
+  };
 }
 
 function csvCell(v: unknown): string {

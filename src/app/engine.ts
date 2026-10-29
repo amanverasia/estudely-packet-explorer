@@ -23,16 +23,23 @@ export type EngineState =
 
 type Listener = (s: EngineState) => void;
 
+// The compiled engine is shared by every client on the page (the main view and
+// Compare), so the 19 MB download and compile still happen once per page load.
+let sharedWasmModule: WebAssembly.Module | null = null;
+let sharedData: ArrayBuffer | null = null;
+let sharedVersions: { wireshark: string; wiregasm: string } | null = null;
+
 export class EngineClient {
   private worker: Worker | null = null;
-  private wasmModule: WebAssembly.Module | null = null;
-  private data: ArrayBuffer | null = null;
   private nextId = 1;
   private pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
   private exportObjectRows: ExportObjectRow[] | null = null;
   private exportObjectsRequest: Promise<ExportObjectRow[]> | null = null;
   private listener: Listener;
-  versions: { wireshark: string; wiregasm: string } | null = null;
+
+  get versions(): { wireshark: string; wiregasm: string } | null {
+    return sharedVersions;
+  }
 
   constructor(listener: Listener) {
     this.listener = listener;
@@ -47,12 +54,13 @@ export class EngineClient {
     w.onmessage = (ev: MessageEvent<FromWorker>) => this.onMessage(w, ev.data);
     w.onerror = (ev) => {
       if (w !== this.worker) return;
+      this.rejectPending(new Error('The analysis worker stopped unexpectedly.'));
       this.listener({ kind: 'error', message: `The analysis worker stopped unexpectedly${ev.message ? `: ${ev.message}` : ''}. Very large captures can exceed the browser's memory.` });
     };
-    const init: Extract<ToWorker, { type: 'init' }> = { type: 'init', base: this.base(), wasmModule: this.wasmModule, data: this.data ? this.data.slice(0) : null };
+    const init: Extract<ToWorker, { type: 'init' }> = { type: 'init', base: this.base(), wasmModule: sharedWasmModule, data: sharedData ? sharedData.slice(0) : null };
     // If this browser cannot post the module, stop offering it: each worker compiles its own.
     try {
-      if (!postWithModule((m) => w.postMessage(m), init)) this.wasmModule = null;
+      if (!postWithModule((m) => w.postMessage(m), init)) sharedWasmModule = null;
     } catch (e) {
       w.terminate();
       throw e;
@@ -64,9 +72,9 @@ export class EngineClient {
     if (w !== this.worker) return; // stale worker
     switch (m.type) {
       case 'engine-ready':
-        this.wasmModule = m.wasmModule;
-        this.data = m.data;
-        this.versions = m.versions;
+        sharedWasmModule = m.wasmModule;
+        sharedData = m.data;
+        sharedVersions = m.versions;
         break;
       case 'progress':
         this.listenerProgress(m.progress);
@@ -114,7 +122,7 @@ export class EngineClient {
     }
     this.currentFile = file;
     this.startedAt = performance.now();
-    this.listenerProgress({ phase: this.wasmModule ? 'init' : 'engine', fraction: null, message: this.wasmModule ? 'Starting…' : 'Loading the Wireshark engine…' });
+    this.listenerProgress({ phase: sharedWasmModule ? 'init' : 'engine', fraction: null, message: sharedWasmModule ? 'Starting…' : 'Loading the Wireshark engine…' });
     const msg: ToWorker = { type: 'open', file, keyLog };
     this.worker.postMessage(msg);
   }
@@ -126,7 +134,11 @@ export class EngineClient {
     this.currentFile = null;
     this.exportObjectRows = null;
     this.exportObjectsRequest = null;
-    for (const p of this.pending.values()) p.reject(new Error('Capture closed'));
+    this.rejectPending(new Error('Capture closed'));
+  }
+
+  private rejectPending(error: Error): void {
+    for (const p of this.pending.values()) p.reject(error);
     this.pending.clear();
   }
 

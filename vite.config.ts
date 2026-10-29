@@ -63,7 +63,7 @@ function pwaPlugin(): Plugin {
       const files = (readdirSync(outDir, { recursive: true, withFileTypes: true }) as import('node:fs').Dirent[])
         .filter((d) => d.isFile())
         .map((d) => relative(outDir, join(d.parentPath, d.name)).split(sep).join('/'))
-        .filter((f) => !f.endsWith('.map') && !f.endsWith('.woff') && f !== '_headers' && f !== 'sw.js')
+        .filter((f) => !f.endsWith('.map') && !f.endsWith('.woff') && f !== '_headers' && f !== '.assetsignore' && f !== 'sw.js')
         .sort();
       const group = (prefix: string, list: string[]) => {
         const h = createHash('sha256');
@@ -96,7 +96,7 @@ export default defineConfig({
     __BUILD_DATE__: JSON.stringify(new Date().toISOString().slice(0, 10)),
   },
   worker: { format: 'es' },
-  build: { target: 'es2022', sourcemap: true, chunkSizeWarningLimit: 900 },
+  build: { target: 'es2022', sourcemap: 'hidden', chunkSizeWarningLimit: 900 },
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts'],

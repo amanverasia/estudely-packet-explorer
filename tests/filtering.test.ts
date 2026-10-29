@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Estudely and contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
 import { describe, expect, it } from 'vitest';
-import { applySharedFilter } from '../src/app/filtering';
+import { applySharedFilter, sharedDisplayFilter } from '../src/app/filtering';
 import type { AnalysisModel, Conversation } from '../src/engine/types';
 
 function conversation(id: number, protocols: string[] = []): Conversation {
@@ -115,5 +115,22 @@ describe('shared filter conversation record indexing', () => {
     expect(filtered.conversations.every(({ records }) => records.dns === 1 && records.http === 1 && records.tls === 1)).toBe(true);
     expect(filtered.unsupported.httpPortsUndecoded).toEqual(source.unsupported.httpPortsUndecoded);
     expect(filtered.unsupported.httpWithGaps).toEqual(source.unsupported.httpWithGaps);
+  });
+});
+
+describe('sharedDisplayFilter', () => {
+  it('is empty without a shared filter', () => {
+    expect(sharedDisplayFilter({ start: null, end: null, host: null })).toBe('');
+  });
+
+  it('combines the time range and host, choosing the address family', () => {
+    expect(sharedDisplayFilter({ start: 1.5, end: 2, host: '10.0.0.1' })).toBe(
+      '(frame.time_relative >= 1.5 && frame.time_relative <= 2) && (ip.addr == 10.0.0.1)',
+    );
+    expect(sharedDisplayFilter({ start: null, end: null, host: 'fe80::1' })).toBe('(ipv6.addr == fe80::1)');
+  });
+
+  it('writes tiny and huge numbers as plain decimals', () => {
+    expect(sharedDisplayFilter({ start: 1e-7, end: 1, host: null })).toContain('frame.time_relative >= 0.0000001');
   });
 });

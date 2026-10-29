@@ -53,3 +53,20 @@ describe('relative packet timestamps', () => {
     expect(packets.map((packet) => packet.t)).toEqual([0, 0.000000789]);
   });
 });
+
+describe('malformed packet records', () => {
+  it('skips packet lines without a usable timestamp and keeps parsing the rest', () => {
+    const decoder = new TextDecoder();
+    const good = (frame: number) => decoder.decode(packetRecord('eth:ip:udp', false, false, false, '1700000000.5', frame));
+    const buf = new TextEncoder().encode(
+      good(1) + 'P\t2\n' + 'P\t3\tnot-a-time\t10\n' + 'P\t4\t-5.2\n' + good(5),
+    );
+    const out = parseRecords(buf);
+    expect(out.packets.map((p) => p.frame)).toEqual([1, 5]);
+    expect(out.warnings).toEqual(['Skipped 3 packet records with a missing or malformed timestamp.']);
+  });
+
+  it('adds no warning for clean input', () => {
+    expect(parseRecords(packetRecord('eth:ip:udp', false, false, false)).warnings).toEqual([]);
+  });
+});

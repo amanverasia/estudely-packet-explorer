@@ -4,7 +4,8 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Note, ViewHead } from '../components/bits';
 import { useApp, useViewState, ViewStateCtx } from '../context';
-import { decimalLiteral, num } from '../format';
+import { num } from '../format';
+import { sharedDisplayFilter } from '../filtering';
 
 const PAGE = 500;
 const ROW = 30;
@@ -34,14 +35,7 @@ export function Packets({ captureSession }: { captureSession: number }) {
   const sessionRef = useRef(captureSession);
   routeRef.current = params.toString();
   sessionRef.current = captureSession;
-  const sharedDisplay = useMemo(() => {
-    const terms: string[] = [];
-    if (sharedFilter.start !== null && sharedFilter.end !== null) {
-      terms.push(`(frame.time_relative >= ${decimalLiteral(sharedFilter.start)} && frame.time_relative <= ${decimalLiteral(sharedFilter.end)})`);
-    }
-    if (sharedFilter.host) terms.push(`(${sharedFilter.host.includes(':') ? 'ipv6.addr' : 'ip.addr'} == ${sharedFilter.host})`);
-    return terms.join(' && ');
-  }, [sharedFilter.start, sharedFilter.end, sharedFilter.host]);
+  const sharedDisplay = useMemo(() => sharedDisplayFilter({ start: sharedFilter.start, end: sharedFilter.end, host: sharedFilter.host }), [sharedFilter.start, sharedFilter.end, sharedFilter.host]);
   sharedRef.current = sharedDisplay;
   const queryFilter = useMemo(() => [filter.trim() ? `(${filter.trim()})` : '', sharedDisplay].filter(Boolean).join(' && '), [filter, sharedDisplay]);
 

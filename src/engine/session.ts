@@ -227,14 +227,18 @@ export class CaptureSession {
     if (count > 0) {
       onProgress({ phase: 'extract', fraction: 0, message: 'Decoding packets…' });
       try { FS.unlink(DONE_PATH); } catch { /* none */ }
-      FS.writeFile(ARM_PATH, `${OUT_PATH} ${count}`);
-      // A filtered scan forces a full protocol-tree dissection of every frame,
-      // which is when the armed extractor writes its records.
-      const fr = this.sess.getFrames('frame', 0, 1);
-      free(fr.frames);
       let done = false;
-      try { done = FS.readFile(DONE_PATH, { encoding: 'utf8' }) === 'ok'; } catch { /* missing */ }
-      try { FS.unlink(ARM_PATH); } catch { /* consumed */ }
+      try {
+        FS.writeFile(ARM_PATH, `${OUT_PATH} ${count}`);
+        // A filtered scan forces a full protocol-tree dissection of every frame,
+        // which is when the armed extractor writes its records.
+        const fr = this.sess.getFrames('frame', 0, 1);
+        free(fr.frames);
+        try { done = FS.readFile(DONE_PATH, { encoding: 'utf8' }) === 'ok'; } catch { /* missing */ }
+      } finally {
+        // Never leave the extractor armed, even when the scan throws.
+        try { FS.unlink(ARM_PATH); } catch { /* consumed */ }
+      }
       if (!done) warnings.push('The extraction pass did not reach the last packet; results may be partial.');
       out = FS.readFile(OUT_PATH);
       FS.unlink(OUT_PATH);

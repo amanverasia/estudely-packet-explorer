@@ -13,6 +13,8 @@ export default defineConfig({
   timeout: 120_000,
   expect: { timeout: 30_000 },
   fullyParallel: true,
+  // One retry in CI absorbs a loaded runner; a test that needs it is reported as flaky.
+  retries: process.env.CI ? 1 : 0,
   reporter: [['list']],
   use: { baseURL: url },
   // The same suite runs in all three engines. Pick one with --project.

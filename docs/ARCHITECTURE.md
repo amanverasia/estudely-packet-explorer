@@ -63,6 +63,7 @@ Notable details handled in the extractor:
 - Wireshark flags some real fields as *generated* (e.g. `dns.id` on unanswered queries); only zero-length generated items are skipped.
 - ICMP error payloads quote other packets; protocol records are not taken from quoted headers.
 - Missing field names are reported once as a warning instead of failing the script.
+- `parseRecords` skips a packet line with a missing or malformed timestamp and reports the count as one warning, so a single bad line cannot abort the whole capture.
 
 ## Aggregation (`src/engine/analyze.ts` and focused modules)
 
@@ -86,7 +87,7 @@ Times are stored relative to the first packet so that nanosecond precision survi
 The workspace keeps small view controls and table search/sort values in a capture-scoped in-memory store so they survive view unmounts. The accepted Packet display filter is also written to the URL hash for Back/Forward navigation; draft text stays only in memory. Route history entries carry a capture-session marker. Replacing or closing a capture and entering Compare advance the session and clear the store, so Back/Forward cannot apply an earlier capture's filters to the current capture. No packet data is stored in this UI state.
 
 - `EngineClient` (`src/app/engine.ts`) creates a **new worker per capture**. Cancel, Close and Open-another call `worker.terminate()`, which discards the whole WASM heap and the capture bytes. Stale messages from an old worker are ignored.
-- The compiled `WebAssembly.Module` and the data package are posted back to the UI thread and handed to the next worker, so the 19 MB download and compile happen once per page load.
+- The compiled `WebAssembly.Module` and the data package are posted back to the UI thread and handed to the next worker, so the 19 MB download and compile happen once per page load. The module is held at page level, so Compare and the main view share it.
 - The capture is written into the Emscripten FS with `canOwn` so it is not copied again. Per-packet data kept in the worker is ~17 fields per packet (interned strings), never full trees. Packet trees are produced only on demand for the drawer (capped at 20,000 nodes); packet lists request 500-row pages, and conversation packet requests enforce a 500-row page cap. Conversation details keep one compact matching packet-index list in the worker for the active conversation and reset it when a session opens or closes; packet rows themselves remain page-local in the UI. The drawer asks for metadata only for the selected frame.
 - Tables are virtualised (`@tanstack/react-virtual`).
 

@@ -12,9 +12,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  unit:
+    name: Typecheck and engine tests
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -27,14 +28,38 @@ jobs:
         run: npm run typecheck
       - name: Engine tests
         run: npm test
-      - name: Install browsers for Playwright
-        run: npx playwright install --with-deps chromium firefox webkit
-      - name: Browser tests (Chromium, Firefox, WebKit)
-        run: npm run e2e
+
+  e2e:
+    name: Browser tests (${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 26
+          cache: npm
+      - run: npm ci
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ matrix.browser }}-${{ hashFiles('package-lock.json') }}
+      - name: Install browser
+        run: npx playwright install --with-deps ${{ matrix.browser }}
+      - name: Build
+        run: npm run build
+      - name: Browser tests
+        run: npx playwright test --project=${{ matrix.browser }}
       - name: Upload Playwright results
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-results
+          name: playwright-results-${{ matrix.browser }}
           path: test-results/
           retention-days: 7

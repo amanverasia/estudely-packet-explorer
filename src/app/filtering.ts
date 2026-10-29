@@ -1,11 +1,22 @@
 // Copyright (C) 2026 Estudely and contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
 import type { AnalysisModel, ArpBinding, Conversation, Host } from '../engine/types';
+import { decimalLiteral } from './format';
 
 export interface SharedFilter {
   start: number | null;
   end: number | null;
   host: string | null;
+}
+
+/** The Wireshark display filter equivalent to the shared time range and host filters. */
+export function sharedDisplayFilter(filter: Pick<SharedFilter, 'start' | 'end' | 'host'>): string {
+  const terms: string[] = [];
+  if (filter.start !== null && filter.end !== null) {
+    terms.push(`(frame.time_relative >= ${decimalLiteral(filter.start)} && frame.time_relative <= ${decimalLiteral(filter.end)})`);
+  }
+  if (filter.host) terms.push(`(${filter.host.includes(':') ? 'ipv6.addr' : 'ip.addr'} == ${filter.host})`);
+  return terms.join(' && ');
 }
 
 export interface FilterStats {

@@ -237,8 +237,9 @@ export function buildSsh(raw: RawSsh[], ctx: ProtoCtx): SshSession[] {
     }
     if (fromClient && s.clientVersion === null) { s.clientVersion = r.version; s.clientVersionFrame = r.frame; }
     if (!fromClient && s.serverVersion === null) { s.serverVersion = r.version; s.serverVersionFrame = r.frame; }
-    s.frames = sorted([...s.frames, r.frame]);
+    s.frames.push(r.frame);
   }
+  for (const s of out) s.frames = sorted(s.frames);
   return out;
 }
 
@@ -250,6 +251,10 @@ export function buildQuic(raw: RawQuic[], ctx: ProtoCtx): QuicConnection[] {
   const out: QuicConnection[] = [];
   const byConv = new Map<number | string, QuicConnection>();
   const quicPackets = new Map<number, number>();
+  const quicHelloByConv = new Map<number, TlsSession>();
+  for (const t of ctx.tls) {
+    if (t.carrier === 'QUIC' && t.convId !== null && t.clientHelloFrame !== null && !quicHelloByConv.has(t.convId)) quicHelloByConv.set(t.convId, t);
+  }
   for (let i = 0; i < ctx.packets.length; i++) {
     const c = ctx.convOf[i];
     if (c >= 0 && (':' + ctx.packets[i].protos + ':').includes(':quic:')) quicPackets.set(c, (quicPackets.get(c) ?? 0) + 1);
@@ -262,7 +267,7 @@ export function buildQuic(raw: RawQuic[], ctx: ProtoCtx): QuicConnection[] {
     const key = convId ?? `f${r.frame}`;
     let q = byConv.get(key);
     if (!q) {
-      const hello = convId !== null ? ctx.tls.find((t) => t.carrier === 'QUIC' && t.convId === convId && t.clientHelloFrame !== null) : undefined;
+      const hello = convId !== null ? quicHelloByConv.get(convId) : undefined;
       // The ClientHello sender is the client; without one, the conversation's first sender.
       const client = hello ? { a: hello.client, ap: hello.clientPort, b: hello.server, bp: hello.serverPort }
         : conv ? { a: conv.a, ap: conv.aPort, b: conv.b, bp: conv.bPort }

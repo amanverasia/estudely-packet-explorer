@@ -123,7 +123,7 @@ function ip(bytes: Uint8Array): string {
 export function hexToBytes(h: string): Uint8Array {
   const clean = h.replace(/[^0-9a-fA-F]/g, '');
   const out = new Uint8Array(clean.length >> 1);
-  for (let i = 0; i < out.length; i++) out[i] = parseInt(clean.substr(i * 2, 2), 16);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
   return out;
 }
 
